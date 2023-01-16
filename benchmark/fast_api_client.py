@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
 import struct
 import random
+
+# Dependencies
 import requests
 from websocket import create_connection
 
 from benchmark import benchmark_request
+
 
 def request_sum():
     a = random.randint(1, 1000)
@@ -20,9 +24,6 @@ def request_sum_ws(socket):
     result = socket.recv()
     c = struct.unpack('<I', result)[0]
     assert a + b == c, 'Wrong sum'
-
-
-
 
 
 if __name__ == '__main__':

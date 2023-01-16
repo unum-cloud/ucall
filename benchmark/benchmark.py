@@ -13,7 +13,7 @@ def benchmark_request(callable, count_cycles=10_000):
             failures += 1
     duration = time.time() - start_time
     failures_p = failures * 100.0 / (transmits + failures)
-    latency = duration * 1_000_000 / (transmits)
+    latency = (duration * 1_000_000 / transmits) if transmits else float('inf')
 
     print(f'- Took {duration:.1f} seconds')
     print(f'- Performed {transmits:,} transmissions')

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Command to run this server from project home:
 # uvicorn benchmark.fast_api_server:app --reload
 import struct
