@@ -1,4 +1,3 @@
-import ssl
 import time
 import struct
 import random
@@ -14,11 +13,11 @@ def request_sum():
     assert a + b == c, 'Wrong sum'
 
 
-def request_sum_ws(sum_socket):
+def request_sum_ws(socket):
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
-    sum_socket.send_binary(struct.pack('<II', a, b))
-    result = sum_socket.recv()
+    socket.send_binary(struct.pack('<II', a, b))
+    result = socket.recv()
     c = struct.unpack('<I', result)[0]
     assert a + b == c, 'Wrong sum'
 

@@ -1,4 +1,4 @@
-# To run this:
+# Command to run this server from project home:
 # uvicorn benchmark.fast_api_server:app --reload
 import struct
 
@@ -24,4 +24,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get('/')
 async def root():
-    return 'Call the `sum` method'
+    return 'Call the `sum` method for REST API or `sum-ws` for WebSockets'
