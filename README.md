@@ -2,7 +2,9 @@
 
 A light-weight kernel bypass library using io_uring, SIMDJSON, Amazon Ion, Nvidia UCX to achieve ultimate performance.
 
-
+```sh
+cmake -DCMAKE_BUILD_TYPE=Debug -B ./build_debug && make -j8 --silent -C ./build_debug
+```
 
 ## Typical Results
 

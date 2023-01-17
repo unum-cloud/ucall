@@ -1,4 +1,7 @@
 __pycache__
+build_debug/
+build_release/
+build/
 *.log
 
 # Prerequisites
