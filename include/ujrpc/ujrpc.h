@@ -1,28 +1,28 @@
 #pragma once
-#include <stdint.h>
+#include <stddef.h> // `size_t`
+#include <stdint.h> // `int64_t`
 
-typedef int64_t ujrpc_i64_t;
-typedef double ujrpc_f64_t;
-typedef char const *ujrpc_str_t;
+typedef void* ujrpc_server_t;
+typedef void* ujrpc_call_t;
+typedef char const* ujrpc_str_t;
 
-typedef void *ujrpc_server_t;
+typedef void (*ujrpc_callback_t)(ujrpc_call_t);
 
-typedef void *ujrpc_call_context_t;
-
-typedef void (*ujrpc_callback_t)(ujrpc_call_context_t *);
-
-void ujrpc_init(ujrpc_server_t *);
-
-void ujrpc_add_callback(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t);
-
-void ujrpc_context_get_argument_i64(ujrpc_server_t, ujrpc_call_context_t, ujrpc_str_t, ujrpc_i64_t *);
-
-void ujrpc_context_get_argument_f64(ujrpc_server_t, ujrpc_call_context_t, ujrpc_str_t, ujrpc_f64_t *);
-
-void ujrpc_context_get_argument_str(ujrpc_server_t, ujrpc_call_context_t, ujrpc_str_t, ujrpc_str_t *);
-
-void ujrpc_run_event_cycle(ujrpc_server_t);
-
-void ujrpc_run_event_loop(ujrpc_server_t);
-
+void ujrpc_init(int port, int queue_depth, ujrpc_server_t*);
+void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t);
+void ujrpc_take_call(ujrpc_server_t);
+void ujrpc_take_calls(ujrpc_server_t);
 void ujrpc_free(ujrpc_server_t);
+
+bool ujrpc_param_named_i64(ujrpc_call_t, ujrpc_str_t, int64_t*);
+bool ujrpc_param_named_f64(ujrpc_call_t, ujrpc_str_t, double*);
+bool ujrpc_param_named_str(ujrpc_call_t, ujrpc_str_t, ujrpc_str_t*, size_t*);
+bool ujrpc_param_named_json(ujrpc_call_t, ujrpc_str_t, ujrpc_str_t*, size_t*);
+
+bool ujrpc_param_positional_i64(ujrpc_call_t, size_t, int64_t*);
+bool ujrpc_param_positional_f64(ujrpc_call_t, size_t, double*);
+bool ujrpc_param_positional_str(ujrpc_call_t, size_t, ujrpc_str_t*, size_t*);
+bool ujrpc_param_positional_json(ujrpc_call_t, size_t, ujrpc_str_t*, size_t*);
+
+void ujrpc_call_reply_content(ujrpc_call_t, ujrpc_str_t, size_t);
+void ujrpc_call_reply_error(ujrpc_call_t, int, ujrpc_str_t, size_t);
