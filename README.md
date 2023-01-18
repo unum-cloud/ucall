@@ -14,6 +14,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug -B ./build_debug && make -j8 --silent -C ./build_
 | Fast API WebSocket         | 896 micros   |               |
 | Fast API Reusing WebSocket | 103 micros   |               |
 | UJRPC                      | 55 micros    |               |
+| UJRPC                      | 55 micros    |               |
 
 
 ### Replicating Fast API Results

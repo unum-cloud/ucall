@@ -5,42 +5,16 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <charconv> // `std::to_chars`
+
 #include <simdjson.h>
 
+#include "shared.hpp"
 #include "ujrpc/ujrpc.h"
 
 namespace sj = simdjson;
-namespace sjd = simdjson::dom;
-
-/// @brief To avoid dynamic memory allocations on tiny requests,
-/// for every connection we keep a tiny embedded buffer of this capacity.
-static constexpr std::size_t embedded_buffer_capacity_k = 4096;
-/// @brief The maximum length of JSON-Pointer, we will use
-/// to lookup parameters in heavily nested requests.
-/// A performance-oriented API will have maximum depth of 1 token.
-/// Some may go as far as 5 token, or roughly 50 character.
-static constexpr std::size_t json_pointer_capacity_k = 256;
-/// @brief Assuming we have a static 4KB `embedded_buffer_capacity_k`
-/// for our messages, we may receive an entirely invalid request like:
-///     [0,0,0,0,...]
-/// It will be recognized as a batch request with up to 2048 unique
-/// requests, and each will be replied with an error message.
-static constexpr std::size_t embedded_batch_capacity_k = 2048;
-/// @brief When preparing replies to requests, instead of allocating
-/// a new tape and joining them together, we assemble the requests
-/// `iovec`-s to pass to the kernel.
-static constexpr std::size_t iovecs_per_response_k = 7;
-/// @brief Needed for largest-register-aligned memory addressing.
-static constexpr std::size_t align_k = 64;
-
-template <std::size_t multiple_ak> constexpr std::size_t round_up_to(std::size_t n) {
-    return ((n + multiple_ak - 1) / multiple_ak) * multiple_ak;
-}
-
-struct named_callback_t {
-    ujrpc_str_t name{};
-    ujrpc_callback_t callback{};
-};
+namespace sjd = sj::dom;
+using namespace unum::ujrpc;
 
 struct connection_t {
     int descriptor{};
@@ -49,7 +23,9 @@ struct connection_t {
     std::string_view request_id{};
     bool is_batch{};
     struct iovec* response_iovecs{};
+    char** response_copies{};
     std::size_t response_iovecs_count{};
+    std::size_t response_copies_count{};
     char param_json_pointer[json_pointer_capacity_k]{};
     alignas(align_k) char request_string[embedded_buffer_capacity_k + sj::SIMDJSON_PADDING]{};
 };
@@ -113,12 +89,18 @@ void send_reply(engine_libc_t& engine) {
     sendmsg(connection.descriptor, &message, 0);
 }
 
-void forward_call(engine_libc_t& engine, sjd::parser& parser, std::string_view body) {
+void forward_call_or_calls(engine_libc_t& engine, sjd::parser& parser, std::string_view body) {
     connection_t& connection = engine.active_connection;
     auto one_or_many = parser.parse(body.data(), body.size(), false);
     if (one_or_many.error() != sj::SUCCESS)
         return ujrpc_call_reply_error(&connection, -32700, "Invalid JSON was received by the server.", 40);
 
+    // The major difference between batch and single-request paths is that
+    // in the first case we need to keep a copy of the data somewhere,
+    // until answers to all requests are accumulated and we can submit them
+    // simultaneously.
+    // Linux supports `MSG_MORE` flag for submissions, which could have helped,
+    // but it is less effictive than assembling a copy here.
     if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array();
         auto embedded_iovecs = connection.response_iovecs;
@@ -156,6 +138,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     int server_fd = -1;
     engine_libc_t* server_ptr = nullptr;
     struct iovec* embedded_iovecs = nullptr;
+    std::size_t iovecs_in_batch = batch_capacity * std::max(iovecs_for_content_k, iovecs_for_error_k);
     sjd::parser parser;
 
     // By default, let's open TCP port for IPv4.
@@ -168,7 +151,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     server_ptr = (engine_libc_t*)std::malloc(sizeof(engine_libc_t));
     if (!server_ptr)
         goto cleanup;
-    embedded_iovecs = (struct iovec*)std::malloc(sizeof(struct iovec) * batch_capacity * iovecs_per_response_k);
+    embedded_iovecs = (struct iovec*)std::malloc(sizeof(struct iovec) * iovecs_in_batch);
     if (!embedded_iovecs)
         goto cleanup;
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -213,35 +196,44 @@ void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback
 void ujrpc_take_call(ujrpc_server_t server) {
     engine_libc_t& engine = *reinterpret_cast<engine_libc_t*>(server);
     connection_t& connection = engine.active_connection;
+    sjd::parser parser;
+    ssize_t bytes_received{}, bytes_expected{};
+    auto buffer_ptr = &connection.request_string[0];
     auto connection_fd = connection.descriptor = accept(engine.socket_descriptor, (struct sockaddr*)NULL, NULL);
     if (connection_fd < 0) {
         errno;
+        close(connection_fd);
         return;
     }
 
-    // Wait until we have input
-    auto size_flags = MSG_PEEK | MSG_TRUNC;
-    auto buffer_ptr = &connection.request_string[0];
-    ssize_t size = recv(connection_fd, buffer_ptr, embedded_buffer_capacity_k, size_flags);
-    if (size <= 0) {
-        if (size < 0) {
-            int error = errno;
-        }
+    // Wait until we have input.
+    bytes_expected = recv(connection_fd, buffer_ptr, embedded_buffer_capacity_k, MSG_PEEK | MSG_TRUNC);
+    if (bytes_expected <= 0) {
+        if (bytes_expected < 0)
+            errno;
         close(connection_fd);
         return;
     }
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
-    if (size <= embedded_buffer_capacity_k) {
-        [[maybe_unused]] ssize_t received = recv(connection_fd, buffer_ptr, embedded_buffer_capacity_k, 0);
-        forward_call(engine, connection.parser, std::string_view(buffer_ptr, received));
+    if (bytes_expected <= embedded_buffer_capacity_k) {
+        bytes_received = recv(connection_fd, buffer_ptr, embedded_buffer_capacity_k, 0);
+        forward_call_or_calls(engine, connection.parser, std::string_view(buffer_ptr, bytes_received));
     } else {
-        sjd::parser parser;
-        sj::error_code parser_error = parser.allocate(size, size / 2);
-        buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(size + simdjson::SIMDJSON_PADDING));
-        [[maybe_unused]] ssize_t received = recv(connection_fd, buffer_ptr, size, 0);
-        forward_call(engine, parser, std::string_view(buffer_ptr, received));
+        if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS) {
+            ujrpc_call_send_error_out_of_memory(&connection);
+            close(connection_fd);
+            return;
+        }
+        buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
+        if (!buffer_ptr) {
+            ujrpc_call_send_error_out_of_memory(&connection);
+            close(connection_fd);
+            return;
+        }
+        bytes_received = recv(connection_fd, buffer_ptr, bytes_expected, 0);
+        forward_call_or_calls(engine, parser, std::string_view(buffer_ptr, bytes_received));
         std::free(buffer_ptr);
     }
 
@@ -259,6 +251,11 @@ void ujrpc_free(ujrpc_server_t server) {
         return;
 
     engine_libc_t& engine = *reinterpret_cast<engine_libc_t*>(server);
+    if (engine.callbacks)
+        std::free(engine.callbacks);
+    if (engine.active_connection.response_iovecs)
+        std::free(engine.active_connection.response_iovecs);
+
     engine.~engine_libc_t();
     std::free(server);
 }
@@ -280,55 +277,70 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_
 }
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
-    // Communication example would be:
-    // --> {"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": 19, "id": 1}
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
+    if (!body_len)
+        body_len = std::strlen(body);
 
-    // Put-in the parts in pieces.
-    // The kernel with join them.
-    struct iovec* buffers = connection.response_iovecs + connection.response_iovecs_count;
-    char const* protocol_prefix = R"({"jsonrpc":"2.0","id":)";
-    buffers[0].iov_base = (char*)protocol_prefix;
-    buffers[0].iov_len = 22;
-    buffers[1].iov_base = (char*)connection.request_id.data();
-    buffers[1].iov_len = connection.request_id.size();
-    char const* result_separator = R"(,"result":)";
-    buffers[2].iov_base = (char*)result_separator;
-    buffers[2].iov_len = 10;
-    buffers[3].iov_base = (char*)body;
-    buffers[3].iov_len = body_len;
-    char const* protocol_suffix = R"(})";
-    buffers[4].iov_base = (char*)protocol_suffix;
-    buffers[4].iov_len = 1;
-    connection.response_iovecs_count += 5;
+    // In case of a sinle request - immediately push into the socket.
+    if (!connection.is_batch) {
+        struct msghdr message {};
+        struct iovec iovecs[iovecs_for_content_k] {};
+        fill_with_content(iovecs, connection.request_id, std::string_view(body, body_len));
+        message.msg_iov = iovecs;
+        message.msg_iovlen = iovecs_for_content_k;
+        if (sendmsg(connection.descriptor, &message, 0) < 0)
+            return ujrpc_call_send_error_unknown(call);
+    }
+
+    // In case of a batch request, preserve a copy of data on the heap.
+    else {
+        auto body_copy = (char*)std::malloc(body_len);
+        if (!body_copy)
+            return ujrpc_call_send_error_out_of_memory(call);
+        std::memcpy(body_copy, body, body_len);
+        connection.response_copies[connection.response_copies_count++] = body_copy;
+        fill_with_content(connection.response_iovecs + connection.response_iovecs_count, connection.request_id,
+                          std::string_view(body, body_len));
+        connection.response_iovecs_count += iovecs_for_content_k;
+    }
 }
 
-void ujrpc_call_reply_error(ujrpc_call_t call, int error_code, ujrpc_str_t error_message, size_t error_length) {
-    // Communication example would be:
-    // --> {"jsonrpc": "2.0", "method": "foobar", "id": "1"}
-    // <-- {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": "1"}
+void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
+
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
-    if (!error_length)
-        error_length = std::strlen(error_message);
+    if (!note_len)
+        note_len = std::strlen(note);
 
-    char printed_code[64]{};
+    char code[16]{};
+    std::to_chars_result res = std::to_chars(code, code + sizeof(code), code_int);
+    auto code_len = res.ptr - code;
+    if (res.ec != std::error_code())
+        return ujrpc_call_send_error_unknown(call);
 
-    // Put-in the parts in pieces.
-    // The kernel with join them.
-    struct iovec* buffers = connection.response_iovecs + connection.response_iovecs_count;
-    char const* protocol_prefix = R"({"jsonrpc":"2.0","id":)";
-    buffers[0].iov_base = (char*)protocol_prefix;
-    buffers[0].iov_len = 22;
-    buffers[1].iov_base = (char*)connection.request_id.data();
-    buffers[1].iov_len = connection.request_id.size();
-    char const* result_separator = R"(,"error":)";
-    buffers[2].iov_base = (char*)result_separator;
-    buffers[2].iov_len = 9;
-    buffers[3].iov_base = (char*)error_message;
-    buffers[3].iov_len = error_length;
-    char const* protocol_suffix = R"(})";
-    buffers[4].iov_base = (char*)protocol_suffix;
-    buffers[4].iov_len = 1;
-    connection.response_iovecs_count += 5;
+    // In case of a sinle request - immediately push into the socket.
+    if (!connection.is_batch) {
+        struct msghdr message {};
+        struct iovec iovecs[iovecs_for_error_k] {};
+        fill_with_error(iovecs, connection.request_id,    //
+                        std::string_view(code, code_len), //
+                        std::string_view(note, note_len));
+        message.msg_iov = iovecs;
+        message.msg_iovlen = iovecs_for_error_k;
+        if (sendmsg(connection.descriptor, &message, 0) < 0)
+            return ujrpc_call_send_error_unknown(call);
+    }
+
+    // In case of a batch request, preserve a copy of data on the heap.
+    else {
+        auto code_and_node = (char*)std::malloc(code_len + note_len);
+        if (!code_and_node)
+            return ujrpc_call_send_error_out_of_memory(call);
+        std::memcpy(code_and_node, code, code_len);
+        std::memcpy(code_and_node + code_len, note, note_len);
+        connection.response_copies[connection.response_copies_count++] = code_and_node;
+        fill_with_error(connection.response_iovecs + connection.response_iovecs_count, connection.request_id, //
+                        std::string_view(code_and_node, code_len),                                            //
+                        std::string_view(code_and_node + code_len, note_len));
+        connection.response_iovecs_count += iovecs_for_error_k;
+    }
 }

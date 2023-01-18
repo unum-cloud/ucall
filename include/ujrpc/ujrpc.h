@@ -33,3 +33,9 @@ bool ujrpc_param_positional_json(ujrpc_call_t, size_t, ujrpc_str_t*, size_t*);
 
 void ujrpc_call_reply_content(ujrpc_call_t, ujrpc_str_t, size_t);
 void ujrpc_call_reply_error(ujrpc_call_t, int, ujrpc_str_t, size_t);
+
+void ujrpc_call_send_content(ujrpc_call_t, ujrpc_str_t, size_t);
+void ujrpc_call_send_error(ujrpc_call_t, int, ujrpc_str_t, size_t);
+void ujrpc_call_send_error_invalid_params(ujrpc_call_t);
+void ujrpc_call_send_error_out_of_memory(ujrpc_call_t);
+void ujrpc_call_send_error_unknown(ujrpc_call_t);
