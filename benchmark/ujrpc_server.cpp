@@ -21,7 +21,8 @@ static void sum(ujrpc_call_t call) {
 
 int main(int argc, char** argv) {
     ujrpc_server_t server{};
-    ujrpc_init(-1, -1, &server);
+    ujrpc_config_t config{};
+    ujrpc_init(&config, &server);
     if (!server)
         return -1;
 

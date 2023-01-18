@@ -305,6 +305,9 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     }
 }
 
+void ujrpc_call_send_error_unknown(ujrpc_call_t) {}
+void ujrpc_call_send_error_out_of_memory(ujrpc_call_t) {}
+
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
 
     connection_t& connection = *reinterpret_cast<connection_t*>(call);

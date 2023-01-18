@@ -2,20 +2,32 @@
 
 A light-weight kernel bypass library using io_uring, SIMDJSON, Amazon Ion, Nvidia UCX to achieve ultimate performance.
 
+- [x] Batch requests
+- [x] JSON-RPC over raw TCP sockets
+- [ ] JSON-RPC over TCP with HTTP
+- [ ] Concurrent sessions
+- [ ] AF_XDP on Linux
+- [ ] Amazon Ion support
+- [ ] UDP support
+
 ```sh
 cmake -DCMAKE_BUILD_TYPE=Debug -B ./build_debug && make -j8 --silent -C ./build_debug
 ```
 
-## Typical Results
+## Typical Latencies
 
-| Setup                      | Linux Server | Apple Macbook |
-| :------------------------- | ------------ | ------------- |
-| Fast API REST              | 995 micros   |               |
-| Fast API WebSocket         | 896 micros   |               |
-| Fast API Reusing WebSocket | 103 micros   |               |
-| UJRPC                      | 55 micros    |               |
-| UJRPC                      | 55 micros    |               |
+| Setup                       | Linux, Epyc | MacOS, i9 |
+| :-------------------------- | ----------: | --------: |
+| Fast API REST               |      995 μs |  2,854 μs |
+| Fast API WebSocket          |      896 μs |  2,820 μs |
+| Fast API WebSocket, reusing |      103 μs |    396 μs |
+| UJRPC over HTTP             |             |           |
+| UJRPC over TCP              |       55 μs |           |
+| UJRPC over TCP, reusing     |             |           |
 
+> μ stands for micro, μs subsequently means microseconds.
+> First column shows timing for a server with Ubuntu 22.04, based on a 64-core AMD Epyc CPU.
+> Second column shows timing of a Macbook Pro with Intel Core i9 CPU.
 
 ### Replicating Fast API Results
 
