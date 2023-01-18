@@ -8,7 +8,14 @@ typedef char const* ujrpc_str_t;
 
 typedef void (*ujrpc_callback_t)(ujrpc_call_t);
 
-void ujrpc_init(int port, int queue_depth, ujrpc_server_t*);
+typedef struct ujrpc_config_t {
+    int port;
+    int queue_depth;
+    int batch_capacity;
+    int max_callbacks;
+} ujrpc_config_t;
+
+void ujrpc_init(ujrpc_config_t const*, ujrpc_server_t*);
 void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t);
 void ujrpc_take_call(ujrpc_server_t);
 void ujrpc_take_calls(ujrpc_server_t);

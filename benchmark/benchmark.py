@@ -1,3 +1,5 @@
+import socket
+import errno
 import time
 
 def benchmark_request(callable, count_cycles=10_000):
@@ -21,3 +23,21 @@ def benchmark_request(callable, count_cycles=10_000):
     print(f'- Recorded {failures_p:.3%} failures')
     print(f'- Mean latency is {latency:.1f} microseconds')
     print(f'- Mean speed is {speed:.1f} requests/s')
+
+
+
+
+def socket_is_closed(sock: socket.socket) -> bool:
+    """
+    Returns True if the remote side did close the connection
+
+    """
+    try:
+        buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+        if buf == b'':
+            return True
+    except BlockingIOError as exc:
+        if exc.errno != errno.EAGAIN:
+            # Raise on unknown exception
+            raise
+    return False

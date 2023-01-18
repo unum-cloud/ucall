@@ -4,7 +4,7 @@ import socket
 import json
 import io
 
-from benchmark import benchmark_request
+from benchmark import benchmark_request, socket_is_closed
 
 
 
@@ -46,7 +46,15 @@ def request_sum_http_tcp(client):
     c = int(response["result"])
     assert a + b == c, 'Wrong sum'
 
+def make_socket():
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect(('127.0.0.1', 8545))
+    return client
+
 def request_sum_tcp_reusing(client):
+
+    if socket_is_closed(client):
+        client = make_socket()
 
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
@@ -66,10 +74,6 @@ def request_sum_tcp_reusing(client):
     c = int(response["result"])
     assert a + b == c, 'Wrong sum'
 
-def make_socket():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(('127.0.0.1', 8545))
-    return client
 
 def request_sum_tcp():
     client = make_socket()
@@ -84,7 +88,7 @@ if __name__ == "__main__":
     benchmark_request(request_sum_tcp)
 
     # Testing reusable TCP connection
-    # client = make_socket()
-    # benchmark_request(lambda: request_sum_tcp_reusing(client))
-    # client.close()
+    client = make_socket()
+    benchmark_request(lambda: request_sum_tcp_reusing(client))
+    client.close()
 

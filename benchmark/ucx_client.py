@@ -12,6 +12,7 @@ host = ucp.get_address()
 port = 13337
 
 def sync(to_await):
+    """Waits until async operation is completed, as if it was synchronous"""
     async_response = []
 
     async def run_and_capture_result():
