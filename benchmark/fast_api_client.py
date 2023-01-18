@@ -17,7 +17,7 @@ def request_sum():
     assert a + b == c, 'Wrong sum'
 
 
-def request_sum_ws(socket):
+def request_sum_ws_reusing(socket):
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
     socket.send_binary(struct.pack('<II', a, b))
@@ -25,6 +25,13 @@ def request_sum_ws(socket):
     c = struct.unpack('<I', result)[0]
     assert a + b == c, 'Wrong sum'
 
+def make_socket():
+    return create_connection('ws://127.0.0.1:8000/sum-ws')
+
+def request_sum_ws():
+    socket = make_socket()
+    request_sum_ws_reusing(socket)
+    socket.close()
 
 if __name__ == '__main__':
 
@@ -32,6 +39,9 @@ if __name__ == '__main__':
     benchmark_request(request_sum)
 
     print('Will benchmark WebSockets')
-    sum_socket = create_connection('ws://127.0.0.1:8000/sum-ws')
-    benchmark_request(lambda: request_sum_ws(sum_socket))
-    sum_socket.close()
+    benchmark_request(request_sum_ws)
+
+    print('Will benchmark reused WebSockets')
+    socket = make_socket()
+    benchmark_request(lambda: request_sum_ws_reusing(socket))
+    socket.close()
