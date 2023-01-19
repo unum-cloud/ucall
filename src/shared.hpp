@@ -25,7 +25,7 @@ static constexpr std::size_t embedded_batch_capacity_k = 2048;
 /// a new tape and joining them together, we assemble the requests
 /// `iovec`-s to pass to the kernel.
 static constexpr std::size_t iovecs_for_content_k = 5;
-static constexpr std::size_t iovecs_for_error_k = 6;
+static constexpr std::size_t iovecs_for_error_k = 7;
 /// @brief Needed for largest-register-aligned memory addressing.
 static constexpr std::size_t align_k = 64;
 
@@ -72,15 +72,17 @@ void fill_with_error(struct iovec* buffers, std::string_view request_id, std::st
     buffers[1].iov_len = request_id.size();
     char const* error_code_separator = R"(,"error":{"code":)";
     buffers[2].iov_base = (char*)error_code_separator;
-    buffers[2].iov_len = 9;
-    char const* error_message_separator = R"(,"message":)";
-    buffers[3].iov_base = (char*)error_message_separator;
-    buffers[3].iov_len = 9;
-    buffers[4].iov_base = (char*)error_message.data();
-    buffers[4].iov_len = error_message.size();
-    char const* protocol_suffix = R"(}},)";
-    buffers[5].iov_base = (char*)protocol_suffix;
-    buffers[5].iov_len = 2 + append_comma;
+    buffers[2].iov_len = 17;
+    buffers[3].iov_base = (char*)error_code.data();
+    buffers[3].iov_len = error_code.size();
+    char const* error_message_separator = R"(,"message":")";
+    buffers[4].iov_base = (char*)error_message_separator;
+    buffers[4].iov_len = 12;
+    buffers[5].iov_base = (char*)error_message.data();
+    buffers[5].iov_len = error_message.size();
+    char const* protocol_suffix = R"("}},)";
+    buffers[6].iov_base = (char*)protocol_suffix;
+    buffers[6].iov_len = 3 + append_comma;
 }
 
 } // namespace unum::ujrpc
