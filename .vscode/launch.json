@@ -13,6 +13,14 @@
             "justMyCode": true
         },
         {
+            "name": "Python: Test Client",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/benchmark/ujrpc_client.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "C++: Test Server",
             "type": "cppdbg",
             "request": "launch",
