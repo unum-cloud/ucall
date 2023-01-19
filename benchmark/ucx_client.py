@@ -5,24 +5,12 @@ import asyncio
 import ucp
 import numpy as np
 
-from benchmark import benchmark_request
+from benchmark import benchmark_request_async
 
 triplet = np.empty(3, dtype='u4')
 host = ucp.get_address()
 port = 13337
 port_reuse = 13338
-
-def sync(to_await):
-    """Waits until async operation is completed, as if it was synchronous"""
-    async_response = []
-
-    async def run_and_capture_result():
-        r = await to_await
-        async_response.append(r)
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_and_capture_result())
-    return async_response[0]
 
 async def request_sum_reuse(endpoint: ucp.Endpoint):
     triplet[0] = random.randint(1, 1000)
@@ -42,18 +30,20 @@ async def request_sum():
     await endpoint.close()
 
 
-def bench_reusing():
-    endpoint = sync(ucp.create_endpoint(host, port_reuse))
-    benchmark_request(lambda: sync(request_sum_reuse(endpoint)))
-    sync(endpoint.close())
+async def bench_reusing():
+    endpoint = await ucp.create_endpoint(host, port_reuse)
+    await benchmark_request_async(request_sum_reuse, endpoint)
+    await endpoint.close()
 
 
-def bench_creating():
-    benchmark_request(lambda: sync(request_sum()))
+async def bench_creating():
+    await benchmark_request_async(request_sum)
 
 
 if __name__ == '__main__':
+    loop = asyncio.new_event_loop()
     print("Creating")
-    bench_creating()
+    loop.run_until_complete(bench_creating())
     print("Reuseing")
-    bench_reusing()
+    loop.run_until_complete(bench_reusing())
+    loop.close()

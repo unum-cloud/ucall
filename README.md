@@ -24,6 +24,8 @@ cmake -DCMAKE_BUILD_TYPE=Debug -B ./build_debug && make -j8 --silent -C ./build_
 | UJRPC over HTTP             |             |           |
 | UJRPC over TCP              |       55 μs |           |
 | UJRPC over TCP, reusing     |             |           |
+| UCX                         |    18141 μs |           |
+| UCX, reusing                |       90 μs |           |
 
 > μ stands for micro, μs subsequently means microseconds.
 > First column shows timing for a server with Ubuntu 22.04, based on a 64-core AMD Epyc CPU.
