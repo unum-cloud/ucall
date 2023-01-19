@@ -138,6 +138,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     int server_fd = -1;
     engine_libc_t* server_ptr = nullptr;
     struct iovec* embedded_iovecs = nullptr;
+    named_callback_t* embedded_callbacks = nullptr;
     std::size_t iovecs_in_batch = batch_capacity * std::max(iovecs_for_content_k, iovecs_for_error_k);
     sjd::parser parser;
 
@@ -153,6 +154,9 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
         goto cleanup;
     embedded_iovecs = (struct iovec*)std::malloc(sizeof(struct iovec) * iovecs_in_batch);
     if (!embedded_iovecs)
+        goto cleanup;
+    embedded_callbacks = (named_callback_t*)std::malloc(sizeof(named_callback_t) * max_callbacks);
+    if (!embedded_callbacks)
         goto cleanup;
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0)
@@ -170,6 +174,8 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     new (server_ptr) engine_libc_t();
     server_ptr->socket_descriptor = server_fd;
     server_ptr->max_batch_size = batch_capacity;
+    server_ptr->callbacks = embedded_callbacks;
+    server_ptr->callbacks_capacity = max_callbacks;
     server_ptr->active_connection.response_iovecs = embedded_iovecs;
     server_ptr->active_connection.parser = std::move(parser);
     *server = (ujrpc_server_t)server_ptr;
