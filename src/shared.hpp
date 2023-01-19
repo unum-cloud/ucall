@@ -9,13 +9,13 @@ namespace unum::ujrpc {
 
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
-static constexpr std::size_t embedded_buffer_capacity_k = 4096;
+static constexpr std::size_t embedded_packet_capacity_k = 4096;
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.
 /// Some may go as far as 5 token, or roughly 50 character.
 static constexpr std::size_t json_pointer_capacity_k = 256;
-/// @brief Assuming we have a static 4KB `embedded_buffer_capacity_k`
+/// @brief Assuming we have a static 4KB `embedded_packet_capacity_k`
 /// for our messages, we may receive an entirely invalid request like:
 ///     [0,0,0,0,...]
 /// It will be recognized as a batch request with up to 2048 unique

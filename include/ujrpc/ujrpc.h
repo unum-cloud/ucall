@@ -9,10 +9,12 @@ typedef char const* ujrpc_str_t;
 typedef void (*ujrpc_callback_t)(ujrpc_call_t);
 
 typedef struct ujrpc_config_t {
-    int port;
-    int queue_depth;
-    int batch_capacity;
-    int max_callbacks;
+    uint16_t port;
+    uint16_t queue_depth;
+    uint16_t batch_capacity;
+    uint16_t max_callbacks;
+    uint16_t max_connections;
+    uint32_t max_lifetime_microsec;
 } ujrpc_config_t;
 
 void ujrpc_init(ujrpc_config_t const*, ujrpc_server_t*);
