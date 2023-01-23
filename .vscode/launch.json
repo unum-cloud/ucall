@@ -18,6 +18,9 @@
             "request": "launch",
             "program": "${workspaceFolder}/benchmark/ujrpc_client.py",
             "console": "integratedTerminal",
+            "args": [
+                "-d"
+            ],
             "justMyCode": true
         },
         {

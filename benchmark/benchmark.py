@@ -2,17 +2,24 @@ import socket
 import errno
 import time
 
-def benchmark_request(callable, count_cycles=10_000):
+from tqdm import tqdm
+
+def benchmark_request(callable, count_cycles:int=10_000, debug:bool = False):
     start_time = time.time()
     failures = 0
     transmits = 0
 
-    for _ in range(count_cycles):
-        try:
+    if debug:
+        for _ in tqdm(range(count_cycles)):
             callable()
             transmits += 1
-        except:
-            failures += 1
+    else:
+        for _ in range(count_cycles):
+            try:
+                callable()
+                transmits += 1
+            except:
+                failures += 1
     duration = time.time() - start_time
     failures_p = failures * 100.0 / (transmits + failures)
     latency = (duration * 1_000_000 / transmits) if transmits else float('inf')
