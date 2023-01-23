@@ -12,10 +12,10 @@ typedef struct ujrpc_config_t {
     uint16_t port;
     uint16_t queue_depth;
     uint16_t batch_capacity;
-    uint16_t max_callbacks;
-    uint16_t max_connections;
-    uint16_t max_threads;
-    uint32_t max_lifetime_microsec;
+    uint16_t callbacks_capacity;
+    uint16_t connections_capacity;
+    uint16_t threads_limit;
+    uint32_t lifetime_microsec_limit;
 } ujrpc_config_t;
 
 void ujrpc_init(ujrpc_config_t const*, ujrpc_server_t*);

@@ -75,6 +75,35 @@ def request_sum_tcp_reusing(client):
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
 
+def request_sum_tcp_rusing_batch(client):
+
+    if socket_is_closed(client):
+        client = make_socket()
+
+    a = random.randint(1, 1000)
+    b = random.randint(1, 1000)
+    rpc = json.dumps([
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+    ])
+    client.send(rpc.encode())
+    response_bytes = bytes()
+    while not len(response_bytes):
+        response_bytes = client.recv(8192)
+    response = json.loads(response_bytes.decode())
+    assert isinstance(response, list) and len(response) == 8
+    assert response[0]['jsonrpc']
+    c = int(response[0]['result'])
+    c_last = int(response[-1]['result'])
+    assert a + b == c, 'Wrong sum'
+    assert a + b == c_last, 'Wrong sum'
+
 
 def request_sum_tcp():
     client = make_socket()
@@ -97,3 +126,7 @@ if __name__ == '__main__':
     benchmark_request(lambda: request_sum_tcp_reusing(client), debug=args.debug)
     client.close()
 
+    # Testing reusable TCP connection with batched requests
+    client = make_socket()
+    benchmark_request(lambda: request_sum_tcp_rusing_batch(client), debug=args.debug)
+    client.close()

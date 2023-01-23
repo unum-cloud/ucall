@@ -35,8 +35,8 @@ include_directories(${benchmark_SOURCE_DIR}/include)
 
 find_package(Threads REQUIRED)
 
-include_directories(include)
-add_library(ujrpc_server src/engine_reusing.cpp)
+include_directories(include/ src/)
+add_library(ujrpc_server src/engine_sync.cpp src/helpers/receive.cpp)
 target_link_libraries(ujrpc_server simdjson::simdjson Threads::Threads)
 
 add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)

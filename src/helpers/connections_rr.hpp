@@ -19,7 +19,7 @@ class connections_rr_t {
     std::size_t idx_to_poll_{};
 
   public:
-    connections_rr_t& operator=(connections_rr_t&& other) noexcept {
+    inline connections_rr_t& operator=(connections_rr_t&& other) noexcept {
         std::swap(circle_, other.circle_);
         std::swap(count_, other.count_);
         std::swap(capacity_, other.capacity_);
@@ -29,7 +29,7 @@ class connections_rr_t {
         return *this;
     }
 
-    bool alloc(std::size_t n) noexcept {
+    inline bool alloc(std::size_t n) noexcept {
 
         auto cons = (connection_t*)std::malloc(sizeof(connection_t) * n);
         if (!cons)
@@ -39,7 +39,7 @@ class connections_rr_t {
         return true;
     }
 
-    descriptor_t drop_tail() noexcept {
+    inline descriptor_t drop_tail() noexcept {
         descriptor_t old = std::exchange(circle_[idx_oldest_].descriptor, bad_descriptor_k);
         idx_to_poll_ = idx_to_poll_ == idx_oldest_ ? (idx_to_poll_ + 1) % capacity_ : idx_to_poll_;
         idx_oldest_ = (idx_oldest_ + 1) % capacity_;
@@ -47,7 +47,7 @@ class connections_rr_t {
         return old;
     }
 
-    void push_ahead(descriptor_t new_) noexcept {
+    inline void push_ahead(descriptor_t new_) noexcept {
         circle_[idx_newest_].descriptor = new_;
         circle_[idx_newest_].skipped_cycles = 0;
         circle_[idx_newest_].response.copies_count = 0;
@@ -56,17 +56,17 @@ class connections_rr_t {
         count_++;
     }
 
-    connection_t& poll() noexcept {
+    inline connection_t& poll() noexcept {
         auto connection_ptr = &circle_[idx_to_poll_];
         auto idx_to_poll_following = (idx_to_poll_ + 1) % count_;
         idx_to_poll_ = idx_to_poll_following == idx_newest_ ? idx_oldest_ : idx_to_poll_following;
         return circle_[idx_to_poll_];
     }
 
-    connection_t& tail() noexcept { return circle_[idx_oldest_]; }
-    connection_t& head() noexcept { return circle_[idx_newest_ - 1]; }
-    std::size_t size() const noexcept { return count_; }
-    std::size_t capacity() const noexcept { return capacity_; }
+    inline connection_t& tail() noexcept { return circle_[idx_oldest_]; }
+    inline connection_t& head() noexcept { return circle_[idx_newest_ - 1]; }
+    inline std::size_t size() const noexcept { return count_; }
+    inline std::size_t capacity() const noexcept { return capacity_; }
 };
 
 } // namespace unum::ujrpc
