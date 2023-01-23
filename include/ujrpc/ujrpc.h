@@ -14,13 +14,14 @@ typedef struct ujrpc_config_t {
     uint16_t batch_capacity;
     uint16_t max_callbacks;
     uint16_t max_connections;
+    uint16_t max_threads;
     uint32_t max_lifetime_microsec;
 } ujrpc_config_t;
 
 void ujrpc_init(ujrpc_config_t const*, ujrpc_server_t*);
 void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t);
-void ujrpc_take_call(ujrpc_server_t);
-void ujrpc_take_calls(ujrpc_server_t);
+void ujrpc_take_call(ujrpc_server_t, uint16_t thread_idx);
+void ujrpc_take_calls(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_free(ujrpc_server_t);
 
 bool ujrpc_param_named_i64(ujrpc_call_t, ujrpc_str_t, int64_t*);

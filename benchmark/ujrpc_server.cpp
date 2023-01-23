@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
         return -1;
 
     ujrpc_add_procedure(server, "sum", &sum);
-    ujrpc_take_calls(server);
+    ujrpc_take_calls(server, 0);
     ujrpc_free(server);
     return 0;
 }

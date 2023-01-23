@@ -19,6 +19,16 @@ class connections_rr_t {
     std::size_t idx_to_poll_{};
 
   public:
+    connections_rr_t& operator=(connections_rr_t&& other) noexcept {
+        std::swap(circle_, other.circle_);
+        std::swap(count_, other.count_);
+        std::swap(capacity_, other.capacity_);
+        std::swap(idx_newest_, other.idx_newest_);
+        std::swap(idx_oldest_, other.idx_oldest_);
+        std::swap(idx_to_poll_, other.idx_to_poll_);
+        return *this;
+    }
+
     bool alloc(std::size_t n) noexcept {
 
         auto cons = (connection_t*)std::malloc(sizeof(connection_t) * n);

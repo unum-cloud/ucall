@@ -50,7 +50,7 @@ struct connection_t {
     stage_t stage{};
     /// @brief Determines the probability of reseting the connection, in favor of a new client.
     std::size_t skipped_cycles{};
-    /// @brief Determines, if the provided content
+    /// @brief Pointer to the scratch memory to be used to parse this request.
     void* scratch_space{};
 
     struct response_t {
@@ -114,8 +114,32 @@ template <std::size_t multiple_ak> constexpr std::size_t round_up_to(std::size_t
 
 template <typename element_at> struct buffer_gt {
     element_at* elements_{};
-    bool alloc(std::size_t n) noexcept { return (elements_ = (element_at*)std::malloc(sizeof(element_at) * n)); }
-    ~buffer_gt() noexcept { std::free(elements_); }
+    std::size_t capacity_{};
+    static_assert(std::is_nothrow_default_constructible<element_at>());
+
+    buffer_gt& operator=(buffer_gt&& other) noexcept {
+        std::swap(elements_, other.elements_);
+        std::swap(capacity_, other.capacity_);
+        return *this;
+    }
+    bool alloc(std::size_t n) noexcept {
+        elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
+        if (!elements_)
+            return false;
+        std::uninitialized_default_construct(elements_, elements_ + capacity_);
+        capacity_ = n;
+        return true;
+    }
+    ~buffer_gt() noexcept {
+        if constexpr (!std::is_trivially_destructible<element_at>())
+            std::destroy_n(elements_, capacity_);
+        std::free(elements_);
+    }
+    element_at* data() noexcept { return elements_; }
+    element_at* begin() noexcept { return elements_; }
+    element_at* end() noexcept { return elements_ + capacity_; }
+    std::size_t size() const noexcept { return capacity_; }
+    std::size_t capacity() const noexcept { return capacity_; }
     element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
 };
 
@@ -123,23 +147,41 @@ template <typename element_at> struct array_gt {
     element_at* elements_{};
     std::size_t count_{};
     std::size_t capacity_{};
+
+    array_gt& operator=(array_gt&& other) noexcept {
+        std::swap(elements_, other.elements_);
+        std::swap(count_, other.count_);
+        std::swap(capacity_, other.capacity_);
+        return *this;
+    }
     bool alloc(std::size_t n) noexcept {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         capacity_ = elements_ ? n : 0;
         return elements_;
     }
-    ~array_gt() noexcept { std::free(elements_); }
-    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
-    void append(element_at element) noexcept { return elements_[count_++] = element; }
+    ~array_gt() noexcept {
+        if constexpr (!std::is_trivially_destructible<element_at>())
+            std::destroy_n(elements_, count_);
+        std::free(elements_);
+    }
     element_at* data() noexcept { return elements_; }
-    std::size_t size() const noexcept { count_; }
-    std::size_t capacity() const noexcept { capacity_; }
+    element_at* begin() noexcept { return elements_; }
+    element_at* end() noexcept { return elements_ + count_; }
+    std::size_t size() const noexcept { return count_; }
+    std::size_t capacity() const noexcept { return capacity_; }
+    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+    void push_back(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
 };
 
 template <typename element_at> struct pool_gt {
     element_at* elements_{};
     std::size_t capacity_{};
 
+    pool_gt& operator=(pool_gt&& other) noexcept {
+        std::swap(elements_, other.elements_);
+        std::swap(capacity_, other.capacity_);
+        return *this;
+    }
     bool alloc(std::size_t n) noexcept { return (elements_ = (element_at*)std::malloc(sizeof(element_at) * n)); }
     ~pool_gt() noexcept { std::free(elements_); }
     element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
