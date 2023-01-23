@@ -65,6 +65,8 @@ void forward_call_or_calls(engine_t& engine, connection_t& connection) {
     if (one_or_many.error() != sj::SUCCESS)
         return ujrpc_call_reply_error(&connection, -32700, "Invalid JSON was received by the server.", 40);
 
+    connection.response.iovecs_count = 0;
+    connection.response.copies_count = 0;
     // The major difference between batch and single-request paths is that
     // in the first case we need to keep a copy of the data somewhere,
     // until answers to all requests are accumulated and we can submit them
@@ -78,10 +80,10 @@ void forward_call_or_calls(engine_t& engine, connection_t& connection) {
             return ujrpc_call_reply_error(&connection, -32603, "Too many requests in the batch.", 31);
 
         // Start a JSON array.
-        connection.response.iovecs_count = 1;
-        connection.response.copies_count = 0;
         connection.response.iovecs[0].iov_base = (void*)"[";
         connection.response.iovecs[0].iov_len = 1;
+        connection.response.iovecs_count++;
+
         for (sjd::element const one : many) {
             scratch.tree = one;
             forward_call(engine, connection);
@@ -272,6 +274,9 @@ void ujrpc_free(ujrpc_server_t server) {
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
     scratch_space_t& scratch = *(scratch_space_t*)connection.scratch;
+    if (scratch.id.empty())
+        // No response is needed for "id"-less notifications.
+        return;
     if (!body_len)
         body_len = std::strlen(body);
 
@@ -302,6 +307,9 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
     scratch_space_t& scratch = *(scratch_space_t*)connection.scratch;
+    if (scratch.id.empty())
+        // No response is needed for "id"-less notifications.
+        return;
     if (!note_len)
         note_len = std::strlen(note);
 
@@ -339,6 +347,14 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     }
 }
 
-void ujrpc_call_send_error_unknown(ujrpc_call_t call) {}
+void ujrpc_call_send_error_invalid_params(ujrpc_call_t call) {
+    return ujrpc_call_reply_error(call, -32602, "Invalid method param(s).", 24);
+}
 
-void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {}
+void ujrpc_call_send_error_unknown(ujrpc_call_t call) {
+    return ujrpc_call_reply_error(call, -32603, "Unknown error.", 14);
+}
+
+void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
+    return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
+}
