@@ -26,6 +26,7 @@
  *
  * Notable links:
  * https://man7.org/linux/man-pages/dir_by_project.html#liburing
+ * https://jvns.ca/blog/2017/06/03/async-io-on-linux--select--poll--and-epoll/
  * https://stackoverflow.com/a/17665015/2766161
  */
 #include <fcntl.h>      // `fcntl`
@@ -157,6 +158,7 @@ void split_packet_into_calls(engine_t& engine, connection_t& connection) {
         }
 
         scratch.is_batch = true;
+        scratch.is_async = false;
         for (sjd::element const one : many) {
             scratch.tree = one;
             validate_and_forward_call(engine, connection);
@@ -166,6 +168,7 @@ void split_packet_into_calls(engine_t& engine, connection_t& connection) {
             std::free(std::exchange(connection.response.iovecs, embedded_iovecs));
     } else {
         scratch.is_batch = false;
+        scratch.is_async = false;
         scratch.tree = one_or_many.value();
         validate_and_forward_call(engine, connection);
         posix_send_reply(engine, connection);
@@ -197,7 +200,7 @@ void forward_packet_wout_http_headers(engine_t& engine, connection_t& connection
         return split_packet_into_calls(engine, connection);
 }
 
-connection_t* posix_refresh(engine_t& engine) {
+connection_t* posix_poll_new_or_continue_existing(engine_t& engine) {
     // If no pending connections are present on the queue, and the
     // socket is not marked as nonblocking, accept() blocks the caller
     // until a connection is present. If the socket is marked
@@ -224,20 +227,26 @@ connection_t* posix_refresh(engine_t& engine) {
 
 void posix_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    connection_t* connection_ptr = posix_refresh(engine);
+    connection_t* connection_ptr = posix_poll_new_or_continue_existing(engine);
+    if (!connection_ptr)
+        return;
     connection_t& connection = *connection_ptr;
     scratch_space_t& scratch = engine.spaces[thread_idx];
     connection.scratch_space = &scratch;
 
     // Wait until we have input.
-    auto bytes_expected = recv(connection.descriptor, nullptr, 0, MSG_PEEK | MSG_TRUNC | MSG_DONTWAIT);
-    int error = errno;
-    if (error == EAGAIN || error == EWOULDBLOCK) {
-        connection.skipped_cycles++;
+    auto bytes_expected = recv(connection.descriptor, nullptr, 0, MSG_PEEK | MSG_TRUNC | MSG_WAITALL);
+    if (bytes_expected < 0) {
+        int error = errno;
+        if (error == EAGAIN || error == EWOULDBLOCK) {
+            connection.skipped_cycles++;
+        } else {
+            if (&engine.connections.tail() == connection_ptr)
+                close(engine.connections.drop_tail());
+        }
         return;
-    } else if (error != 0) {
-        if (&engine.connections.tail() == connection_ptr)
-            close(engine.connections.drop_tail());
+    } else if (bytes_expected == 0) {
+        connection.skipped_cycles++;
         return;
     }
 

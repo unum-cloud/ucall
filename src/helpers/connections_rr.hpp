@@ -48,11 +48,11 @@ class connections_rr_t {
     }
 
     void push_ahead(descriptor_t new_) noexcept {
-        idx_newest_ = (idx_newest_ + 1) % capacity_;
         circle_[idx_newest_].descriptor = new_;
         circle_[idx_newest_].skipped_cycles = 0;
         circle_[idx_newest_].response.copies_count = 0;
         circle_[idx_newest_].response.iovecs_count = 0;
+        idx_newest_ = (idx_newest_ + 1) % capacity_;
         count_++;
     }
 
@@ -64,7 +64,7 @@ class connections_rr_t {
     }
 
     connection_t& tail() noexcept { return circle_[idx_oldest_]; }
-    connection_t& head() noexcept { return circle_[idx_newest_]; }
+    connection_t& head() noexcept { return circle_[idx_newest_ - 1]; }
     std::size_t size() const noexcept { return count_; }
     std::size_t capacity() const noexcept { return capacity_; }
 };
