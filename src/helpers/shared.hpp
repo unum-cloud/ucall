@@ -29,13 +29,36 @@ static constexpr std::size_t iovecs_for_error_k = 7;
 /// @brief Needed for largest-register-aligned memory addressing.
 static constexpr std::size_t align_k = 64;
 
-template <std::size_t multiple_ak> constexpr std::size_t round_up_to(std::size_t n) {
-    return ((n + multiple_ak - 1) / multiple_ak) * multiple_ak;
-}
+enum descriptor_t : int {};
+static constexpr descriptor_t bad_descriptor_k{-1};
+
+enum class stage_t {
+    pre_accept_k = 0,
+    pre_receive_k,
+    pre_completion_k,
+};
 
 struct named_callback_t {
     ujrpc_str_t name{};
     ujrpc_callback_t callback{};
+};
+
+struct connection_t {
+    /// @brief The file descriptor of the statefull connection over TCP.
+    descriptor_t descriptor{};
+    /// @brief The step of an asynchronous machine.
+    stage_t stage{};
+    /// @brief Determines the probability of reseting the connection, in favor of a new client.
+    std::size_t skipped_cycles{};
+    /// @brief Determines, if the provided content
+    void* scratch_space{};
+
+    struct response_t {
+        struct iovec* iovecs{};
+        char** copies{};
+        std::size_t iovecs_count{};
+        std::size_t copies_count{};
+    } response{};
 };
 
 void fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
@@ -84,5 +107,42 @@ void fill_with_error(struct iovec* buffers, std::string_view request_id, std::st
     buffers[6].iov_base = (char*)protocol_suffix;
     buffers[6].iov_len = 3 + append_comma;
 }
+
+template <std::size_t multiple_ak> constexpr std::size_t round_up_to(std::size_t n) {
+    return ((n + multiple_ak - 1) / multiple_ak) * multiple_ak;
+}
+
+template <typename element_at> struct buffer_gt {
+    element_at* elements_{};
+    bool alloc(std::size_t n) noexcept { return (elements_ = (element_at*)std::malloc(sizeof(element_at) * n)); }
+    ~buffer_gt() noexcept { std::free(elements_); }
+    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+};
+
+template <typename element_at> struct array_gt {
+    element_at* elements_{};
+    std::size_t count_{};
+    std::size_t capacity_{};
+    bool alloc(std::size_t n) noexcept {
+        elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
+        capacity_ = elements_ ? n : 0;
+        return elements_;
+    }
+    ~array_gt() noexcept { std::free(elements_); }
+    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+    void append(element_at element) noexcept { return elements_[count_++] = element; }
+    element_at* data() noexcept { return elements_; }
+    std::size_t size() const noexcept { count_; }
+    std::size_t capacity() const noexcept { capacity_; }
+};
+
+template <typename element_at> struct pool_gt {
+    element_at* elements_{};
+    std::size_t capacity_{};
+
+    bool alloc(std::size_t n) noexcept { return (elements_ = (element_at*)std::malloc(sizeof(element_at) * n)); }
+    ~pool_gt() noexcept { std::free(elements_); }
+    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+};
 
 } // namespace unum::ujrpc

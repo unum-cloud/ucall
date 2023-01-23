@@ -1,4 +1,26 @@
 /**
+ * @brief JSON-RPC implementation for TCP/IP stack. Supports:
+ * > Millions of concurrent statefull connections.
+ * > Hundreds of physical execution threads.
+ * > Both HTTP and HTTP-less raw JSON-RPC calls.
+ *
+ * Currently 2 I/O mechanisms are implemented:
+ * > Synchronous POSIX interface for old Linux, MaxOS and BSD.
+ * > Asynchrnous interrupt-less `io_uring` for modern Linux.
+ * Subsequently, many functions come in both `posix` or `uring` variants.
+ *
+ * "Life of da packet":
+ * - take call
+ * - extract HTTP headers, if present: `forward_packet`
+ * - split single-shot and batch requests: `forward_call_or_calls`
+ * - for singular `posix` requests:
+ * --- find the needed function call: `validate_and_forward_call` <<<<<<<< change to return?
+ * ----- let users to populate the answer via: `ujrpc_call_reply_content`
+ * ----- let users to log an error via: `ujrpc_call_reply_error`
+ * --- synchronously reply: `posix_send_reply`
+ * - for batch or `uring` requests allocate copies of replies to preserve until send
+ * ---
+ *
  * Notable links:
  * https://man7.org/linux/man-pages/dir_by_project.html#liburing
  * https://stackoverflow.com/a/17665015/2766161
@@ -11,106 +33,22 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#if __linux__
 #include <liburing.h>
+#endif
 
 #include <charconv> // `std::to_chars`
 
 #include <simdjson.h>
 
-#include "shared.hpp"
 #include "ujrpc/ujrpc.h"
+
+#include "helpers/connections_rr.hpp"
+#include "helpers/shared.hpp"
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ujrpc;
-
-enum descriptor_t : int {};
-static constexpr descriptor_t bad_descriptor_k{-1};
-
-enum class stage_t {
-    pre_accept_k = 0,
-    pre_receive_k,
-    pre_completion_k,
-};
-
-struct connection_t;
-struct connections_t;
-struct named_callbacks_t;
-struct scratch_space_t;
-struct engine_t;
-
-struct connection_t {
-    descriptor_t descriptor{};
-    /// @brief If connection must use an asynchronous interface like io_uring.
-    bool is_async{};
-    /// @brief The step of an asynchronous machine.
-    stage_t stage{};
-    /// @brief Determines the probability of reseting the connection, in favor of a new client.
-    std::size_t skipped_cycles{};
-
-    struct response_t {
-        struct iovec* iovecs{};
-        char** copies{};
-        std::size_t iovecs_count{};
-        std::size_t copies_count{};
-    } response{};
-};
-
-class connections_t {
-
-    connection_t* circle_{};
-    std::size_t count_{};
-    std::size_t capacity_{};
-    std::size_t idx_newest_{};
-    std::size_t idx_oldest_{};
-    /// @brief Follows the tail (oldest), or races forward
-    /// and cycles around all the active connections, if all
-    /// of them are long-livers,
-    std::size_t idx_to_poll_{};
-
-  public:
-    bool alloc(std::size_t n) noexcept {}
-
-    descriptor_t drop_tail() noexcept {
-        descriptor_t old = std::exchange(circle_[idx_oldest_].descriptor, bad_descriptor_k);
-        idx_to_poll_ = idx_to_poll_ == idx_oldest_ ? (idx_to_poll_ + 1) % capacity_ : idx_to_poll_;
-        idx_oldest_ = (idx_oldest_ + 1) % capacity_;
-        count_--;
-        return old;
-    }
-
-    void push_ahead(descriptor_t new_) noexcept {
-        idx_newest_ = (idx_newest_ + 1) % capacity_;
-        circle_[idx_newest_].descriptor = new_;
-        circle_[idx_newest_].skipped_cycles = 0;
-        circle_[idx_newest_].response.copies_count = 0;
-        circle_[idx_newest_].response.iovecs_count = 0;
-        count_++;
-    }
-
-    connection_t& poll() noexcept {
-        auto connection_ptr = &circle_[idx_to_poll_];
-        auto idx_to_poll_following = (idx_to_poll_ + 1) % count_;
-        idx_to_poll_ = idx_to_poll_following == idx_newest_ ? idx_oldest_ : idx_to_poll_following;
-        return circle_[idx_to_poll_];
-    }
-
-    connection_t& tail() noexcept { return circle_[idx_oldest_]; }
-    connection_t& head() noexcept { return circle_[idx_newest_]; }
-    std::size_t size() const noexcept { return count_; }
-    std::size_t capacity() const noexcept { return capacity_; }
-};
-
-struct named_callbacks_t {
-    named_callback_t* array{};
-    std::size_t count{};
-    std::size_t capacity{};
-
-    ~named_callbacks_t() {
-        if (array)
-            std::free(array);
-    }
-};
 
 struct scratch_space_t {
     alignas(align_k) char embedded_packet[embedded_packet_capacity_k + sj::SIMDJSON_PADDING]{};
@@ -123,25 +61,24 @@ struct scratch_space_t {
 };
 
 struct engine_t {
-    int socket_descriptor{};
+    descriptor_t socket{};
     std::size_t max_batch_size{};
+#if __linux__
     struct io_uring ring {};
+#endif
     /// @brief An array of function callbacks. Can be in dozens.
-    named_callbacks_t callbacks{};
-    /// @brief Same number of them, as max threads. Can be in hundreds.
-    scratch_space_t spaces{};
-    /// @brief A ring of reusable connections. Can be in millions.
-    connections_t connections{};
-
+    array_gt<named_callback_t> callbacks{};
+    /// @brief A circular container of reusable connections. Can be in millions.
+    connections_rr_t connections{};
+    /// @brief Same number of them, as max physical threads. Can be in hundreds.
+    array_gt<scratch_space_t> spaces{};
     /// @brief A shared buffer for the reserved io-vecs of
-    struct iovec* iovecs_tape{};
-    bool iovecs_tape_reserve(std::size_t n) noexcept {
-        return (iovecs_tape = (struct iovec*)std::malloc(sizeof(struct iovec) * n));
-    }
+    buffer_gt<struct iovec> iovecs_tape{};
 };
 
-void forward_call(engine_t& engine, connection_t& connection) {
-    sjd::element const& doc = connection.request.tree;
+void validate_and_forward_call(engine_t& engine, connection_t& connection) {
+    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch_space;
+    sjd::element const& doc = scratch.tree;
     if (!doc.is_object())
         return ujrpc_call_reply_error(&connection, -32600, "The JSON sent is not a valid request object.", 44);
 
@@ -165,12 +102,12 @@ void forward_call(engine_t& engine, connection_t& connection) {
         return ujrpc_call_reply_error(&connection, -32600, "Parameters can only be passed in arrays or objects.", 51);
 
     // TODO: Patch SIMD-JSON to extract the token
-    connection.request.id = "null";
+    scratch.id = "null";
 
     // Make sure we have such a method:
     auto method_name = method.get_string().value_unsafe();
-    auto callbacks_end = engine.callbacks + engine.callbacks_count;
-    auto callback_it = std::find_if(engine.callbacks, callbacks_end,
+    auto callbacks_end = engine.callbacks.data() + engine.callbacks.size();
+    auto callback_it = std::find_if(engine.callbacks.data(), callbacks_end,
                                     [=](named_callback_t const& callback) { return callback.name == method_name; });
     if (callback_it == callbacks_end)
         return ujrpc_call_reply_error(&connection, -32601, "Method not found.", 17);
@@ -178,7 +115,7 @@ void forward_call(engine_t& engine, connection_t& connection) {
     return callback_it->callback(&connection);
 }
 
-void send_reply(engine_t& engine, connection_t& connection) {
+void posix_send_reply(engine_t& engine, connection_t& connection) {
     if (!connection.response.iovecs_count)
         return;
 
@@ -193,6 +130,8 @@ void send_reply(engine_t& engine, connection_t& connection) {
  */
 void forward_call_or_calls(engine_t& engine, connection_t& connection, sjd::parser& parser,
                            std::string_view json_body) {
+
+    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch_space;
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() != sj::SUCCESS)
         return ujrpc_call_reply_error(&connection, -32700, "Invalid JSON was received by the server.", 40);
@@ -209,19 +148,19 @@ void forward_call_or_calls(engine_t& engine, connection_t& connection, sjd::pars
         if (many.size() > embedded_batch_capacity_k) {
         }
 
-        connection.request.is_batch = true;
+        scratch.is_batch = true;
         for (sjd::element const one : many) {
-            connection.request.tree = one;
-            forward_call(engine, connection);
+            scratch.tree = one;
+            validate_and_forward_call(engine, connection);
         }
-        send_reply(engine, connection);
+        posix_send_reply(engine, connection);
         if (embedded_iovecs != connection.response.iovecs)
             std::free(std::exchange(connection.response.iovecs, embedded_iovecs));
     } else {
-        connection.request.is_batch = false;
-        connection.request.tree = one_or_many.value();
-        forward_call(engine, connection);
-        send_reply(engine, connection);
+        scratch.is_batch = false;
+        scratch.tree = one_or_many.value();
+        validate_and_forward_call(engine, connection);
+        posix_send_reply(engine, connection);
     }
 }
 
@@ -246,60 +185,13 @@ void forward_packet(engine_t& engine, connection_t& connection, sjd::parser& par
         return forward_call_or_calls(engine, connection, parser, body);
 }
 
-void uring_take_call(ujrpc_server_t server) {
-    // Unlike the classical synchronous interface, this implements only a part of the state machine,
-    // is responsible for checking if a specific request has been completed. All of the submitted
-    // memory must be preserved until we get the confirmation.
-    engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    struct io_uring_cqe* cqe{};
-    struct io_uring_sqe sqe {};
-    struct sockaddr_in client_addr {};
-    int ret = io_uring_wait_cqe(&engine.ring, &cqe);
-    connection_t& connection = *(connection_t*)cqe->user_data;
-    if (ret < 0)
-        exit(-1);
-    if (cqe->res < 0) {
-        exit(1);
-    }
-
-    switch (connection.stage) {
-    case stage_t::pre_accept_k:
-        // Check if accepting the new connection request worked out.
-        if (ret == -EAGAIN) {
-            // No new connection request are present.
-            // Try serving existing ones.
-        } else {
-            // A new connection request is available.
-            // Drop the older one in favor of this.
-            int old_connection_fd;
-            io_uring_prep_close(&sqe, old_connection_fd);
-        }
-
-        io_uring_prep_recv(&sqe, connection.descriptor, &connection.embedded_packet[0], embedded_packet_capacity_k,
-                           MSG_WAITALL);
-        connection.stage = stage_t::pre_receive_k;
-        break;
-    case stage_t::pre_receive_k:
-        // We were hoping to receive some data from the existing connection.
-        auto length = cqe->flags;
-        if (ret == 0) {
-        }
-
-        break;
-    case stage_t::pre_completion_k:
-        break;
-    }
-
-    io_uring_cqe_seen(&engine.ring, cqe);
-}
-
 connection_t* posix_refresh(engine_t& engine) {
     // If no pending connections are present on the queue, and the
     // socket is not marked as nonblocking, accept() blocks the caller
     // until a connection is present. If the socket is marked
     // nonblocking and no pending connections are present on the queue,
     // accept() fails with the error EAGAIN or EWOULDBLOCK.
-    int connection_fd = accept(engine.socket_descriptor, (struct sockaddr*)NULL, NULL);
+    int connection_fd = accept(engine.socket, (struct sockaddr*)NULL, NULL);
     if (connection_fd > 0) {
         if (engine.connections.size() == engine.connections.capacity())
             close(engine.connections.drop_tail());
@@ -322,6 +214,7 @@ void posix_take_call(ujrpc_server_t server) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     connection_t* connection_ptr = posix_refresh(engine);
     connection_t& connection = *connection_ptr;
+    scratch_space_t& scratch;
 
     // Wait until we have input.
     auto bytes_expected = recv(connection.descriptor, nullptr, 0, MSG_PEEK | MSG_TRUNC | MSG_DONTWAIT);
@@ -330,16 +223,17 @@ void posix_take_call(ujrpc_server_t server) {
         connection.skipped_cycles++;
         return;
     } else if (error != 0) {
-        close(drop_if_tail(engine, connection_ptr));
+        if (&engine.connections.tail() == connection_ptr)
+            close(engine.connections.drop_tail());
         return;
     }
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= embedded_packet_capacity_k) {
-        auto buffer_ptr = &connection.embedded_packet[0];
+        auto buffer_ptr = &scratch.embedded_packet[0];
         auto bytes_received = recv(connection.descriptor, buffer_ptr, embedded_packet_capacity_k, 0);
-        forward_packet(engine, connection, connection.request.parser, std::string_view(buffer_ptr, bytes_received));
+        forward_packet(engine, connection, scratch.parser, std::string_view(buffer_ptr, bytes_received));
     } else {
         sjd::parser parser;
         if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS) {
@@ -413,7 +307,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
 
     // Initialize all the members.
     new (server_ptr) engine_t();
-    server_ptr->socket_descriptor = server_fd;
+    server_ptr->socket = server_fd;
     server_ptr->max_batch_size = batch_capacity;
     server_ptr->callbacks = embedded_callbacks;
     server_ptr->callbacks_capacity = max_callbacks;
@@ -464,9 +358,10 @@ void ujrpc_free(ujrpc_server_t server) {
 
 bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_ptr) {
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
-    std::memcpy(connection.json_pointer, "/params/", 8);
-    std::memcpy(connection.json_pointer + 8, name, std::strlen(name) + 1);
-    auto value = connection.request.tree.at_pointer(connection.json_pointer);
+    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch_space;
+    std::memcpy(scratch.json_pointer, "/params/", 8);
+    std::memcpy(scratch.json_pointer + 8, name, std::strlen(name) + 1);
+    auto value = scratch.tree.at_pointer(scratch.json_pointer);
 
     if (value.is_int64()) {
         *result_ptr = value.get_int64();
@@ -480,14 +375,15 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
     connection_t& connection = *reinterpret_cast<connection_t*>(call);
+    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch_space;
     if (!body_len)
         body_len = std::strlen(body);
 
     // In case of a sinle request - immediately push into the socket.
-    if (!connection.request.is_batch && !connection.is_async) {
+    if (!scratch.is_batch && !connection.is_async) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_content_k] {};
-        fill_with_content(iovecs, connection.request.id, std::string_view(body, body_len));
+        fill_with_content(iovecs, scratch.id, std::string_view(body, body_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_content_k;
         if (sendmsg(connection.descriptor, &message, 0) < 0)
@@ -501,7 +397,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
             return ujrpc_call_send_error_out_of_memory(call);
         std::memcpy(body_copy, body, body_len);
         connection.response.copies[connection.response.copies_count++] = body_copy;
-        fill_with_content(connection.response.iovecs + connection.response.iovecs_count, connection.request.id,
+        fill_with_content(connection.response.iovecs + connection.response.iovecs_count, scratch.id,
                           std::string_view(body, body_len));
         connection.response.iovecs_count += iovecs_for_content_k;
     }
@@ -520,10 +416,10 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         return ujrpc_call_send_error_unknown(call);
 
     // In case of a sinle request - immediately push into the socket.
-    if (!connection.request.is_batch && !connection.is_async) {
+    if (!scratch.is_batch && !connection.is_async) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_error_k] {};
-        fill_with_error(iovecs, connection.request.id,    //
+        fill_with_error(iovecs, scratch.id,               //
                         std::string_view(code, code_len), //
                         std::string_view(note, note_len));
         message.msg_iov = iovecs;
@@ -540,8 +436,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         std::memcpy(code_and_node, code, code_len);
         std::memcpy(code_and_node + code_len, note, note_len);
         connection.response.copies[connection.response.copies_count++] = code_and_node;
-        fill_with_error(connection.response.iovecs + connection.response.iovecs_count, connection.request.id, //
-                        std::string_view(code_and_node, code_len),                                            //
+        fill_with_error(connection.response.iovecs + connection.response.iovecs_count, scratch.id, //
+                        std::string_view(code_and_node, code_len),                                 //
                         std::string_view(code_and_node + code_len, note_len));
         connection.response.iovecs_count += iovecs_for_error_k;
     }
@@ -549,3 +445,53 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
 
 void ujrpc_call_send_error_unknown(ujrpc_call_t) {}
 void ujrpc_call_send_error_out_of_memory(ujrpc_call_t) {}
+
+#if __linux__
+void uring_take_call(ujrpc_server_t server) {
+    // Unlike the classical synchronous interface, this implements only a part of the state machine,
+    // is responsible for checking if a specific request has been completed. All of the submitted
+    // memory must be preserved until we get the confirmation.
+    engine_t& engine = *reinterpret_cast<engine_t*>(server);
+    struct io_uring_cqe* cqe{};
+    struct io_uring_sqe sqe {};
+    struct sockaddr_in client_addr {};
+    int ret = io_uring_wait_cqe(&engine.ring, &cqe);
+    connection_t& connection = *(connection_t*)cqe->user_data;
+    if (ret < 0)
+        exit(-1);
+    if (cqe->res < 0) {
+        exit(1);
+    }
+
+    switch (connection.stage) {
+    case stage_t::pre_accept_k:
+        // Check if accepting the new connection request worked out.
+        if (ret == -EAGAIN) {
+            // No new connection request are present.
+            // Try serving existing ones.
+        } else {
+            // A new connection request is available.
+            // Drop the older one in favor of this.
+            int old_connection_fd;
+            io_uring_prep_close(&sqe, old_connection_fd);
+        }
+
+        io_uring_prep_recv(&sqe, connection.descriptor, &connection.embedded_packet[0], embedded_packet_capacity_k,
+                           MSG_WAITALL);
+        connection.stage = stage_t::pre_receive_k;
+        break;
+    case stage_t::pre_receive_k:
+        // We were hoping to receive some data from the existing connection.
+        auto length = cqe->flags;
+        if (ret == 0) {
+        }
+
+        break;
+    case stage_t::pre_completion_k:
+        break;
+    }
+
+    io_uring_cqe_seen(&engine.ring, cqe);
+}
+
+#endif
