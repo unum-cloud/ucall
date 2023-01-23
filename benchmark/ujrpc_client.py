@@ -65,7 +65,7 @@ def request_sum_tcp_reusing(client):
         'jsonrpc': '2.0',
         'id': 0,
     })
-    client.send(rpc.encode())
+    client.sendall(rpc.encode())
     response_bytes = bytes()
     while not len(response_bytes):
         response_bytes = client.recv(4096)
@@ -84,12 +84,12 @@ def request_sum_tcp_rusing_batch(client):
     b = random.randint(1, 1000)
     rpc = json.dumps([
         { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0' },
+        { 'method': 'sumsum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {}, 'jsonrpc': '2.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '1.0', 'id': 0, },
+        { 'method': 'sum', 'params': {'aa': a, 'bb':b}, 'jsonrpc': 2.0, 'id': 0, },
+        { 'id': 0, },
         { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
     ])
     client.send(rpc.encode())
@@ -97,7 +97,7 @@ def request_sum_tcp_rusing_batch(client):
     while not len(response_bytes):
         response_bytes = client.recv(8192)
     response = json.loads(response_bytes.decode())
-    assert isinstance(response, list) and len(response) == 8
+    assert isinstance(response, list) and len(response) == 7 # The second request is a notification
     assert response[0]['jsonrpc']
     c = int(response[0]['result'])
     c_last = int(response[-1]['result'])
