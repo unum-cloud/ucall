@@ -53,7 +53,8 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
 
     // Check if the shape of the requst is correct:
     sj::simdjson_result<sjd::element> id = doc["id"];
-    bool id_invalid = !id.is_string() && !id.is_int64() && !id.is_uint64();
+    // SIMDJSON will consider a field a `double` even if it is simply convertible to it.
+    bool id_invalid = (id.is_double() && !id.is_int64() && !id.is_uint64()) || id.is_object() || id.is_array();
     if (id_invalid)
         return default_error_t{-32600, "The request must have integer or string id."};
     sj::simdjson_result<sjd::element> method = doc["method"];
@@ -66,7 +67,7 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
         return default_error_t{-32600, "Parameters can only be passed in arrays or objects."};
 
     // TODO: Patch SIMD-JSON to extract the token
-    scratch.id = "null";
+    scratch.id = id.error() == sj::SUCCESS ? "null" : "";
 
     // Make sure we have such a method:
     auto method_name = method.get_string().value_unsafe();
