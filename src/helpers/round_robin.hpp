@@ -1,14 +1,14 @@
 #pragma once
-#include "shared.hpp"
+#include <memory> // `std::malloc`
 
 namespace unum::ujrpc {
 
 /**
  * @brief Round-Robin construct for reusable connection states.
  */
-class connections_rr_t {
+template <typename element_at> class round_robin_gt {
 
-    connection_t* circle_{};
+    element_at* circle_{};
     std::size_t count_{};
     std::size_t capacity_{};
     std::size_t idx_newest_{};
@@ -19,7 +19,7 @@ class connections_rr_t {
     std::size_t idx_to_poll_{};
 
   public:
-    inline connections_rr_t& operator=(connections_rr_t&& other) noexcept {
+    inline round_robin_gt& operator=(round_robin_gt&& other) noexcept {
         std::swap(circle_, other.circle_);
         std::swap(count_, other.count_);
         std::swap(capacity_, other.capacity_);
@@ -31,7 +31,7 @@ class connections_rr_t {
 
     inline bool alloc(std::size_t n) noexcept {
 
-        auto cons = (connection_t*)std::malloc(sizeof(connection_t) * n);
+        auto cons = (element_at*)std::malloc(sizeof(element_at) * n);
         if (!cons)
             return false;
         circle_ = cons;
@@ -56,15 +56,15 @@ class connections_rr_t {
         count_++;
     }
 
-    inline connection_t& poll() noexcept {
+    inline element_at& poll() noexcept {
         auto connection_ptr = &circle_[idx_to_poll_];
         auto idx_to_poll_following = (idx_to_poll_ + 1) % count_;
         idx_to_poll_ = idx_to_poll_following == idx_newest_ ? idx_oldest_ : idx_to_poll_following;
         return circle_[idx_to_poll_];
     }
 
-    inline connection_t& tail() noexcept { return circle_[idx_oldest_]; }
-    inline connection_t& head() noexcept { return circle_[idx_newest_ - 1]; }
+    inline element_at& tail() noexcept { return circle_[idx_oldest_]; }
+    inline element_at& head() noexcept { return circle_[idx_newest_ - 1]; }
     inline std::size_t size() const noexcept { return count_; }
     inline std::size_t capacity() const noexcept { return capacity_; }
 };

@@ -1,6 +1,7 @@
 #pragma once
 #include <sys/uio.h> // `struct iovec`
 
+#include <numeric>     // `std::iota`
 #include <string_view> // `std::string_view`
 
 #include "ujrpc/ujrpc.h" // `ujrpc_callback_t`
@@ -28,33 +29,9 @@ static constexpr std::size_t align_k = 64;
 enum descriptor_t : int {};
 static constexpr descriptor_t bad_descriptor_k{-1};
 
-enum class stage_t {
-    pre_accept_k = 0,
-    pre_receive_k,
-    pre_completion_k,
-};
-
 struct named_callback_t {
     ujrpc_str_t name{};
     ujrpc_callback_t callback{};
-};
-
-struct connection_t {
-    /// @brief The file descriptor of the statefull connection over TCP.
-    descriptor_t descriptor{};
-    /// @brief The step of an asynchronous machine.
-    stage_t stage{};
-    /// @brief Determines the probability of reseting the connection, in favor of a new client.
-    std::size_t skipped_cycles{};
-    /// @brief Pointer to the scratch memory to be used to parse this request.
-    void* scratch{};
-
-    struct response_t {
-        struct iovec* iovecs{};
-        char** copies{};
-        std::size_t iovecs_count{};
-        std::size_t copies_count{};
-    } response{};
 };
 
 template <typename element_at> struct buffer_gt {
@@ -67,7 +44,7 @@ template <typename element_at> struct buffer_gt {
         std::swap(capacity_, other.capacity_);
         return *this;
     }
-    bool alloc(std::size_t n) noexcept {
+    bool reserve(std::size_t n) noexcept {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         if (!elements_)
             return false;
@@ -100,7 +77,7 @@ template <typename element_at> struct array_gt {
         std::swap(capacity_, other.capacity_);
         return *this;
     }
-    bool alloc(std::size_t n) noexcept {
+    bool reserve(std::size_t n) noexcept {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         capacity_ = elements_ ? n : 0;
         return elements_;
@@ -121,17 +98,34 @@ template <typename element_at> struct array_gt {
 };
 
 template <typename element_at> struct pool_gt {
-    element_at* elements_{};
     std::size_t capacity_{};
+    std::size_t free_count_{};
+    element_at* elements_{};
+    std::size_t* free_offsets_{};
 
     pool_gt& operator=(pool_gt&& other) noexcept {
-        std::swap(elements_, other.elements_);
         std::swap(capacity_, other.capacity_);
+        std::swap(free_count_, other.free_count_);
+        std::swap(elements_, other.elements_);
+        std::swap(free_offsets_, other.free_offsets_);
         return *this;
     }
-    bool alloc(std::size_t n) noexcept { return (elements_ = (element_at*)std::malloc(sizeof(element_at) * n)); }
+
+    bool reserve(std::size_t n) noexcept {
+        auto mem = std::malloc((sizeof(element_at) + sizeof(std::size_t)) * n);
+        if (!mem)
+            return false;
+        elements_ = (element_at*)mem;
+        free_offsets_ = (std::size_t*)(elements_ + n);
+        free_count_ = capacity_ = n;
+        std::iota(free_offsets_, free_offsets_ + n, 0ul);
+        return true;
+    }
+
     ~pool_gt() noexcept { std::free(elements_); }
     element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+    element_at* alloc() noexcept { return !free_count_ ? nullptr : elements_ + free_offsets_[free_count_--]; }
+    void release(element_at* released) noexcept { free_offsets_[free_count_++] = released - elements_; }
 };
 
 } // namespace unum::ujrpc

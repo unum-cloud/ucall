@@ -11,9 +11,7 @@ namespace sj = simdjson;
 namespace sjd = sj::dom;
 
 struct scratch_space_t {
-    alignas(align_k) char embedded_packet[embedded_packet_capacity_k + sj::SIMDJSON_PADDING]{};
     char json_pointer[json_pointer_capacity_k]{};
-
     sjd::parser parser{};
     sjd::element tree{};
     std::string_view id{};
