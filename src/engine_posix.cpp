@@ -24,49 +24,57 @@ using namespace unum::ujrpc;
 struct engine_t {
     descriptor_t socket{};
     std::size_t max_batch_size{};
-    connection_t connection{};
+
+    /// @brief The file descriptor of the statefull connection over TCP.
+    descriptor_t connection{};
+    /// @brief A small memory buffer to store small requests.
+    alignas(align_k) char packet_buffer[embedded_packet_capacity_k + sj::SIMDJSON_PADDING]{};
     /// @brief An array of function callbacks. Can be in dozens.
     array_gt<named_callback_t> callbacks{};
     /// @brief Statically allocated memory to process small requests.
     scratch_space_t scratch{};
     /// @brief For batch-requests in synchronous connections we need a place to
-    buffer_gt<struct iovec> batch_response_iovecs{};
-    buffer_gt<char*> batch_response_copies{};
+    struct batch_response_t {
+        buffer_gt<struct iovec> iovecs{};
+        buffer_gt<char*> copies{};
+        std::size_t iovecs_count{};
+        std::size_t copies_count{};
+    } batch_response{};
 };
 
-void send_reply(engine_t& engine, connection_t& connection) {
-    if (!connection.response.iovecs_count)
+void send_reply(engine_t& engine) {
+    if (!engine.batch_response.iovecs_count)
         return;
 
     struct msghdr message {};
-    message.msg_iov = connection.response.iovecs;
-    message.msg_iovlen = connection.response.iovecs_count;
-    sendmsg(connection.descriptor, &message, 0);
+    message.msg_iov = engine.batch_response.iovecs.data();
+    message.msg_iovlen = engine.batch_response.iovecs_count;
+    sendmsg(engine.connection, &message, 0);
 }
 
-void forward_call(engine_t& engine, connection_t& connection) {
+void forward_call(engine_t& engine) {
     scratch_space_t& scratch = engine.scratch;
     auto callback_or_error = find_callback(engine.callbacks, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
-        return ujrpc_call_reply_error(&connection, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     auto callback = std::get<ujrpc_callback_t>(callback_or_error);
-    return callback(&connection);
+    return callback(&engine);
 }
 
 /**
  * @brief Analyzes the contents of the packet, bifurcating batched and singular JSON-RPC requests.
  */
-void forward_call_or_calls(engine_t& engine, connection_t& connection) {
+void forward_call_or_calls(engine_t& engine) {
     scratch_space_t& scratch = engine.scratch;
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() != sj::SUCCESS)
-        return ujrpc_call_reply_error(&connection, -32700, "Invalid JSON was received by the server.", 40);
+        return ujrpc_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
 
-    connection.response.iovecs_count = 0;
-    connection.response.copies_count = 0;
+    engine.batch_response.iovecs_count = 0;
+    engine.batch_response.copies_count = 0;
     // The major difference between batch and single-request paths is that
     // in the first case we need to keep a copy of the data somewhere,
     // until answers to all requests are accumulated and we can submit them
@@ -77,56 +85,54 @@ void forward_call_or_calls(engine_t& engine, connection_t& connection) {
         sjd::array many = one_or_many.get_array();
         scratch.is_batch = true;
         if (many.size() > engine.max_batch_size)
-            return ujrpc_call_reply_error(&connection, -32603, "Too many requests in the batch.", 31);
+            return ujrpc_call_reply_error(&engine, -32603, "Too many requests in the batch.", 31);
 
         // Start a JSON array.
-        connection.response.iovecs[0].iov_base = (void*)"[";
-        connection.response.iovecs[0].iov_len = 1;
-        connection.response.iovecs_count++;
+        engine.batch_response.iovecs[0].iov_base = (void*)"[";
+        engine.batch_response.iovecs[0].iov_len = 1;
+        engine.batch_response.iovecs_count++;
 
         for (sjd::element const one : many) {
             scratch.tree = one;
-            forward_call(engine, connection);
+            forward_call(engine);
         }
 
         // Drop the last comma. Yeah, it's ugly.
-        auto last_bucket = (char*)connection.response.iovecs[connection.response.iovecs_count - 1].iov_base;
-        if (last_bucket[connection.response.iovecs[connection.response.iovecs_count - 1].iov_len - 1] == ',')
-            connection.response.iovecs[connection.response.iovecs_count - 1].iov_len--;
+        auto last_bucket = (char*)engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_base;
+        if (last_bucket[engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_len - 1] == ',')
+            engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_len--;
 
         // Close the last bracket of the JSON array.
-        connection.response.iovecs[connection.response.iovecs_count].iov_base = (void*)"]";
-        connection.response.iovecs[connection.response.iovecs_count].iov_len = 1;
-        connection.response.iovecs_count++;
+        engine.batch_response.iovecs[engine.batch_response.iovecs_count].iov_base = (void*)"]";
+        engine.batch_response.iovecs[engine.batch_response.iovecs_count].iov_len = 1;
+        engine.batch_response.iovecs_count++;
 
-        send_reply(engine, connection);
+        send_reply(engine);
 
         // Deallocate copies of received responses:
-        for (std::size_t response_idx = 0; response_idx != connection.response.copies_count; ++response_idx)
-            std::free(connection.response.copies[response_idx]);
+        for (std::size_t response_idx = 0; response_idx != engine.batch_response.copies_count; ++response_idx)
+            std::free(engine.batch_response.copies[response_idx]);
     } else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value();
-        forward_call(engine, connection);
-        send_reply(engine, connection);
+        forward_call(engine);
+        send_reply(engine);
     }
 }
 
-void forward_packet(engine_t& engine, connection_t& connection) {
+void forward_packet(engine_t& engine) {
     scratch_space_t& scratch = engine.scratch;
     auto json_or_error = strip_http_headers(scratch.dynamic_packet);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ujrpc_call_reply_error(&connection, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     scratch.dynamic_packet = std::get<std::string_view>(json_or_error);
-    return forward_call_or_calls(engine, connection);
+    return forward_call_or_calls(engine);
 }
 
 void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    connection_t& connection = engine.connection;
     scratch_space_t& scratch = engine.scratch;
-    connection.scratch = &scratch;
     // If no pending connections are present on the queue, and the
     // socket is not marked as nonblocking, accept() blocks the caller
     // until a connection is present. If the socket is marked
@@ -140,41 +146,41 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     }
 
     // Wait until we have input.
-    connection.descriptor = descriptor_t{connection_fd};
-    auto buffer_ptr = &scratch.embedded_packet[0];
-    auto bytes_expected = recv(connection.descriptor, buffer_ptr, embedded_packet_capacity_k, MSG_PEEK | MSG_TRUNC);
+    engine.connection = descriptor_t{connection_fd};
+    auto buffer_ptr = &engine.packet_buffer[0];
+    auto bytes_expected = recv(engine.connection, buffer_ptr, embedded_packet_capacity_k, MSG_PEEK | MSG_TRUNC);
     if (bytes_expected <= 0) {
-        close(connection.descriptor);
+        close(engine.connection);
         return;
     }
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= embedded_packet_capacity_k) {
-        auto bytes_received = recv(connection.descriptor, buffer_ptr, embedded_packet_capacity_k, 0);
+        auto bytes_received = recv(engine.connection, buffer_ptr, embedded_packet_capacity_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
-        forward_packet(engine, connection);
+        forward_packet(engine);
     } else {
         sjd::parser parser;
         if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS) {
-            ujrpc_call_send_error_out_of_memory(&connection);
+            ujrpc_call_send_error_out_of_memory(&engine);
             return;
         }
         buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
         if (!buffer_ptr) {
-            ujrpc_call_send_error_out_of_memory(&connection);
+            ujrpc_call_send_error_out_of_memory(&engine);
             return;
         }
 
-        auto bytes_received = recv(connection.descriptor, buffer_ptr, bytes_expected, 0);
+        auto bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
-        forward_packet(engine, connection);
+        forward_packet(engine);
         std::free(buffer_ptr);
     }
 
-    close(connection.descriptor);
+    close(engine.connection);
 }
 
 void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
@@ -210,11 +216,11 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     // In the worst case we may have `batch_capacity` requests, where each will
     // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
     // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.alloc(batch_capacity * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
+    if (!embedded_iovecs.reserve(batch_capacity * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
         goto cleanup;
-    if (!embedded_copies.alloc(batch_capacity))
+    if (!embedded_copies.reserve(batch_capacity))
         goto cleanup;
-    if (!embedded_callbacks.alloc(callbacks_capacity))
+    if (!embedded_callbacks.reserve(callbacks_capacity))
         goto cleanup;
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0)
@@ -232,13 +238,10 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{server_fd};
     server_ptr->max_batch_size = batch_capacity;
-
     server_ptr->callbacks = std::move(embedded_callbacks);
     server_ptr->scratch.parser = std::move(parser);
-    server_ptr->batch_response_copies = std::move(embedded_copies);
-    server_ptr->batch_response_iovecs = std::move(embedded_iovecs);
-    server_ptr->connection.response.copies = server_ptr->batch_response_copies.data();
-    server_ptr->connection.response.iovecs = server_ptr->batch_response_iovecs.data();
+    server_ptr->batch_response.copies = std::move(embedded_copies);
+    server_ptr->batch_response.iovecs = std::move(embedded_iovecs);
     *server = (ujrpc_server_t)server_ptr;
     return;
 
@@ -272,8 +275,8 @@ void ujrpc_free(ujrpc_server_t server) {
 }
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
-    connection_t& connection = *reinterpret_cast<connection_t*>(call);
-    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch;
+    engine_t& engine = *reinterpret_cast<engine_t*>(call);
+    scratch_space_t& scratch = engine.scratch;
     if (scratch.id.empty())
         // No response is needed for "id"-less notifications.
         return;
@@ -287,7 +290,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
         fill_with_content(iovecs, scratch.id, std::string_view(body, body_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_content_k;
-        if (sendmsg(connection.descriptor, &message, 0) < 0)
+        if (sendmsg(engine.connection, &message, 0) < 0)
             return ujrpc_call_send_error_unknown(call);
     }
 
@@ -297,16 +300,16 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
         if (!body_copy)
             return ujrpc_call_send_error_out_of_memory(call);
         std::memcpy(body_copy, body, body_len);
-        connection.response.copies[connection.response.copies_count++] = body_copy;
-        fill_with_content(connection.response.iovecs + connection.response.iovecs_count, scratch.id,
+        engine.batch_response.copies[engine.batch_response.copies_count++] = body_copy;
+        fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.id,
                           std::string_view(body, body_len), true);
-        connection.response.iovecs_count += iovecs_for_content_k;
+        engine.batch_response.iovecs_count += iovecs_for_content_k;
     }
 }
 
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
-    connection_t& connection = *reinterpret_cast<connection_t*>(call);
-    scratch_space_t& scratch = *(scratch_space_t*)connection.scratch;
+    engine_t& engine = *reinterpret_cast<engine_t*>(call);
+    scratch_space_t& scratch = engine.scratch;
     if (scratch.id.empty())
         // No response is needed for "id"-less notifications.
         return;
@@ -328,7 +331,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
                         std::string_view(note, note_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_error_k;
-        if (sendmsg(connection.descriptor, &message, 0) < 0)
+        if (sendmsg(engine.connection, &message, 0) < 0)
             return ujrpc_call_send_error_unknown(call);
     }
 
@@ -339,11 +342,11 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
             return ujrpc_call_send_error_out_of_memory(call);
         std::memcpy(code_and_node, code, code_len);
         std::memcpy(code_and_node + code_len, note, note_len);
-        connection.response.copies[connection.response.copies_count++] = code_and_node;
-        fill_with_error(connection.response.iovecs + connection.response.iovecs_count, scratch.id, //
-                        std::string_view(code_and_node, code_len),                                 //
+        engine.batch_response.copies[engine.batch_response.copies_count++] = code_and_node;
+        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.id, //
+                        std::string_view(code_and_node, code_len),                                            //
                         std::string_view(code_and_node + code_len, note_len), true);
-        connection.response.iovecs_count += iovecs_for_error_k;
+        engine.batch_response.iovecs_count += iovecs_for_error_k;
     }
 }
 
@@ -357,4 +360,21 @@ void ujrpc_call_send_error_unknown(ujrpc_call_t call) {
 
 void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
+}
+
+bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_ptr) {
+    engine_t& engine = *reinterpret_cast<engine_t*>(call);
+    scratch_space_t& scratch = engine.scratch;
+    std::memcpy(scratch.json_pointer, "/params/", 8);
+    std::memcpy(scratch.json_pointer + 8, name, std::strlen(name) + 1);
+    auto value = scratch.tree.at_pointer(scratch.json_pointer);
+
+    if (value.is_int64()) {
+        *result_ptr = value.get_int64();
+        return true;
+    } else if (value.is_uint64()) {
+        *result_ptr = static_cast<int64_t>(value.get_uint64());
+        return true;
+    } else
+        return false;
 }
