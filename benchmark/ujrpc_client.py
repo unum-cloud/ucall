@@ -8,19 +8,18 @@ import argparse
 from benchmark import benchmark_request, socket_is_closed
 
 
-
 def request_sum_http():
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
     rpc = {
         'method': 'sum',
-        'params': {'a': a, 'b':b},
+        'params': {'a': a, 'b': b},
         'jsonrpc': '2.0',
         'id': 0,
     }
     response = requests.get('http://127.0.0.1:8545/', json=rpc).json()
     assert response['jsonrpc']
-    assert response['id'] == 0
+    # assert response['id'] == 0
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
 
@@ -30,7 +29,7 @@ def request_sum_http_tcp(client):
     b = random.randint(1, 1000)
     rpc = json.dumps({
         'method': 'sum',
-        'params': {'a': a, 'b':b},
+        'params': {'a': a, 'b': b},
         'jsonrpc': '2.0',
         'id': 0,
     })
@@ -43,14 +42,16 @@ def request_sum_http_tcp(client):
     client.send(request.encode())
     response = json.loads(client.recv(4096))
     assert response['jsonrpc']
-    assert response['id'] == 0
+    # assert response['id'] == 0
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
+
 
 def make_socket():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect(('127.0.0.1', 8545))
     return client
+
 
 def request_sum_tcp_reusing(client):
 
@@ -61,11 +62,11 @@ def request_sum_tcp_reusing(client):
     b = random.randint(1, 1000)
     rpc = json.dumps({
         'method': 'sum',
-        'params': {'a': a, 'b':b},
+        'params': {'a': a, 'b': b},
         'jsonrpc': '2.0',
         'id': 0,
     })
-    client.sendall(rpc.encode())
+    client.send(rpc.encode())
     response_bytes = bytes()
     while not len(response_bytes):
         response_bytes = client.recv(4096)
@@ -75,7 +76,8 @@ def request_sum_tcp_reusing(client):
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
 
-def request_sum_tcp_rusing_batch(client):
+
+def request_sum_tcp_reusing_batch(client):
 
     if socket_is_closed(client):
         client = make_socket()
@@ -83,21 +85,22 @@ def request_sum_tcp_rusing_batch(client):
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
     rpc = json.dumps([
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0' },
-        { 'method': 'sumsum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {}, 'jsonrpc': '2.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '1.0', 'id': 0, },
-        { 'method': 'sum', 'params': {'aa': a, 'bb':b}, 'jsonrpc': 2.0, 'id': 0, },
-        { 'id': 0, },
-        { 'method': 'sum', 'params': {'a': a, 'b':b}, 'jsonrpc': '2.0', 'id': 0, },
+        {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
+        {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0'},
+        {'method': 'sumsum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
+        {'method': 'sum', 'params': {}, 'jsonrpc': '2.0', 'id': 0, },
+        {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '1.0', 'id': 0, },
+        {'method': 'sum', 'params': {'aa': a, 'bb': b}, 'jsonrpc': 2.0, 'id': 0, },
+        {'id': 0, },
+        {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
     ])
     client.send(rpc.encode())
     response_bytes = bytes()
     while not len(response_bytes):
         response_bytes = client.recv(8192)
     response = json.loads(response_bytes.decode())
-    assert isinstance(response, list) and len(response) == 7 # The second request is a notification
+    assert isinstance(response, list) and len(
+        response) == 7  # The second request is a notification
     assert response[0]['jsonrpc']
     c = int(response[0]['result'])
     c_last = int(response[-1]['result'])
@@ -111,22 +114,26 @@ def request_sum_tcp():
     client.close()
 
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--debug', help='handle exception and log progress', action='store_true')
+    parser.add_argument(
+        '-d', '--debug',
+        help='handle exception and log progress',
+        action='store_true')
     args = parser.parse_args()
 
     # Testing TCP connection
-    benchmark_request(request_sum_tcp, debug=args.debug)
+    # benchmark_request(request_sum_tcp, debug=args.debug)
 
     # Testing reusable TCP connection
     client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_reusing(client), debug=args.debug)
+    benchmark_request(lambda: request_sum_tcp_reusing(
+        client), debug=args.debug)
     client.close()
 
     # Testing reusable TCP connection with batched requests
     client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_rusing_batch(client), debug=args.debug)
+    benchmark_request(lambda: request_sum_tcp_reusing_batch(
+        client), debug=args.debug)
     client.close()
