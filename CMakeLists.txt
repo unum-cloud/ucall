@@ -10,10 +10,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 include(FetchContent)
+
 FetchContent_Declare(
     simdjson
-    GIT_REPOSITORY https://github.com/simdjson/simdjson
-    GIT_TAG v3.0.0
+    GIT_REPOSITORY https://github.com/ashvardanian/simdjson
+    GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(simdjson)
 include_directories(${simdjson_SOURCE_DIR}/include)
@@ -37,14 +38,14 @@ find_package(Threads REQUIRED)
 
 include_directories(include/ src/)
 
-add_library(ujrpc_server src/engine_uring.cpp)
-target_link_libraries(ujrpc_server simdjson::simdjson Threads::Threads uring)
+add_library(ujrpc_server_uring src/engine_uring.cpp)
+target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring)
 
-add_library(ujrpc_server_sync src/engine_posix.cpp)
-target_link_libraries(ujrpc_server_sync simdjson::simdjson Threads::Threads)
+add_library(ujrpc_server_posix src/engine_posix.cpp)
+target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads)
 
 add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
-target_link_libraries(ujrpc_server_bench ujrpc_server)
+target_link_libraries(ujrpc_server_bench ujrpc_server_uring)
 
 add_executable(ujrpc_client_bench benchmark/ujrpc_client.cpp)
 target_link_libraries(ujrpc_client_bench benchmark::benchmark)
