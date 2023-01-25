@@ -83,11 +83,12 @@ void forward_call_or_calls(engine_t& engine) {
     // but it is less effictive than assembling a copy here.
     if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array();
-        scratch.is_batch = true;
+        scratch.is_batch = false;
         if (many.size() > engine.max_batch_size)
             return ujrpc_call_reply_error(&engine, -32603, "Too many requests in the batch.", 31);
 
         // Start a JSON array.
+        scratch.is_batch = true;
         engine.batch_response.iovecs[0].iov_base = (void*)"[";
         engine.batch_response.iovecs[0].iov_len = 1;
         engine.batch_response.iovecs_count++;
