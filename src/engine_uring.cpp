@@ -31,6 +31,7 @@
 #include <liburing.h>
 
 #include <charconv> // `std::to_chars`
+#include <mutex>    // `std::mutex`
 
 #include <simdjson.h>
 
@@ -390,8 +391,7 @@ void call_automata_t::raise_call_or_calls() noexcept {
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
     parser.set_max_capacity(json_body.size());
-    sjd::document doc;
-    auto one_or_many = parser.parse_into_document(doc, json_body.data(), json_body.size(), false);
+    auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() == sj::CAPACITY)
         return ujrpc_call_send_error_out_of_memory(this);
     if (one_or_many.error() != sj::SUCCESS)
@@ -458,16 +458,20 @@ bool call_automata_t::received_full_request() const noexcept {
 }
 
 bool call_automata_t::pop_entry_from_uring_completion_queue() noexcept {
+    engine.completion_mutex.lock();
     // timeout.tv_nsec = 5000;
     // uring_response = io_uring_wait_cqe_timeout(&engine.ring, &cqe, &timeout);
     uring_response = io_uring_wait_cqe(&engine.ring, &cqe);
-    if (uring_response < 0 || !cqe)
+    if (uring_response < 0 || !cqe) {
         // Error codes:
         // -62: Timer expired.
+        engine.completion_mutex.unlock();
         return false;
+    }
 
     std::memcpy(&cqe_copy, cqe, sizeof(cqe_copy));
     io_uring_cqe_seen(&engine.ring, cqe);
+    engine.completion_mutex.unlock();
     return true;
 }
 
@@ -481,11 +485,13 @@ bool call_automata_t::consider_accepting_new_connection() noexcept {
         exit(1);
 
     connection_t& connection = *con_ptr;
+    connection.stage = stage_t::waiting_to_accept_k;
+    engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_accept(sqe, engine.socket, &connection.client_addr, &connection.client_addr_len, 0);
-    connection.stage = stage_t::waiting_to_accept_k;
     io_uring_sqe_set_data(sqe, con_ptr);
     uring_response = io_uring_submit(&engine.ring);
+    engine.submission_mutex.unlock();
     if (uring_response != 1) {
         engine.connections.release(con_ptr);
         engine.reserved_connections--;
@@ -525,30 +531,36 @@ void call_automata_t::close_gracefully() noexcept {
     auto& connection = connection_ref();
     connection.output.reset();
     connection.stage = stage_t::waiting_to_close_k;
+    engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
+    engine.submission_mutex.unlock();
 }
 
 void call_automata_t::send_next() noexcept {
     auto& connection = connection_ref();
     auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
+    engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
+    engine.submission_mutex.unlock();
 }
 
 void call_automata_t::receive_next() noexcept {
     auto& connection = connection_ref();
     auto next = connection.next_input_chunk();
     connection.stage = stage_t::receiving_in_progress_k;
+    engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_recv(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
+    engine.submission_mutex.unlock();
 
     // TODO: Add timeout:
 }
