@@ -2,7 +2,6 @@ import requests
 import random
 import socket
 import json
-import io
 import argparse
 
 from benchmark import benchmark_request, socket_is_closed
@@ -119,14 +118,17 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Testing TCP connection
-    benchmark_request(request_sum_tcp, debug=args.debug)
+    print('TCP')
+    benchmark_request(request_sum_tcp, process_cnt=4, debug=args.debug)
 
     # Testing reusable TCP connection
+    print('TCP Reusing')
     client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_reusing(client), debug=args.debug)
+    benchmark_request(lambda: request_sum_tcp_reusing(client), process_cnt=4, debug=args.debug)
     client.close()
 
     # Testing reusable TCP connection with batched requests
+    print('TCP Reusing Batch')
     client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_rusing_batch(client), debug=args.debug)
+    benchmark_request(lambda: request_sum_tcp_rusing_batch(client), process_cnt=4, debug=args.debug)
     client.close()
