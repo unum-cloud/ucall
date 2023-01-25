@@ -28,7 +28,7 @@ struct engine_t {
     /// @brief The file descriptor of the statefull connection over TCP.
     descriptor_t connection{};
     /// @brief A small memory buffer to store small requests.
-    alignas(align_k) char packet_buffer[embedded_packet_capacity_k + sj::SIMDJSON_PADDING]{};
+    alignas(align_k) char packet_buffer[max_packet_size_k + sj::SIMDJSON_PADDING]{};
     /// @brief An array of function callbacks. Can be in dozens.
     array_gt<named_callback_t> callbacks{};
     /// @brief Statically allocated memory to process small requests.
@@ -149,7 +149,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
     auto buffer_ptr = &engine.packet_buffer[0];
-    auto bytes_expected = recv(engine.connection, buffer_ptr, embedded_packet_capacity_k, MSG_PEEK | MSG_TRUNC);
+    auto bytes_expected = recv(engine.connection, buffer_ptr, max_packet_size_k, MSG_PEEK | MSG_TRUNC);
     if (bytes_expected <= 0) {
         close(engine.connection);
         return;
@@ -157,8 +157,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
-    if (bytes_expected <= embedded_packet_capacity_k) {
-        auto bytes_received = recv(engine.connection, buffer_ptr, embedded_packet_capacity_k, 0);
+    if (bytes_expected <= max_packet_size_k) {
+        auto bytes_received = recv(engine.connection, buffer_ptr, max_packet_size_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         forward_packet(engine);
@@ -232,7 +232,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
         goto cleanup;
     if (listen(server_fd, queue_depth) < 0)
         goto cleanup;
-    if (parser.allocate(embedded_packet_capacity_k, embedded_packet_capacity_k / 2) != sj::SUCCESS)
+    if (parser.allocate(max_packet_size_k, max_packet_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
     // Initialize all the members.

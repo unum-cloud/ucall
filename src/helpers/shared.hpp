@@ -4,27 +4,29 @@
 #include <numeric>     // `std::iota`
 #include <string_view> // `std::string_view`
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+
 #include "ujrpc/ujrpc.h" // `ujrpc_callback_t`
 
 namespace unum::ujrpc {
 
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
-static constexpr std::size_t embedded_packet_capacity_k = 4096;
+static constexpr std::size_t max_packet_size_k = 4096;
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.
 /// Some may go as far as 5 token, or roughly 50 character.
 static constexpr std::size_t json_pointer_capacity_k = 256;
-/// @brief Assuming we have a static 4KB `embedded_packet_capacity_k`
-/// for our messages, we may receive an entirely invalid request like:
-///     [0,0,0,0,...]
-/// It will be recognized as a batch request with up to 2048 unique
-/// requests, and each will be replied with an error message.
-static constexpr std::size_t embedded_batch_capacity_k = 2048;
-
 /// @brief Needed for largest-register-aligned memory addressing.
 static constexpr std::size_t align_k = 64;
+/// @brief Accessing real time from user-space is very expensive.
+/// To approximate we can use CPU cycle counters.
+constexpr std::size_t cpu_cycles_per_micro_second_k = 3'000;
 
 enum descriptor_t : int {};
 static constexpr descriptor_t bad_descriptor_k{-1};
@@ -155,5 +157,24 @@ template <typename element_at> class pool_gt {
     element_at* alloc() noexcept { return free_count_ ? elements_ + free_offsets_[--free_count_] : nullptr; }
     void release(element_at* released) noexcept { free_offsets_[free_count_++] = released - elements_; }
 };
+
+using timestamp_t = std::uint64_t;
+
+inline timestamp_t cpu_cycle() noexcept {
+    timestamp_t result;
+#ifdef __aarch64__
+    /*
+     * According to ARM DDI 0487F.c, from Armv8.0 to Armv8.5 inclusive, the
+     * system counter is at least 56 bits wide; from Armv8.6, the counter
+     * must be 64 bits wide.  So the system counter could be less than 64
+     * bits wide and it is attributed with the flag 'cap_user_time_short'
+     * is true.
+     */
+    asm volatile("mrs %0, cntvct_el0" : "=r"(result));
+#else
+    result = __rdtsc();
+#endif
+    return result;
+}
 
 } // namespace unum::ujrpc
