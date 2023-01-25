@@ -2,9 +2,11 @@ import socket
 import errno
 import time
 from multiprocessing import Process, Value
+
 from tqdm import tqdm
 
-def _do_benchmark(callable, count_cycles:int, debug:bool = False):
+
+def _do_benchmark(callable, count_cycles: int, debug: bool = False):
     transmits = 0
     failures = 0
     if debug:
@@ -23,7 +25,8 @@ def _do_benchmark(callable, count_cycles:int, debug:bool = False):
 
 def _finalize_benchmark(transmits, failures, duration, threads=1):
     failures_p = failures * 100.0 / (transmits + failures)
-    latency = ((duration * 1_000_000 / (transmits/ threads)) if transmits else float('inf'))
+    latency = ((duration * 1_000_000 / (transmits / threads))
+               if transmits else float('inf'))
     speed = transmits / duration
 
     print(f'- Took {duration:.1f} seconds')
@@ -33,13 +36,14 @@ def _finalize_benchmark(transmits, failures, duration, threads=1):
     print(f'- Mean speed is {speed:.1f} requests/s')
 
 
-def benchmark_request_single(callable, count_cycles:int=100_000, debug:bool = False):
+def benchmark_request_single(callable, count_cycles: int = 100_000, debug: bool = False):
     start_time = time.time()
     transmits, failures = _do_benchmark(callable, count_cycles, debug)
     duration = time.time() - start_time
     _finalize_benchmark(transmits, failures, duration)
 
-def benchmark_request(callable, process_cnt=1, count_cycles:int=100_000, debug:bool = False):
+
+def benchmark_request(callable, process_cnt: int = 1, count_cycles: int = 100_000, debug: bool = False):
     transmits = Value('i', 0)
     failures = Value('i', 0)
 
@@ -60,10 +64,10 @@ def benchmark_request(callable, process_cnt=1, count_cycles:int=100_000, debug:b
     _finalize_benchmark(transmits.value, failures.value, duration, process_cnt)
 
 
-async def benchmark_request_async(callable, *args, count_cycles=10_000):
+async def benchmark_request_async(callable, *args, count_cycles: int = 10_000):
     failures = 0
     transmits = 0
-    
+
     start_time = time.time()
     for _ in range(count_cycles):
         try:
@@ -72,7 +76,7 @@ async def benchmark_request_async(callable, *args, count_cycles=10_000):
         except Exception as e:
             failures += 1
     duration = time.time() - start_time
-    
+
     _finalize_benchmark(transmits, failures, duration)
 
 
