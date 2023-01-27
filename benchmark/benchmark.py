@@ -44,6 +44,10 @@ def benchmark_request_single(callable, count_cycles: int = 100_000, debug: bool 
 
 
 def benchmark_request(callable, process_cnt: int = 1, count_cycles: int = 100_000, debug: bool = False):
+
+    if process_cnt == 1:
+        return benchmark_request_single(callable=callable, count_cycles=count_cycles, debug=debug)
+
     transmits = Value('i', 0)
     failures = Value('i', 0)
 

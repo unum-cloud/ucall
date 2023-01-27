@@ -122,20 +122,22 @@ if __name__ == '__main__':
         action='store_true')
     args = parser.parse_args()
 
-    # Testing TCP connection
-    print('TCP')
-    benchmark_request(request_sum_tcp, process_cnt=4, debug=args.debug)
+    for p in [1, 4]:
 
-    # Testing reusable TCP connection
-    print('TCP Reusing')
-    client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_reusing(
-        client), process_cnt=4, debug=args.debug)
-    client.close()
+        # Testing TCP connection
+        print('TCP')
+        benchmark_request(request_sum_tcp, process_cnt=p, debug=args.debug)
 
-    # Testing reusable TCP connection with batched requests
-    print('TCP Reusing Batch')
-    client = make_socket()
-    benchmark_request(lambda: request_sum_tcp_reusing_batch(
-        client), process_cnt=4, debug=args.debug)
-    client.close()
+        # Testing reusable TCP connection
+        print('TCP Reusing')
+        client = make_socket()
+        benchmark_request(lambda: request_sum_tcp_reusing(
+            client), process_cnt=p, debug=args.debug)
+        client.close()
+
+        # Testing reusable TCP connection with batched requests
+        print('TCP Reusing Batch')
+        client = make_socket()
+        benchmark_request(lambda: request_sum_tcp_reusing_batch(
+            client), process_cnt=p, debug=args.debug)
+        client.close()
