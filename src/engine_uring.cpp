@@ -15,7 +15,8 @@
  * Suggested compilation flags:
  * -fno-exceptions
  *
- * Notable links:
+ * @author Ashot Vardanian
+ * @see Notable links:
  * https://man7.org/linux/man-pages/dir_by_project.html#liburing
  * https://jvns.ca/blog/2017/06/03/async-io-on-linux--select--poll--and-epoll/
  * https://stackoverflow.com/a/17665015/2766161
@@ -32,6 +33,7 @@
 
 #include <charconv> // `std::to_chars`
 #include <mutex>    // `std::mutex`
+#include <optional> // `std::optional`
 
 #include <simdjson.h>
 
@@ -49,6 +51,7 @@ using namespace unum::ujrpc;
 
 enum class stage_t {
     waiting_to_accept_k = 0,
+    expecting_to_receive_k,
     receiving_in_progress_k,
     responding_in_progress_k,
     waiting_to_close_k,
@@ -84,15 +87,28 @@ struct connection_t {
 
     /// @brief The file descriptor of the statefull connection over TCP.
     descriptor_t descriptor{};
+    /// @brief Current state at which the automata has arrived.
     stage_t stage{};
+
     struct sockaddr client_addr {};
     socklen_t client_addr_len{sizeof(client_addr)};
-    timestamp_t deadline{};
 
     std::size_t input_absorbed{};
     std::size_t output_submitted{};
 
-    inline bool expired() const noexcept { return cpu_cycle() > deadline; }
+    /// @brief Accumulated duration of sleep cycles.
+    std::size_t nanoseconds_slept{};
+
+    /// @brief Relative time set for the last wake-up call.
+    std::optional<struct __kernel_timespec> next_wakeup{};
+    /// @brief Absolute time extracted from HTTP headers, for the requested lifetime of this channel.
+    std::optional<struct __kernel_timespec> keep_alive{};
+    /// @brief Expected reception length extracted from HTTP headers.
+    std::optional<std::size_t> content_length{};
+    /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
+    std::optional<std::string_view> content_type{};
+
+    inline bool expired() const noexcept { return false; /* cpu_cycle() > deadline; */ }
     inline bool submitted_all() const noexcept { return output_submitted >= output.size(); }
     inline std::string_view next_input_chunk() const noexcept {
         return {input.data() + input_absorbed, input.capacity() - input_absorbed};
@@ -111,6 +127,7 @@ struct engine_t {
 
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};
+    std::atomic<std::size_t> dismissed_connections{};
     uint32_t lifetime_microsec_limit{};
 
     std::mutex submission_mutex{};
@@ -481,8 +498,10 @@ bool call_automata_t::consider_accepting_new_connection() noexcept {
         return false;
 
     connection_t* con_ptr = engine.connections.alloc();
-    if (!con_ptr)
-        exit(1);
+    if (!con_ptr) {
+        engine.dismissed_connections++;
+        return false;
+    }
 
     connection_t& connection = *con_ptr;
     connection.stage = stage_t::waiting_to_accept_k;
@@ -497,6 +516,8 @@ bool call_automata_t::consider_accepting_new_connection() noexcept {
         engine.reserved_connections--;
         return false;
     }
+
+    engine.dismissed_connections = 0;
     return true;
 }
 
@@ -518,23 +539,34 @@ bool call_automata_t::release_connection_if_corrupted() noexcept {
     case EPIPE:
     case EBADF:
         release_connection();
-        break;
-        // Unknown error.
+        return true;
+        // Other errors will be handled externally.
     default:
-        exit(1);
-        break;
+        return false;
     }
-    return true;
 }
 
 void call_automata_t::close_gracefully() noexcept {
     auto& connection = connection_ref();
     connection.output.reset();
     connection.stage = stage_t::waiting_to_close_k;
+
+    // The operations are not expected to complete in exactly the same order
+    // as their submissions. So to stop all existing communication on the
+    // socket, we can cancel everythin related to its "file descriptor",
+    // and then close.
     engine.submission_mutex.lock();
+    // TODO:
+    // sqe = io_uring_get_sqe(&engine.ring);
+    // io_uring_prep_cancel_fd(sqe, int(connection.descriptor), IORING_ASYNC_CANCEL_FD);
+    // io_uring_sqe_set_data(sqe, &connection);
+    // io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK | IOSQE_CQE_SKIP_SUCCESS);
+    // uring_response = io_uring_submit(&engine.ring);
+
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
     io_uring_sqe_set_data(sqe, &connection);
+    // TODO: io_uring_sqe_set_flags(sqe, IOSQE_CQE_SKIP_SUCCESS);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
 }
@@ -543,6 +575,7 @@ void call_automata_t::send_next() noexcept {
     auto& connection = connection_ref();
     auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
+
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
@@ -554,15 +587,29 @@ void call_automata_t::send_next() noexcept {
 void call_automata_t::receive_next() noexcept {
     auto& connection = connection_ref();
     auto next = connection.next_input_chunk();
-    connection.stage = stage_t::receiving_in_progress_k;
+    connection.nanoseconds_slept += connection.next_wakeup.value().tv_nsec = 5000;
+    connection.stage = stage_t::expecting_to_receive_k;
+
     engine.submission_mutex.lock();
+    // More than other operations this depends on the information coming from the client.
+    // We can't afford to keep connections alive indefinitely, so we need to set a timeout
+    // on this operation.
+    sqe = io_uring_get_sqe(&engine.ring);
+    io_uring_prep_link_timeout(sqe, &connection.next_wakeup.value(), 0);
+    io_uring_sqe_set_data(sqe, &connection);
+    io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
+    uring_response = io_uring_submit(&engine.ring);
+
+    // If a zero-length datagram is pending, read(2) and recv() with a
+    // flags argument of zero provide different behavior. In this
+    // circumstance, read(2) has no effect (the datagram remains
+    // pending), while recv() consumes the pending datagram.
+    // https://man7.org/linux/man-pages/man2/recv.2.html
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_recv(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
-
-    // TODO: Add timeout:
 }
 
 void call_automata_t::operator()() noexcept {
@@ -585,22 +632,43 @@ void call_automata_t::operator()() noexcept {
         engine.reserved_connections--;
         engine.active_connections++;
         connection.descriptor = descriptor_t{syscall_response()};
-        connection.deadline = cpu_cycle() + cpu_cycles_per_micro_second_k * 100'000'000;
+        // TODO: connection.deadline = cpu_cycle() + cpu_cycles_per_micro_second_k * 100'000'000;
         connection.input_absorbed = 0;
         connection.output_submitted = 0;
         std::memset(connection.input.data(), 0, connection.input.capacity());
         receive_next();
         break;
 
+    case stage_t::expecting_to_receive_k:
+        // From documentation:
+        // > If used, the timeout specified in the command will cancel the linked command,
+        // > unless the linked command completes before the timeout. The timeout will complete
+        // > with -ETIME if the timer expired and the linked request was attempted canceled,
+        // > or -ECANCELED if the timer got canceled because of completion of the linked request.
+        //
+        // So we expect only two outcomes here:
+        // 1. timeout expired with `ETIME` -> reception expired with: `ECANCELED`.
+        // 1. deadline was met and timer returned `ECANCELED` -> reception can continue.
+        if (syscall_response() == -ETIME) {
+
+        } else {
+            // Upgrade the connection to proceed to reception.
+            connection.stage = stage_t::receiving_in_progress_k;
+        }
+
+        break;
     case stage_t::receiving_in_progress_k:
 
-        if (connection.expired())
+        if (connection.expired() || syscall_response() == -ETIME || syscall_response() == -ECANCELED)
             return close_gracefully();
         if (syscall_response() == 0)
+            // No data was received.
             return receive_next();
 
         // Absorb the arrived data.
         connection.input.length += syscall_response();
+        connection.nanoseconds_slept = 0;
+
         if (received_full_request()) {
             // If we have reached the end of the stream, it is time to analyze the contents
             // and send back a response.
