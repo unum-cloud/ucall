@@ -127,7 +127,7 @@ void forward_packet(engine_t& engine) {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    scratch.dynamic_packet = std::get<std::string_view>(json_or_error);
+    scratch.dynamic_packet = std::get<parsed_request_t>(json_or_error).body;
     return forward_call_or_calls(engine);
 }
 

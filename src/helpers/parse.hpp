@@ -32,7 +32,7 @@ struct default_error_t {
 /**
  * @brief Rounds integer to the next multiple of a given number. Is needed for aligned memory allocations.
  */
-template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) {
+template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) noexcept {
     return ((n + step_ak - 1) / step_ak) * step_ak;
 }
 
@@ -41,7 +41,7 @@ template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) 
  */
 template <typename named_callbacks_at>
 inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callbacks_at const& callbacks,
-                                                                     scratch_space_t& scratch) {
+                                                                     scratch_space_t& scratch) noexcept {
     sjd::element const& doc = scratch.tree;
     if (!doc.is_object())
         return default_error_t{-32600, "The JSON sent is not a valid request object."};
@@ -72,34 +72,34 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
     // Make sure we have such a method:
     auto method_name = method.get_string().value_unsafe();
     auto callbacks_end = callbacks.data() + callbacks.size();
-    auto callback_it = std::find_if(callbacks.data(), callbacks_end,
-                                    [=](named_callback_t const& callback) { return callback.name == method_name; });
+    auto callback_it = std::find_if(callbacks.data(), callbacks_end, [=](named_callback_t const& callback) noexcept {
+        return callback.name == method_name;
+    });
     if (callback_it == callbacks_end)
         return default_error_t{-32601, "Method not found."};
 
     return callback_it->callback;
 }
 
+struct parsed_request_t {
+    std::string_view type{};
+    std::string_view keep_alive{};
+    std::string_view content_type{};
+    std::string_view content_length{};
+    std::string_view body{};
+};
+
 /**
  * @brief Analyzes the contents of the packet, bifurcating pure JSON-RPC from HTTP1-based.
  * @warning This doesn't check the headers for validity or additional metadata.
  */
-struct parsed_request_t {
-    std::string_view type = "";
-    std::string_view keep_alive = "";
-    std::string_view content_type = "";
-    std::string_view content_length = "";
-    std::string_view body = "";
-};
-
-inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::string_view body) {
+inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::string_view body) noexcept {
     // A typical HTTP-header may look like this
     // POST /myservice HTTP/1.1
     // Host: rpc.example.com
     // Content-Type: application/json
     // Content-Length: ...
     // Accept: application/json
-    printf("%s", body.data());
     parsed_request_t req;
 
     const char* method;
@@ -114,17 +114,17 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
                       &num_headers, 0);
 
     req.type = std::string_view(method, method_len);
-    for (size_t i = 0; i < 32; ++i) {
-        if (headers[i].name_len > 0) {
-            if (headers[i].name == "Keep-Alive")
-                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Keep-Alive")
-                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Content-Type")
-                req.content_type = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Content-Length")
-                req.content_length = std::string_view(headers[i].value, headers[i].value_len);
-        }
+    for (std::size_t i = 0; i < 32; ++i) {
+        if (headers[i].name_len == 0)
+            continue;
+        if (headers[i].name == "Keep-Alive")
+            req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+        else if (headers[i].name == "Keep-Alive")
+            req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+        else if (headers[i].name == "Content-Type")
+            req.content_type = std::string_view(headers[i].value, headers[i].value_len);
+        else if (headers[i].name == "Content-Length")
+            req.content_length = std::string_view(headers[i].value, headers[i].value_len);
     }
 
     std::string_view expected = "POST";

@@ -130,6 +130,7 @@ struct connection_t {
 
     /// @brief Accumulated duration of sleep cycles.
     std::size_t sleep_ns{};
+    std::size_t empty_transmissions{};
 
     /// @brief Relative time set for the last wake-up call.
     struct __kernel_timespec next_wakeup {};
@@ -418,6 +419,7 @@ void connection_t::reset() noexcept {
     input_absorbed = 0;
     output_submitted = 0;
     sleep_ns = 0;
+    empty_transmissions = 0;
     next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
     keep_alive.reset();
     content_length.reset();
@@ -456,7 +458,9 @@ bool connection_t::append_output(struct iovec const* iovecs) noexcept {
     return true;
 }
 
-bool automata_t::should_release() const noexcept { return connection.expired() || engine.dismissed_connections; }
+bool automata_t::should_release() const noexcept {
+    return connection.expired() || engine.dismissed_connections || connection.empty_transmissions > 100;
+}
 
 bool automata_t::received_full_request() const noexcept {
     if (connection.content_length)
@@ -526,7 +530,7 @@ void automata_t::parse_request() noexcept {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    scratch.dynamic_packet = std::get<std::string_view>(json_or_error);
+    scratch.dynamic_packet = std::get<parsed_request_t>(json_or_error).body;
     if (scratch.dynamic_packet.size() > max_packet_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
@@ -721,14 +725,17 @@ void automata_t::operator()() noexcept {
                 return close_gracefully();
             return;
         }
-
         // No data was received.
-        // Assuming we use `read` instead of `recv`, it should be impossible.
-        if (completed_result == 0)
-            exit(1);
+        else if (completed_result == 0) {
+            connection.empty_transmissions++;
+            if (should_release())
+                return close_gracefully();
+            return;
+        }
 
         // Absorb the arrived data.
         connection.input.length += completed_result;
+        connection.empty_transmissions = 0;
         connection.sleep_ns = 0;
 
         if (received_full_request()) {
@@ -754,13 +761,9 @@ void automata_t::operator()() noexcept {
 
     case stage_t::responding_in_progress_k:
 
+        connection.empty_transmissions = completed_result == 0 ? ++connection.empty_transmissions : 0;
         if (should_release())
             return close_gracefully();
-
-        // No data was received.
-        // Assuming we use `write` instead of `send`, it should be impossible.
-        if (completed_result == 0)
-            exit(1);
 
         connection.output_submitted += completed_result;
         if (!connection.submitted_all())
