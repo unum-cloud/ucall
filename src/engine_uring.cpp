@@ -6,13 +6,25 @@
  * > Hundreds of physical execution threads.
  * > Both HTTP and HTTP-less raw JSON-RPC calls.
  *
- * Primary structures:
+ * @section Primary structures
  * - `engine_t`: primary server instance.
  * - `connection_t`: lifetime state of a single TCP connection.
  * - `scratch_space_t`: temporary memory used by a single thread at a time.
- * - `call_automata_t`: automata that accepts and responds to messages.
+ * - `automata_t`: automata that accepts and responds to messages.
  *
- * Suggested compilation flags:
+ * @section Concurrency
+ * The whole class is thread safe and can be used with as many threads as
+ * defined during construction with `ujrpc_init`. Some `connection_t`-s
+ * can, however, be simulatenaously handled by two threads, if one logical
+ * operation is split into multiple phisical calls:
+ *
+ *      1.  Receiving packets with timeouts.
+ *          This allows us to reconsider closing a connection every once
+ *          in a while, instead of loyally waiting for more data to come.
+ *      2.  Closing sockets gracefully.
+ *
+ *
+ * @section Suggested compilation flags:
  * -fno-exceptions
  *
  * @author Ashot Vardanian
@@ -49,12 +61,31 @@ namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ujrpc;
 
+static constexpr std::size_t sleep_growth_factor_k = 4;
+static constexpr std::size_t wakeup_initial_frequency_ns_k = 5'000;
+static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'00;
+
+struct completed_event_t;
+struct exchange_buffer_t;
+struct connection_t;
+struct engine_t;
+struct automata_t;
+
 enum class stage_t {
     waiting_to_accept_k = 0,
-    expecting_to_receive_k,
-    receiving_in_progress_k,
+    expecting_reception_k,
     responding_in_progress_k,
     waiting_to_close_k,
+    unknown_k,
+};
+
+struct completed_event_t {
+    connection_t& connection;
+    stage_t stage{};
+    int result{};
+
+    explicit operator bool() const noexcept { return stage != stage_t::unknown_k; }
+    bool is_corrupted() const noexcept { return result == -EPIPE || result == -EBADF; }
 };
 
 struct exchange_buffer_t {
@@ -72,8 +103,9 @@ struct exchange_buffer_t {
     char const* data() const noexcept { return dynamic ? dynamic : embedded; }
     std::size_t size() const noexcept { return length; }
     std::size_t capacity() const noexcept { return volume; }
-    std::size_t next_capacity() const noexcept { return capacity() * 2; }
     std::string_view view() const noexcept { return {data(), length}; }
+    std::string_view view_buffer() const noexcept { return {data(), volume}; }
+    std::size_t next_capacity() const noexcept { return capacity() * 2; }
     void reset() noexcept { std::free(dynamic), dynamic = nullptr, length = 0, volume = embedded_size_k; }
 };
 
@@ -97,10 +129,10 @@ struct connection_t {
     std::size_t output_submitted{};
 
     /// @brief Accumulated duration of sleep cycles.
-    std::size_t nanoseconds_slept{};
+    std::size_t sleep_ns{};
 
     /// @brief Relative time set for the last wake-up call.
-    std::optional<struct __kernel_timespec> next_wakeup{};
+    struct __kernel_timespec next_wakeup {};
     /// @brief Absolute time extracted from HTTP headers, for the requested lifetime of this channel.
     std::optional<struct __kernel_timespec> keep_alive{};
     /// @brief Expected reception length extracted from HTTP headers.
@@ -108,17 +140,15 @@ struct connection_t {
     /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
     std::optional<std::string_view> content_type{};
 
-    inline bool expired() const noexcept { return false; /* cpu_cycle() > deadline; */ }
-    inline bool submitted_all() const noexcept { return output_submitted >= output.size(); }
-    inline std::string_view next_input_chunk() const noexcept {
-        return {input.data() + input_absorbed, input.capacity() - input_absorbed};
-    }
-    inline std::string_view next_output_chunk() const noexcept {
-        return {output.data() + output_submitted, output.size() - output_submitted};
-    }
+    bool submitted_all() const noexcept { return output_submitted >= output.size(); }
+    std::string_view next_inputs() const noexcept { return input.view_buffer().substr(input_absorbed); }
+    std::string_view next_output_chunk() const noexcept { return output.view().substr(output_submitted); }
 
     template <std::size_t iovecs_count_ak> bool append_output(struct iovec const* iovecs) noexcept;
     std::string_view reserve_input() noexcept;
+
+    bool expired() const noexcept;
+    void reset() noexcept;
 };
 
 struct engine_t {
@@ -139,29 +169,25 @@ struct engine_t {
     pool_gt<connection_t> connections{};
     /// @brief Same number of them, as max physical threads. Can be in hundreds.
     buffer_gt<scratch_space_t> spaces{};
+
+    bool consider_accepting_new_connection() noexcept;
+    completed_event_t pop_completed() noexcept;
+    void release_connection(connection_t&) noexcept;
 };
 
-struct call_automata_t {
+struct automata_t {
+
     engine_t& engine;
     scratch_space_t& scratch;
-
-    int uring_response{};
-    struct io_uring_sqe* sqe{};
-    struct io_uring_cqe* cqe{};
-    struct __kernel_timespec timeout {};
-    struct io_uring_cqe cqe_copy {};
+    connection_t& connection;
+    stage_t completed_stage{};
+    int completed_result{};
 
     void operator()() noexcept;
 
     // Computed properties:
-    connection_t& connection_ref() const noexcept { return *(connection_t*)cqe_copy.user_data; }
-    int syscall_response() const noexcept { return cqe_copy.res; }
     bool received_full_request() const noexcept;
-
-    // Control-flow:
-    bool consider_accepting_new_connection() noexcept;
-    bool pop_entry_from_uring_completion_queue() noexcept;
-    bool release_connection_if_corrupted() noexcept;
+    bool should_release() const noexcept;
 
     // Submitting to io_uring:
     void send_next() noexcept;
@@ -172,7 +198,6 @@ struct call_automata_t {
     void raise_call() noexcept;
     void raise_call_or_calls() noexcept;
     void parse_request() noexcept;
-    void release_connection() noexcept;
 };
 
 #pragma endregion Cpp Declaration
@@ -289,13 +314,30 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     // is responsible for checking if a specific request has been completed. All of the submitted
     // memory must be preserved until we get the confirmation.
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    return call_automata_t{engine, engine.spaces[thread_idx]}();
+    engine.consider_accepting_new_connection();
+    completed_event_t completed = engine.pop_completed();
+    if (!completed)
+        return;
+
+    if (completed.is_corrupted())
+        return engine.release_connection(completed.connection);
+
+    automata_t automata{
+        .engine = engine,
+        .scratch = engine.spaces[thread_idx],
+        .connection = completed.connection,
+        .completed_stage = completed.stage,
+        .completed_result = completed.result,
+    };
+
+    // If everything is fine, let automata work in its normal regime.
+    return automata();
 }
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
-    call_automata_t& call_automata = *reinterpret_cast<call_automata_t*>(call);
-    connection_t& connection = call_automata.connection_ref();
-    scratch_space_t& scratch = call_automata.scratch;
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    connection_t& connection = automata.connection;
+    scratch_space_t& scratch = automata.scratch;
     if (scratch.id.empty())
         // No response is needed for "id"-less notifications.
         return;
@@ -308,9 +350,9 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 }
 
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
-    call_automata_t& call_automata = *reinterpret_cast<call_automata_t*>(call);
-    connection_t& connection = call_automata.connection_ref();
-    scratch_space_t& scratch = call_automata.scratch;
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    connection_t& connection = automata.connection;
+    scratch_space_t& scratch = automata.scratch;
     if (scratch.id.empty())
         // No response is needed for "id"-less notifications.
         return;
@@ -341,9 +383,9 @@ void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
 }
 
 bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_ptr) {
-    call_automata_t& call_automata = *reinterpret_cast<call_automata_t*>(call);
-    connection_t& connection = call_automata.connection_ref();
-    scratch_space_t& scratch = call_automata.scratch;
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    connection_t& connection = automata.connection;
+    scratch_space_t& scratch = automata.scratch;
 
     std::memcpy(scratch.json_pointer, "/params/", 8);
     std::memcpy(scratch.json_pointer + 8, name, std::strlen(name) + 1);
@@ -361,6 +403,26 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_
 
 #pragma endregion C Definitions
 #pragma region Cpp Declarations
+
+bool connection_t::expired() const noexcept {
+    if (sleep_ns > max_inactive_duration_ns_k)
+        return true;
+
+    return false;
+}
+
+void connection_t::reset() noexcept {
+    // TODO: deadline = cpu_cycle() + cpu_cycles_per_micro_second_k * 100'000'000;
+    std::memset(input.data(), 0, input.capacity());
+
+    input_absorbed = 0;
+    output_submitted = 0;
+    sleep_ns = 0;
+    next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
+    keep_alive.reset();
+    content_length.reset();
+    content_type.reset();
+}
 
 std::string_view connection_t::reserve_input() noexcept {
     if (input.size() + max_packet_size_k + sj::SIMDJSON_PADDING < input.capacity())
@@ -394,7 +456,19 @@ bool connection_t::append_output(struct iovec const* iovecs) noexcept {
     return true;
 }
 
-void call_automata_t::raise_call() noexcept {
+bool automata_t::should_release() const noexcept { return connection.expired() || engine.dismissed_connections; }
+
+bool automata_t::received_full_request() const noexcept {
+    if (connection.content_length)
+        if (connection.input.size() < *connection.content_length)
+            return false;
+
+    // TODO: If we don't have explicit information about the expected length,
+    // we may attempt parsing it to check if the received chunk is a valid document.
+    return true;
+}
+
+void automata_t::raise_call() noexcept {
     auto callback_or_error = find_callback(engine.callbacks, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
@@ -403,8 +477,7 @@ void call_automata_t::raise_call() noexcept {
     return callback(this);
 }
 
-void call_automata_t::raise_call_or_calls() noexcept {
-    connection_t& connection = connection_ref();
+void automata_t::raise_call_or_calls() noexcept {
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
     parser.set_max_capacity(json_body.size());
@@ -446,9 +519,8 @@ void call_automata_t::raise_call_or_calls() noexcept {
     }
 }
 
-void call_automata_t::parse_request() noexcept {
+void automata_t::parse_request() noexcept {
 
-    auto& connection = connection_ref();
     auto request = connection.input.view();
     auto json_or_error = strip_http_headers(request);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
@@ -469,85 +541,81 @@ void call_automata_t::parse_request() noexcept {
     }
 }
 
-bool call_automata_t::received_full_request() const noexcept {
-    // TODO:
-    return true;
-}
+completed_event_t engine_t::pop_completed() noexcept {
+    int uring_response{};
+    struct io_uring_cqe* cqe{};
+    struct __kernel_timespec polling_timeout {};
+    polling_timeout.tv_nsec = 5000;
 
-bool call_automata_t::pop_entry_from_uring_completion_queue() noexcept {
-    engine.completion_mutex.lock();
-    // timeout.tv_nsec = 5000;
-    // uring_response = io_uring_wait_cqe_timeout(&engine.ring, &cqe, &timeout);
-    uring_response = io_uring_wait_cqe(&engine.ring, &cqe);
-    if (uring_response < 0 || !cqe) {
-        // Error codes:
-        // -62: Timer expired.
-        engine.completion_mutex.unlock();
-        return false;
+    completion_mutex.lock();
+    uring_response = io_uring_wait_cqe_timeout(&ring, &cqe, &polling_timeout);
+
+    // Some results are not worth evaluating in automata.
+    if (uring_response < 0 || !cqe || !cqe->user_data) {
+        // We should skip over timer events without any payload.
+        if (cqe && !cqe->user_data)
+            io_uring_cq_advance(&ring, 1);
+        completion_mutex.unlock();
+        return {*(connection_t*)nullptr, stage_t::unknown_k, 0};
     }
 
-    std::memcpy(&cqe_copy, cqe, sizeof(cqe_copy));
-    io_uring_cqe_seen(&engine.ring, cqe);
-    engine.completion_mutex.unlock();
-    return true;
+    connection_t& connection = *(connection_t*)cqe->user_data;
+    completed_event_t completed{
+        .connection = connection,
+        .stage = connection.stage,
+        .result = cqe->res,
+    };
+    io_uring_cq_advance(&ring, 1);
+    completion_mutex.unlock();
+    return completed;
 }
 
-bool call_automata_t::consider_accepting_new_connection() noexcept {
-    std::size_t reserved_connections{};
-    if (!engine.reserved_connections.compare_exchange_strong(reserved_connections, 1u))
+bool engine_t::consider_accepting_new_connection() noexcept {
+    std::size_t reserved_connections_old{};
+    if (!reserved_connections.compare_exchange_strong(reserved_connections_old, 1u))
         return false;
 
-    connection_t* con_ptr = engine.connections.alloc();
+    connection_t* con_ptr = connections.alloc();
     if (!con_ptr) {
-        engine.dismissed_connections++;
+        dismissed_connections++;
         return false;
     }
 
+    int uring_response{};
+    struct io_uring_sqe* sqe{};
     connection_t& connection = *con_ptr;
     connection.stage = stage_t::waiting_to_accept_k;
-    engine.submission_mutex.lock();
-    sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_accept(sqe, engine.socket, &connection.client_addr, &connection.client_addr_len, 0);
+    submission_mutex.lock();
+    sqe = io_uring_get_sqe(&ring);
+    io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
     io_uring_sqe_set_data(sqe, con_ptr);
-    uring_response = io_uring_submit(&engine.ring);
-    engine.submission_mutex.unlock();
+    uring_response = io_uring_submit(&ring);
+    submission_mutex.unlock();
     if (uring_response != 1) {
-        engine.connections.release(con_ptr);
-        engine.reserved_connections--;
+        connections.release(con_ptr);
+        reserved_connections--;
         return false;
     }
 
-    engine.dismissed_connections = 0;
+    dismissed_connections = 0;
     return true;
 }
 
-void call_automata_t::release_connection() noexcept {
-    auto& connection = connection_ref();
+void engine_t::release_connection(connection_t& connection) noexcept {
     connection.input.reset();
     connection.output.reset();
-    engine.connections.release(&connection);
-    engine.reserved_connections -= connection.stage == stage_t::waiting_to_accept_k;
-    engine.active_connections--;
+    connections.release(&connection);
+    reserved_connections -= connection.stage == stage_t::waiting_to_accept_k;
+    active_connections--;
 }
 
-bool call_automata_t::release_connection_if_corrupted() noexcept {
-    auto code = syscall_response();
-    if (code >= 0)
-        return false;
+// TODO
+#define IORING_ASYNC_CANCEL_ALL 0
+#define IOSQE_CQE_SKIP_SUCCESS 0
 
-    switch (-code) {
-    case EPIPE:
-    case EBADF:
-        release_connection();
-        return true;
-        // Other errors will be handled externally.
-    default:
-        return false;
-    }
-}
-
-void call_automata_t::close_gracefully() noexcept {
-    auto& connection = connection_ref();
+void automata_t::close_gracefully() noexcept {
+    int uring_response{};
+    struct io_uring_sqe* sqe{};
     connection.output.reset();
     connection.stage = stage_t::waiting_to_close_k;
 
@@ -556,90 +624,83 @@ void call_automata_t::close_gracefully() noexcept {
     // socket, we can cancel everythin related to its "file descriptor",
     // and then close.
     engine.submission_mutex.lock();
-    // TODO:
-    // sqe = io_uring_get_sqe(&engine.ring);
-    // io_uring_prep_cancel_fd(sqe, int(connection.descriptor), IORING_ASYNC_CANCEL_FD);
-    // io_uring_sqe_set_data(sqe, &connection);
-    // io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK | IOSQE_CQE_SKIP_SUCCESS);
-    // uring_response = io_uring_submit(&engine.ring);
+    sqe = io_uring_get_sqe(&engine.ring);
+    io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
+    io_uring_sqe_set_data(sqe, &connection);
+    io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
+    uring_response = io_uring_submit(&engine.ring);
 
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
     io_uring_sqe_set_data(sqe, &connection);
-    // TODO: io_uring_sqe_set_flags(sqe, IOSQE_CQE_SKIP_SUCCESS);
+    io_uring_sqe_set_flags(sqe, IOSQE_CQE_SKIP_SUCCESS);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
 }
 
-void call_automata_t::send_next() noexcept {
-    auto& connection = connection_ref();
+void automata_t::send_next() noexcept {
+    int uring_response{};
+    struct io_uring_sqe* sqe{};
     auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
 
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
+    io_uring_prep_write(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
 }
 
-void call_automata_t::receive_next() noexcept {
-    auto& connection = connection_ref();
-    auto next = connection.next_input_chunk();
-    connection.nanoseconds_slept += connection.next_wakeup.value().tv_nsec = 5000;
-    connection.stage = stage_t::expecting_to_receive_k;
+void automata_t::receive_next() noexcept {
+    int uring_response{};
+    struct io_uring_sqe* sqe{};
+    auto next = connection.next_inputs();
+    connection.stage = stage_t::expecting_reception_k;
 
     engine.submission_mutex.lock();
-    // More than other operations this depends on the information coming from the client.
-    // We can't afford to keep connections alive indefinitely, so we need to set a timeout
-    // on this operation.
+
+    // Choosing between `recv` and `read` system calls:
+    // > If a zero-length datagram is pending, read(2) and recv() with a
+    // > flags argument of zero provide different behavior. In this
+    // > circumstance, read(2) has no effect (the datagram remains
+    // > pending), while recv() consumes the pending datagram.
+    // https://man7.org/linux/man-pages/man2/recv.2.html
+    //
+    // In this case we are waiting for an actual data, not some artificial wakeup.
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_link_timeout(sqe, &connection.next_wakeup.value(), 0);
+    io_uring_prep_read(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
     uring_response = io_uring_submit(&engine.ring);
 
-    // If a zero-length datagram is pending, read(2) and recv() with a
-    // flags argument of zero provide different behavior. In this
-    // circumstance, read(2) has no effect (the datagram remains
-    // pending), while recv() consumes the pending datagram.
-    // https://man7.org/linux/man-pages/man2/recv.2.html
+    // More than other operations this depends on the information coming from the client.
+    // We can't afford to keep connections alive indefinitely, so we need to set a timeout
+    // on this operation.
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_recv(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
-    io_uring_sqe_set_data(sqe, &connection);
+    io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
+    io_uring_sqe_set_data(sqe, NULL);
     uring_response = io_uring_submit(&engine.ring);
+
     engine.submission_mutex.unlock();
 }
 
-void call_automata_t::operator()() noexcept {
+void automata_t::operator()() noexcept {
 
-    cqe = nullptr;
-    sqe = nullptr;
-    consider_accepting_new_connection();
-
-    if (!pop_entry_from_uring_completion_queue())
-        return;
-
-    if (release_connection_if_corrupted())
-        return;
-
-    connection_t& connection = connection_ref();
     switch (connection.stage) {
 
     case stage_t::waiting_to_accept_k:
+
         // Check if accepting the new connection request worked out.
         engine.reserved_connections--;
         engine.active_connections++;
-        connection.descriptor = descriptor_t{syscall_response()};
-        // TODO: connection.deadline = cpu_cycle() + cpu_cycles_per_micro_second_k * 100'000'000;
-        connection.input_absorbed = 0;
-        connection.output_submitted = 0;
-        std::memset(connection.input.data(), 0, connection.input.capacity());
+        connection.reset();
+        connection.descriptor = descriptor_t{completed_result};
         receive_next();
         break;
 
-    case stage_t::expecting_to_receive_k:
+    case stage_t::expecting_reception_k:
+
         // From documentation:
         // > If used, the timeout specified in the command will cancel the linked command,
         // > unless the linked command completes before the timeout. The timeout will complete
@@ -647,30 +708,32 @@ void call_automata_t::operator()() noexcept {
         // > or -ECANCELED if the timer got canceled because of completion of the linked request.
         //
         // So we expect only two outcomes here:
-        // 1. timeout expired with `ETIME` -> reception expired with: `ECANCELED`.
-        // 1. deadline was met and timer returned `ECANCELED` -> reception can continue.
-        if (syscall_response() == -ETIME) {
-
-        } else {
-            // Upgrade the connection to proceed to reception.
-            connection.stage = stage_t::receiving_in_progress_k;
+        // 1. reception expired with: `ECANCELED`, and subsequent timeout expired with `ETIME`.
+        // 2. reception can continue and subsequent timer returned `ECANCELED`.
+        //
+        // If the following timeout request has happened,
+        // we don't want to do anything here. Let's leave the faith of
+        // this connection to the subsequent timer to decide.
+        if (completed_result == -ECANCELED) {
+            connection.sleep_ns += connection.next_wakeup.tv_nsec;
+            connection.next_wakeup.tv_nsec *= sleep_growth_factor_k;
+            if (should_release())
+                return close_gracefully();
+            return;
         }
 
-        break;
-    case stage_t::receiving_in_progress_k:
-
-        if (connection.expired() || syscall_response() == -ETIME || syscall_response() == -ECANCELED)
-            return close_gracefully();
-        if (syscall_response() == 0)
-            // No data was received.
-            return receive_next();
+        // No data was received.
+        // Assuming we use `read` instead of `recv`, it should be impossible.
+        if (completed_result == 0)
+            exit(1);
 
         // Absorb the arrived data.
-        connection.input.length += syscall_response();
-        connection.nanoseconds_slept = 0;
+        connection.input.length += completed_result;
+        connection.sleep_ns = 0;
 
         if (received_full_request()) {
-            // If we have reached the end of the stream, it is time to analyze the contents
+            // If we have reached the end of the stream,
+            // it is time to analyze the contents
             // and send back a response.
             parse_request();
             // Reclaim dynamic memory.
@@ -686,16 +749,20 @@ void call_automata_t::operator()() noexcept {
                 send_next();
             }
         }
+
         break;
 
     case stage_t::responding_in_progress_k:
 
-        if (connection.expired())
+        if (should_release())
             return close_gracefully();
-        if (syscall_response() == 0)
-            return send_next();
 
-        connection.output_submitted += syscall_response();
+        // No data was received.
+        // Assuming we use `write` instead of `send`, it should be impossible.
+        if (completed_result == 0)
+            exit(1);
+
+        connection.output_submitted += completed_result;
         if (!connection.submitted_all())
             send_next();
         else
@@ -703,7 +770,7 @@ void call_automata_t::operator()() noexcept {
         break;
 
     case stage_t::waiting_to_close_k:
-        release_connection();
+        engine.release_connection(connection);
         break;
     }
 }
