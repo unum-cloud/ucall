@@ -5,6 +5,8 @@
 
 #include "shared.hpp"
 
+#include <picohttpparser.h>
+
 namespace unum::ujrpc {
 
 namespace sj = simdjson;
@@ -82,21 +84,59 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
  * @brief Analyzes the contents of the packet, bifurcating pure JSON-RPC from HTTP1-based.
  * @warning This doesn't check the headers for validity or additional metadata.
  */
-inline std::variant<std::string_view, default_error_t> strip_http_headers(std::string_view body) {
+struct parsed_request_t {
+    std::string_view type = "";
+    std::string_view keep_alive = "";
+    std::string_view content_type = "";
+    std::string_view content_length = "";
+    std::string_view body = "";
+};
+
+inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::string_view body) {
     // A typical HTTP-header may look like this
     // POST /myservice HTTP/1.1
     // Host: rpc.example.com
     // Content-Type: application/json
     // Content-Length: ...
     // Accept: application/json
+    printf("%s", body.data());
+    parsed_request_t req;
+
+    const char* method;
+    size_t method_len;
+    const char* path;
+    size_t path_len;
+    int minor_version;
+    phr_header headers[32];
+    size_t num_headers;
+
+    phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version, headers,
+                      &num_headers, 0);
+
+    req.type = std::string_view(method, method_len);
+    for (size_t i = 0; i < 32; ++i) {
+        if (headers[i].name_len > 0) {
+            if (headers[i].name == "Keep-Alive")
+                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Keep-Alive")
+                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Content-Type")
+                req.content_type = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Content-Length")
+                req.content_length = std::string_view(headers[i].value, headers[i].value_len);
+        }
+    }
+
     std::string_view expected = "POST";
-    if (body.size() > expected.size() && body.substr(0, expected.size()) == expected) {
+    if (req.type == expected) {
         auto pos = body.find("\r\n\r\n");
         if (pos == std::string_view::npos)
             return default_error_t{-32700, "Invalid JSON was received by the server."};
-        return body.substr(pos);
+        req.body = body.substr(pos);
     } else
-        return body;
+        req.body = body;
+
+    return req;
 }
 
 } // namespace unum::ujrpc
