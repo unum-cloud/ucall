@@ -68,8 +68,8 @@ We are inviting others to contribute bindings to other languages as well.
 | Fast API WebSocket          |          896 μs |        2,820 μs |
 | Fast API WebSocket, reusing |          103 μs |          396 μs |
 |                             |                 |                 |
-| gRPC                        |                 |                 |
-| gRCP, reusing               |                 |                 |
+| gRPC                        |          373 μs |         1061 μs |
+| gRCP, reusing               |          270 μs |          459 μs |
 |                             |                 |                 |
 | UJRPC over HTTP             |                 |                 |
 | UJRPC over TCP              |           55 μs |                 |
