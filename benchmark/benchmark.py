@@ -21,11 +21,11 @@ class Stats:
             (self.transmits_success + self.transmits_failed)
         bandwidth = self.requests / self.total_secs
         result = f'''
-        - Took {self.total_secs:.1f} seconds
-        - Performed {self.transmits_success:,} transmits_success
-        - Recorded {failures_p:.3%} transmits_failed
-        - Mean latency is {self.latency_secs:.1f} microseconds
-        - Mean speed is {bandwidth:.1f} requests/s
+        - Took {self.total_secs:.1f} CPU seconds
+        - Performed {self.transmits_success:,} successful transmits
+        - Recorded {failures_p:.3%} failed transmits
+        - Mean latency is {self.latency_secs * 1e6:.1f} microseconds
+        - Mean bandwidth is {bandwidth:.1f} requests/s
         '''
         return I(result)
 
@@ -40,10 +40,10 @@ def benchmark(callable, count_cycles: int, debug: bool = False) -> Stats:
         t1 = time.monotonic_ns()
         successes = callable()
         stats.requests += successes
+        t2 = time.monotonic_ns()
         stats.transmits_success += successes != 0
         stats.transmits_failed += successes == 0
-        t2 = time.monotonic_ns()
-        stats.total_secs += (t2 - t1) / 1e9
+        stats.total_secs += (t2 - t1) / 1.0e9
 
     stats.latency_secs = stats.total_secs / stats.transmits_success
     return stats
