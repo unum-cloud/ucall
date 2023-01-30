@@ -19,7 +19,8 @@ class Stats:
     def __repr__(self) -> str:
         failures_p = self.transmits_failed * 100.0 / \
             (self.transmits_success + self.transmits_failed)
-        bandwidth = self.requests / self.total_secs
+        bandwidth = self.requests / \
+            self.total_secs if self.total_secs > 0 else 0.0
         result = f'''
         - Took {self.total_secs:.1f} CPU seconds
         - Performed {self.transmits_success:,} successful transmits
@@ -73,7 +74,6 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
     transmits_success = Value('i', 0)
     transmits_failed = Value('i', 0)
     requests = Value('i', 0)
-    total_secs = Value('f', 0)
     mean_latency_secs = Value('f', 0)
 
     def run():
@@ -81,8 +81,9 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
         transmits_success.value += stats.transmits_success
         transmits_failed.value += stats.transmits_failed
         requests.value += stats.requests
-        total_secs.value += stats.total_secs
         mean_latency_secs.value += stats.latency_secs
+
+    global_start_time = time.monotonic_ns()
 
     procs = []
     for _ in range(process_count):
@@ -91,12 +92,15 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
     [x.start() for x in procs]
     [x.join() for x in procs]
 
+    global_end_time = time.monotonic_ns()
+    total_secs = (global_end_time - global_start_time) / 1.0e9
+
     return Stats(
         transmits_success=transmits_success.value,
         transmits_failed=transmits_failed.value,
         requests=requests.value,
         latency_secs=mean_latency_secs.value / process_count,
-        total_secs=total_secs.value,
+        total_secs=total_secs,
     )
 
 

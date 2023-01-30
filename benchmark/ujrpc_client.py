@@ -21,6 +21,7 @@ def request_sum_http():
     # assert response['id'] == 0
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
+    return 1
 
 
 def request_sum_http_tcp(client):
@@ -44,6 +45,7 @@ def request_sum_http_tcp(client):
     # assert response['id'] == 0
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
+    return 1
 
 
 def make_socket():
@@ -74,6 +76,7 @@ def request_sum_tcp_reusing(client):
     # assert response['id'] == 0 # TODO: Depends on patching
     c = int(response['result'])
     assert a + b == c, 'Wrong sum'
+    return 1
 
 
 def request_sum_tcp_reusing_batch(client):
@@ -105,6 +108,7 @@ def request_sum_tcp_reusing_batch(client):
     c_last = int(response[-1]['result'])
     assert a + b == c, 'Wrong sum'
     assert a + b == c_last, 'Wrong sum'
+    return 8
 
 
 def request_sum_tcp():
