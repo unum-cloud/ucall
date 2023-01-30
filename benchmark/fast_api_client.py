@@ -36,19 +36,23 @@ def request_sum_ws():
     socket = make_socket()
     request_sum_ws_reusing(socket)
     socket.close()
+    return 1
 
 
 if __name__ == '__main__':
 
     for p in [1, 4]:
         print('Will benchmark classic REST API')
-        benchmark.benchmark_parallel(request_sum, process_count=p)
+        stats = benchmark.benchmark_parallel(request_sum, process_count=p)
+        print(stats)
 
         print('Will benchmark WebSockets')
-        benchmark.benchmark_parallel(request_sum_ws, process_count=p)
+        stats = benchmark.benchmark_parallel(request_sum_ws, process_count=p)
+        print(stats)
 
         print('Will benchmark reused WebSockets')
         socket = make_socket()
-        benchmark.benchmark_parallel(
+        stats = benchmark.benchmark_parallel(
             lambda: request_sum_ws_reusing(socket), process_count=p)
         socket.close()
+        print(stats)
