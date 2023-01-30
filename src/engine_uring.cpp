@@ -62,7 +62,7 @@ namespace sjd = sj::dom;
 using namespace unum::ujrpc;
 
 static constexpr std::size_t sleep_growth_factor_k = 4;
-static constexpr std::size_t wakeup_initial_frequency_ns_k = 5'000;
+static constexpr std::size_t wakeup_initial_frequency_ns_k = 3'000;
 static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'00;
 
 struct completed_event_t;
@@ -130,7 +130,7 @@ struct connection_t {
 
     /// @brief Accumulated duration of sleep cycles.
     std::size_t sleep_ns{};
-    std::size_t empty_transmissions{};
+    std::size_t empty_transmits{};
 
     /// @brief Relative time set for the last wake-up call.
     struct __kernel_timespec next_wakeup {};
@@ -198,7 +198,7 @@ struct automata_t {
     // Helpers:
     void raise_call() noexcept;
     void raise_call_or_calls() noexcept;
-    void parse_request() noexcept;
+    void parse_and_raise_request() noexcept;
 };
 
 #pragma endregion Cpp Declaration
@@ -320,8 +320,9 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     if (!completed)
         return;
 
-    if (completed.is_corrupted())
+    if (completed.is_corrupted()) {
         return engine.release_connection(completed.connection);
+    }
 
     automata_t automata{
         .engine = engine,
@@ -419,7 +420,7 @@ void connection_t::reset() noexcept {
     input_absorbed = 0;
     output_submitted = 0;
     sleep_ns = 0;
-    empty_transmissions = 0;
+    empty_transmits = 0;
     next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
     keep_alive.reset();
     content_length.reset();
@@ -459,7 +460,7 @@ bool connection_t::append_output(struct iovec const* iovecs) noexcept {
 }
 
 bool automata_t::should_release() const noexcept {
-    return connection.expired() || engine.dismissed_connections || connection.empty_transmissions > 100;
+    return connection.expired() || engine.dismissed_connections || connection.empty_transmits > 100;
 }
 
 bool automata_t::received_full_request() const noexcept {
@@ -523,7 +524,7 @@ void automata_t::raise_call_or_calls() noexcept {
     }
 }
 
-void automata_t::parse_request() noexcept {
+void automata_t::parse_and_raise_request() noexcept {
 
     auto request = connection.input.view();
     auto json_or_error = strip_http_headers(request);
@@ -549,10 +550,11 @@ completed_event_t engine_t::pop_completed() noexcept {
     int uring_response{};
     struct io_uring_cqe* cqe{};
     struct __kernel_timespec polling_timeout {};
-    polling_timeout.tv_nsec = 5000;
+    polling_timeout.tv_nsec = wakeup_initial_frequency_ns_k;
 
     completion_mutex.lock();
     uring_response = io_uring_wait_cqe_timeout(&ring, &cqe, &polling_timeout);
+    // uring_response = io_uring_wait_cqe(&ring, &cqe);
 
     // Some results are not worth evaluating in automata.
     if (uring_response < 0 || !cqe || !cqe->user_data) {
@@ -588,11 +590,19 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     int uring_response{};
     struct io_uring_sqe* sqe{};
     connection_t& connection = *con_ptr;
+    connection.reset();
     connection.stage = stage_t::waiting_to_accept_k;
     submission_mutex.lock();
+
+    // sqe = io_uring_get_sqe(&ring);
+    // io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
+    // io_uring_sqe_set_data(sqe, con_ptr);
+    // io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
+
     sqe = io_uring_get_sqe(&ring);
-    io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
-    io_uring_sqe_set_data(sqe, con_ptr);
+    io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
+    io_uring_sqe_set_data(sqe, NULL);
+
     uring_response = io_uring_submit(&ring);
     submission_mutex.unlock();
     if (uring_response != 1) {
@@ -609,8 +619,7 @@ void engine_t::release_connection(connection_t& connection) noexcept {
     connection.input.reset();
     connection.output.reset();
     connections.release(&connection);
-    reserved_connections -= connection.stage == stage_t::waiting_to_accept_k;
-    active_connections--;
+    active_connections -= connection.stage != stage_t::waiting_to_accept_k;
 }
 
 // TODO
@@ -620,7 +629,6 @@ void engine_t::release_connection(connection_t& connection) noexcept {
 void automata_t::close_gracefully() noexcept {
     int uring_response{};
     struct io_uring_sqe* sqe{};
-    connection.output.reset();
     connection.stage = stage_t::waiting_to_close_k;
 
     // The operations are not expected to complete in exactly the same order
@@ -630,9 +638,7 @@ void automata_t::close_gracefully() noexcept {
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
-    io_uring_sqe_set_data(sqe, &connection);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
-    uring_response = io_uring_submit(&engine.ring);
 
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
@@ -647,10 +653,12 @@ void automata_t::send_next() noexcept {
     struct io_uring_sqe* sqe{};
     auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
+    connection.input.reset();
+    connection.input_absorbed = 0;
 
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_write(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
+    io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
@@ -661,6 +669,8 @@ void automata_t::receive_next() noexcept {
     struct io_uring_sqe* sqe{};
     auto next = connection.next_inputs();
     connection.stage = stage_t::expecting_reception_k;
+    connection.output_submitted = 0;
+    connection.output.reset();
 
     engine.submission_mutex.lock();
 
@@ -673,14 +683,14 @@ void automata_t::receive_next() noexcept {
     //
     // In this case we are waiting for an actual data, not some artificial wakeup.
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_read(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
+    io_uring_prep_recv(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
-    uring_response = io_uring_submit(&engine.ring);
 
     // More than other operations this depends on the information coming from the client.
     // We can't afford to keep connections alive indefinitely, so we need to set a timeout
     // on this operation.
+    // The `io_uring_prep_link_timeout` is a conveniece method for poorly documented `IORING_OP_LINK_TIMEOUT`.
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
     io_uring_sqe_set_data(sqe, NULL);
@@ -695,13 +705,18 @@ void automata_t::operator()() noexcept {
 
     case stage_t::waiting_to_accept_k:
 
+        if (completed_result == -ECANCELED) {
+            engine.release_connection(connection);
+            engine.reserved_connections--;
+            engine.consider_accepting_new_connection();
+            return;
+        }
+
         // Check if accepting the new connection request worked out.
         engine.reserved_connections--;
         engine.active_connections++;
-        connection.reset();
         connection.descriptor = descriptor_t{completed_result};
-        receive_next();
-        break;
+        return receive_next();
 
     case stage_t::expecting_reception_k:
 
@@ -721,60 +736,49 @@ void automata_t::operator()() noexcept {
         if (completed_result == -ECANCELED) {
             connection.sleep_ns += connection.next_wakeup.tv_nsec;
             connection.next_wakeup.tv_nsec *= sleep_growth_factor_k;
-            if (should_release())
-                return close_gracefully();
-            return;
+            return should_release() ? close_gracefully() : receive_next();
         }
         // No data was received.
         else if (completed_result == 0) {
-            connection.empty_transmissions++;
-            if (should_release())
-                return close_gracefully();
-            return;
+            connection.empty_transmits++;
+            return should_release() ? close_gracefully() : receive_next();
         }
 
         // Absorb the arrived data.
         connection.input.length += completed_result;
-        connection.empty_transmissions = 0;
+        connection.empty_transmits = 0;
         connection.sleep_ns = 0;
 
+        // If we have reached the end of the stream,
+        // it is time to analyze the contents
+        // and send back a response.
         if (received_full_request()) {
-            // If we have reached the end of the stream,
-            // it is time to analyze the contents
-            // and send back a response.
-            parse_request();
-            // Reclaim dynamic memory.
+            parse_and_raise_request();
             connection.input.reset();
-            // Some requests require no response at all.
-            if (!connection.next_output_chunk().empty())
-                send_next();
-        } else {
-            if (!connection.reserve_input().empty()) {
-                receive_next();
-            } else {
-                ujrpc_call_send_error_out_of_memory(this);
-                send_next();
-            }
+            connection.input_absorbed = 0;
+            // Some requests require no response at all, so we can go back to listening the port.
+            return connection.next_output_chunk().empty() //
+                       ? receive_next()
+                       : send_next();
         }
-
-        break;
+        // We may fail to allocate memory to receive the next input
+        else if (connection.reserve_input().empty()) {
+            ujrpc_call_send_error_out_of_memory(this);
+            return send_next();
+        } else
+            return receive_next();
 
     case stage_t::responding_in_progress_k:
 
-        connection.empty_transmissions = completed_result == 0 ? ++connection.empty_transmissions : 0;
+        connection.empty_transmits = completed_result == 0 ? ++connection.empty_transmits : 0;
         if (should_release())
             return close_gracefully();
 
         connection.output_submitted += completed_result;
-        if (!connection.submitted_all())
-            send_next();
-        else
-            receive_next();
-        break;
+        return !connection.submitted_all() ? send_next() : receive_next();
 
     case stage_t::waiting_to_close_k:
-        engine.release_connection(connection);
-        break;
+        return engine.release_connection(connection);
     }
 }
 

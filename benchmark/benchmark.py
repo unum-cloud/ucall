@@ -13,19 +13,22 @@ class Stats:
     transmits_success: int = 0
     transmits_failed: int = 0
     requests: int = 0
-    latency_secs: float = 0
+    mean_latency_secs: float = 0
     total_secs: float = 0
 
-    def __repr__(self) -> str:
-        failures_p = self.transmits_failed * 100.0 / \
+    @property
+    def failure_percent(self):
+        return self.transmits_failed * 100.0 / \
             (self.transmits_success + self.transmits_failed)
+
+    def __repr__(self) -> str:
         bandwidth = self.requests / \
             self.total_secs if self.total_secs > 0 else 0.0
         result = f'''
         - Took {self.total_secs:.1f} CPU seconds
         - Performed {self.transmits_success:,} successful transmits
-        - Recorded {failures_p:.3%} failed transmits
-        - Mean latency is {self.latency_secs * 1e6:.1f} microseconds
+        - Recorded {self.failure_percent:.3%} failed transmits
+        - Mean latency is {self.mean_latency_secs * 1e6:.1f} microseconds
         - Mean bandwidth is {bandwidth:.1f} requests/s
         '''
         return I(result)
@@ -46,7 +49,7 @@ def benchmark(callable, count_cycles: int, debug: bool = False) -> Stats:
         stats.transmits_failed += successes == 0
         stats.total_secs += (t2 - t1) / 1.0e9
 
-    stats.latency_secs = stats.total_secs / stats.transmits_success
+    stats.mean_latency_secs = stats.total_secs / stats.transmits_success
     return stats
 
 
@@ -81,7 +84,7 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
         transmits_success.value += stats.transmits_success
         transmits_failed.value += stats.transmits_failed
         requests.value += stats.requests
-        mean_latency_secs.value += stats.latency_secs
+        mean_latency_secs.value += stats.mean_latency_secs
 
     global_start_time = time.monotonic_ns()
 
@@ -99,7 +102,7 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
         transmits_success=transmits_success.value,
         transmits_failed=transmits_failed.value,
         requests=requests.value,
-        latency_secs=mean_latency_secs.value / process_count,
+        mean_latency_secs=mean_latency_secs.value / process_count,
         total_secs=total_secs,
     )
 

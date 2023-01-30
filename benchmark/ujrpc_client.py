@@ -4,7 +4,7 @@ import socket
 import json
 import argparse
 
-from benchmark import benchmark_request, socket_is_closed
+from benchmark import benchmark_parallel, socket_is_closed
 
 
 def request_sum_http():
@@ -86,7 +86,7 @@ def request_sum_tcp_reusing_batch(client):
 
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
-    rpc = json.dumps([
+    requests_batch = [
         {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
         {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0'},
         {'method': 'sumsum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
@@ -95,26 +95,28 @@ def request_sum_tcp_reusing_batch(client):
         {'method': 'sum', 'params': {'aa': a, 'bb': b}, 'jsonrpc': 2.0, 'id': 0, },
         {'id': 0, },
         {'method': 'sum', 'params': {'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0, },
-    ])
+    ]
+    rpc = json.dumps(requests_batch)
     client.send(rpc.encode())
     response_bytes = bytes()
     while not len(response_bytes):
         response_bytes = client.recv(8192)
     response = json.loads(response_bytes.decode())
     assert isinstance(response, list) and len(
-        response) == 7  # The second request is a notification
+        response) == len(requests_batch) - 1  # The second request is a notification
     assert response[0]['jsonrpc']
     c = int(response[0]['result'])
     c_last = int(response[-1]['result'])
     assert a + b == c, 'Wrong sum'
     assert a + b == c_last, 'Wrong sum'
-    return 8
+    return len(requests_batch)
 
 
 def request_sum_tcp():
     client = make_socket()
     request_sum_tcp_reusing(client)
     client.close()
+    return 1
 
 
 if __name__ == '__main__':
@@ -128,20 +130,36 @@ if __name__ == '__main__':
 
     for p in [1, 4]:
 
-        # Testing TCP connection
-        print('TCP')
-        benchmark_request(request_sum_tcp, process_cnt=p, debug=args.debug)
+    # Testing TCP connection
+    for p in [1, 4, 8, 16]:
+        print('TCP on %i processes' % p)
+        stats = benchmark_parallel(
+            request_sum_tcp,
+            process_count=p,
+            debug=args.debug,
+        )
+        print(stats)
 
-        # Testing reusable TCP connection
-        print('TCP Reusing')
+    # Testing reusable TCP connection
+    for p in [1, 4, 8, 16]:
+        print('TCP Reusing on %i processes' % p)
         client = make_socket()
-        benchmark_request(lambda: request_sum_tcp_reusing(
-            client), process_cnt=p, debug=args.debug)
+        stats = benchmark_parallel(
+            lambda: request_sum_tcp_reusing(client),
+            process_count=p,
+            debug=args.debug,
+        )
         client.close()
+        print(stats)
 
-        # Testing reusable TCP connection with batched requests
-        print('TCP Reusing Batch')
+    # Testing reusable TCP connection with batched requests
+    for p in [1]:
+        print('TCP Reusing Batch on %i processes' % p)
         client = make_socket()
-        benchmark_request(lambda: request_sum_tcp_reusing_batch(
-            client), process_cnt=p, debug=args.debug)
+        stats = benchmark_parallel(
+            lambda: request_sum_tcp_reusing_batch(client),
+            process_count=p,
+            debug=args.debug,
+        )
         client.close()
+        print(stats)
