@@ -107,6 +107,17 @@ We are inviting others to contribute bindings to other languages as well.
 </details>
 
 <details>
+  <summary>Replicating gRPC Results</summary>
+
+    ```sh
+    pip install grpcio grpcio-tools
+    python ./benchmark/grpc_server.py &
+    python ./benchmark/grpc_client.py
+    kill %% # Kill the most recent background job
+    ```
+</details>
+
+<details>
   <summary>Replicating UJRPC Results</summary>
 
     ```sh
