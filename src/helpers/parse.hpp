@@ -102,33 +102,38 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
     // Accept: application/json
     parsed_request_t req;
 
+    const size_t header_cnt = 32;
     const char* method;
     size_t method_len;
     const char* path;
     size_t path_len;
     int minor_version;
-    phr_header headers[32];
+    phr_header headers[header_cnt];
     size_t num_headers;
 
-    phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version, headers,
-                      &num_headers, 0);
+    int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
+                                headers, &num_headers, 0);
 
-    req.type = std::string_view(method, method_len);
-    for (std::size_t i = 0; i < 32; ++i) {
-        if (headers[i].name_len == 0)
-            continue;
-        if (headers[i].name == "Keep-Alive")
-            req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-        else if (headers[i].name == "Keep-Alive")
-            req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-        else if (headers[i].name == "Content-Type")
-            req.content_type = std::string_view(headers[i].value, headers[i].value_len);
-        else if (headers[i].name == "Content-Length")
-            req.content_length = std::string_view(headers[i].value, headers[i].value_len);
+    if (res == -2)
+        return default_error_t{-2, "Partial HTTP request"};
+
+    if (res > 0) {
+        req.type = std::string_view(method, method_len);
+        for (std::size_t i = 0; i < header_cnt; ++i) {
+            if (headers[i].name_len == 0)
+                continue;
+            if (headers[i].name == "Keep-Alive")
+                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Keep-Alive")
+                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Content-Type")
+                req.content_type = std::string_view(headers[i].value, headers[i].value_len);
+            else if (headers[i].name == "Content-Length")
+                req.content_length = std::string_view(headers[i].value, headers[i].value_len);
+        }
     }
 
-    std::string_view expected = "POST";
-    if (req.type == expected) {
+    if (req.type.size() > 0 && req.type == "POST") {
         auto pos = body.find("\r\n\r\n");
         if (pos == std::string_view::npos)
             return default_error_t{-32700, "Invalid JSON was received by the server."};
