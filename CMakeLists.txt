@@ -35,38 +35,57 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(benchmark)
 include_directories(${benchmark_SOURCE_DIR}/include)
 
-set(PICO_DIR ${CMAKE_BINARY_DIR}/_deps/picohttpparser)
+set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
 ExternalProject_Add(
-    picohttpparser
+    liburing-ep
+    GIT_REPOSITORY https://github.com/axboe/liburing
+    PREFIX ${CMAKE_BINARY_DIR}/_deps/
+    SOURCE_DIR ${URING_DIR}
+    CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
+    BUILD_COMMAND cd ${URING_DIR} && make;
+    INSTALL_COMMAND ""
+    UPDATE_COMMAND ""
+)
+add_library(liburing STATIC IMPORTED GLOBAL)
+add_dependencies(liburing liburing-ep)
+set_property(TARGET liburing
+    PROPERTY IMPORTED_LOCATION
+    ${URING_DIR}/src/liburing.a
+)
+include_directories(${URING_DIR})
+set(URING_LIBS liburing)
+
+set(PICOHTTP_DIR ${CMAKE_BINARY_DIR}/_deps/picohttpparser-ep)
+ExternalProject_Add(
+    picohttpparser-ep
     GIT_REPOSITORY https://github.com/h2o/picohttpparser
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
-    SOURCE_DIR ${PICO_DIR}
+    SOURCE_DIR ${PICOHTTP_DIR}
     CONFIGURE_COMMAND echo Configuring PicoHTTPParse
-    BUILD_COMMAND cd ${PICO_DIR} && gcc -c picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
+    BUILD_COMMAND cd ${PICOHTTP_DIR} && ${CMAKE_C_COMPILER} -c picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
 add_library(libpicohttpparser STATIC IMPORTED GLOBAL)
+add_dependencies(libpicohttpparser picohttpparser-ep)
 set_property(TARGET libpicohttpparser
     PROPERTY IMPORTED_LOCATION
-    ${PICO_DIR}/libpicohttpparser.a
+    ${PICOHTTP_DIR}/libpicohttpparser.a
 )
-
-include_directories(${PICO_DIR})
-set(picohttpparser_LIBS ${PICO_DIR}/libpicohttpparser.a)
+include_directories(${PICOHTTP_DIR})
+set(PICOHTTP_LIBS libpicohttpparser)
 
 find_package(Threads REQUIRED)
-
 include_directories(include/ src/)
 
 add_library(ujrpc_server_uring src/engine_uring.cpp)
-target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring)
+target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring ${PICOHTTP_LIBS} ${URING_LIBS})
 
 add_library(ujrpc_server_posix src/engine_posix.cpp)
-target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads)
+target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
 
 add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
-target_link_libraries(ujrpc_server_bench ujrpc_server_posix ${picohttpparser_LIBS})
+target_link_libraries(ujrpc_server_bench ujrpc_server_uring)
 
 add_executable(ujrpc_client_bench benchmark/ujrpc_client.cpp)
 target_link_libraries(ujrpc_client_bench benchmark::benchmark)
