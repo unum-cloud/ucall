@@ -44,6 +44,7 @@ To make networking faster, one needs just 2 components:
 Today, libraries like `simdjson` can parse JSON documents faster than gRPC will unpack binary `ProtoBuf`.
 Moreover, with `io_uring`, we can avoid system calls and interrupts on the hot path and still use the TCP/IP stack for maximum compatibility.
 By now, you believe that one can be faster than gRPC, but would that sacrifice usability?
+We don't think so.
 
 ```python
 from ujrpc import Server
@@ -55,9 +56,21 @@ def sum(a: int, b: int):
     return a + b
 ```
 
-We don't think so.
 This tiny solution already works for C, C++, and Python.
 It is even easier to use than FastAPI but is 1000x faster.
+Moreover, it supports tensor-like types common in Machine Learning and useful for batch processing:
+
+```python
+import numpy as np
+from ujrpc import Server
+
+serve = Server()
+
+@serve
+def sum_arrays(a: np.array, b: np.array):
+    return a + b
+```
+
 We are inviting others to contribute bindings to other languages as well.
 
 ## Benchmarks
@@ -71,12 +84,11 @@ We are inviting others to contribute bindings to other languages as well.
 | gRPC                        |          373 μs |         1061 μs |
 | gRCP, reusing               |          270 μs |          459 μs |
 |                             |                 |                 |
-| UJRPC over HTTP             |                 |                 |
-| UJRPC over TCP              |           55 μs |                 |
-| UJRPC over TCP, reusing     |                 |                 |
-|                             |                 |                 |
 | UCX                         |       18'141 μs |                 |
 | UCX, reusing                |           90 μs |                 |
+|                             |                 |                 |
+| UJRPC over TCP              |           90 μs |                 |
+| UJRPC over TCP, reusing     |           25 μs |                 |
 
 > μ stands for micro, μs subsequently means microseconds.
 > First column shows timing for a server with Ubuntu 22.04, based on a 64-core AMD Epyc CPU.
