@@ -122,13 +122,11 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
         for (std::size_t i = 0; i < header_cnt; ++i) {
             if (headers[i].name_len == 0)
                 continue;
-            if (headers[i].name == "Keep-Alive")
+            if (headers[i].name == std::string_view("Keep-Alive"))
                 req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Keep-Alive")
-                req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Content-Type")
+            else if (headers[i].name == std::string_view("Content-Type"))
                 req.content_type = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == "Content-Length")
+            else if (headers[i].name == std::string_view("Content-Length"))
                 req.content_length = std::string_view(headers[i].value, headers[i].value_len);
         }
     }
