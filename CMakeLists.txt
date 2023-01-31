@@ -9,6 +9,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Check if we are running on Linux
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+    execute_process(COMMAND uname -r OUTPUT_VARIABLE UNAME_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
+    message(-- " Kernel version: " ${UNAME_RESULT})
+    string(REGEX MATCH "[0-9]+.[0-9]+" LINUX_KERNEL_VERSION ${UNAME_RESULT})
+endif()
+
 include(FetchContent)
 include(ExternalProject)
 
@@ -35,26 +43,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(benchmark)
 include_directories(${benchmark_SOURCE_DIR}/include)
 
-set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
-ExternalProject_Add(
-    liburing-ep
-    GIT_REPOSITORY https://github.com/axboe/liburing
-    PREFIX ${CMAKE_BINARY_DIR}/_deps/
-    SOURCE_DIR ${URING_DIR}
-    CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
-    BUILD_COMMAND cd ${URING_DIR} && make;
-    INSTALL_COMMAND ""
-    UPDATE_COMMAND ""
-)
-add_library(liburing STATIC IMPORTED GLOBAL)
-add_dependencies(liburing liburing-ep)
-set_property(TARGET liburing
-    PROPERTY IMPORTED_LOCATION
-    ${URING_DIR}/src/liburing.a
-)
-include_directories(${URING_DIR})
-set(URING_LIBS liburing)
-
+# On MacOS you may need to locate headers here:
+# export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 set(PICOHTTP_DIR ${CMAKE_BINARY_DIR}/_deps/picohttpparser-ep)
 ExternalProject_Add(
     picohttpparser-ep
@@ -75,17 +65,45 @@ set_property(TARGET libpicohttpparser
 include_directories(${PICOHTTP_DIR})
 set(PICOHTTP_LIBS libpicohttpparser)
 
+if(LINUX) 
+    set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
+    ExternalProject_Add(
+        liburing-ep
+        GIT_REPOSITORY https://github.com/axboe/liburing
+        PREFIX ${CMAKE_BINARY_DIR}/_deps/
+        SOURCE_DIR ${URING_DIR}
+        CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
+        BUILD_COMMAND cd ${URING_DIR} && make;
+        INSTALL_COMMAND ""
+        UPDATE_COMMAND ""
+    )
+    add_library(liburing STATIC IMPORTED GLOBAL)
+    add_dependencies(liburing liburing-ep)
+    set_property(TARGET liburing
+        PROPERTY IMPORTED_LOCATION
+        ${URING_DIR}/src/liburing.a
+    )
+    include_directories(${URING_DIR})
+    set(URING_LIBS liburing)
+endif()
+
 find_package(Threads REQUIRED)
 include_directories(include/ src/)
-
-add_library(ujrpc_server_uring src/engine_uring.cpp)
-target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring ${PICOHTTP_LIBS} ${URING_LIBS})
 
 add_library(ujrpc_server_posix src/engine_posix.cpp)
 target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
 
-add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
-target_link_libraries(ujrpc_server_bench ujrpc_server_uring)
+if(LINUX AND LINUX_KERNEL_VERSION VERSION_LESS 5.15)
+    add_library(ujrpc_server_uring src/engine_uring.cpp)
+    target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring ${PICOHTTP_LIBS} ${URING_LIBS})
+    message("Linux kernel version should be greater than 5.15 to use io_uring features")
+    add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
+    target_link_libraries(ujrpc_server_bench ujrpc_server_uring)
+else()
+    add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
+    target_link_libraries(ujrpc_server_bench ujrpc_server_posix)
+endif()
+
 
 add_executable(ujrpc_client_bench benchmark/ujrpc_client.cpp)
 target_link_libraries(ujrpc_client_bench benchmark::benchmark)
