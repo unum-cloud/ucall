@@ -14,14 +14,16 @@ namespace sjd = sj::dom;
 
 struct scratch_space_t {
     char json_pointer[json_pointer_capacity_k]{};
+    char printed_int_id[max_integer_length_k]{};
+
     sjd::parser parser{};
     sjd::element tree{};
-    std::string_view id{};
     bool is_batch{};
     bool is_async{};
 
     sjd::parser* dynamic_parser{};
     std::string_view dynamic_packet{};
+    std::string_view dynamic_id{};
 };
 
 struct default_error_t {
@@ -66,8 +68,17 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
     if (params_present_and_invalid)
         return default_error_t{-32600, "Parameters can only be passed in arrays or objects."};
 
-    // TODO: Patch SIMD-JSON to extract the token
-    scratch.id = id.error() == sj::SUCCESS ? "null" : "";
+    if (id.is_string()) {
+        scratch.dynamic_id = id.get_string().value_unsafe();
+    } else if (id.is_int64() || id.is_uint64()) {
+        char* code = &scratch.printed_int_id[0];
+        std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, id.get_int64().value_unsafe());
+        auto code_len = res.ptr - code;
+        if (res.ec != std::error_code())
+            return default_error_t{-32600, "The request ID is invalid integer."};
+        scratch.dynamic_id = std::string_view(code, code_len);
+    } else
+        scratch.dynamic_id = "";
 
     // Make sure we have such a method:
     auto method_name = method.get_string().value_unsafe();

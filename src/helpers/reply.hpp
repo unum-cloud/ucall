@@ -60,14 +60,14 @@ void fill_with_error(struct iovec* buffers, std::string_view request_id, std::st
 
 template <std::size_t iovecs_len_ak> std::size_t iovecs_length(struct iovec const* iovecs) noexcept {
     std::size_t added_length = 0;
-#pragma GCC unroll iovecs_len_ak
+#pragma unroll
     for (std::size_t i = 0; i != iovecs_len_ak; ++i)
         added_length += iovecs[i].iov_len;
     return added_length;
 }
 
 template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iovecs, char* output) noexcept {
-#pragma GCC unroll iovecs_len_ak
+#pragma unroll
     for (std::size_t i = 0; i != iovecs_len_ak; ++i) {
         std::memcpy(output, iovecs[i].iov_base, iovecs[i].iov_len);
         output += iovecs[i].iov_len;

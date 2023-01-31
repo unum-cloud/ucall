@@ -278,7 +278,7 @@ void ujrpc_free(ujrpc_server_t server) {
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
-    if (scratch.id.empty())
+    if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
     if (!body_len)
@@ -288,7 +288,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     if (!scratch.is_batch) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_content_k] {};
-        fill_with_content(iovecs, scratch.id, std::string_view(body, body_len));
+        fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_content_k;
         if (sendmsg(engine.connection, &message, 0) < 0)
@@ -302,7 +302,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
             return ujrpc_call_send_error_out_of_memory(call);
         std::memcpy(body_copy, body, body_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = body_copy;
-        fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.id,
+        fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id,
                           std::string_view(body, body_len), true);
         engine.batch_response.iovecs_count += iovecs_for_content_k;
     }
@@ -311,14 +311,14 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
-    if (scratch.id.empty())
+    if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
     if (!note_len)
         note_len = std::strlen(note);
 
-    char code[16]{};
-    std::to_chars_result res = std::to_chars(code, code + sizeof(code), code_int);
+    char code[max_integer_length_k]{};
+    std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
         return ujrpc_call_send_error_unknown(call);
@@ -327,7 +327,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     if (!scratch.is_batch) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_error_k] {};
-        fill_with_error(iovecs, scratch.id,               //
+        fill_with_error(iovecs, scratch.dynamic_id,       //
                         std::string_view(code, code_len), //
                         std::string_view(note, note_len));
         message.msg_iov = iovecs;
@@ -344,8 +344,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         std::memcpy(code_and_node, code, code_len);
         std::memcpy(code_and_node + code_len, note, note_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = code_and_node;
-        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.id, //
-                        std::string_view(code_and_node, code_len),                                            //
+        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id, //
+                        std::string_view(code_and_node, code_len),                                                    //
                         std::string_view(code_and_node + code_len, note_len), true);
         engine.batch_response.iovecs_count += iovecs_for_error_k;
     }

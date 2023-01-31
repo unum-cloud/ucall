@@ -34,13 +34,13 @@ class Stats:
         return I(result)
 
 
-def benchmark(callable, count_cycles: int, debug: bool = False) -> Stats:
+def benchmark(callable, transmits_count: int, debug: bool = False) -> Stats:
     stats = Stats()
-    tasks_range = range(count_cycles)
+    tasks_range = range(transmits_count)
     if debug:
         tasks_range = tqdm(tasks_range)
 
-    for _ in range(count_cycles):
+    for _ in range(transmits_count):
         t1 = time.monotonic_ns()
         successes = callable()
         stats.requests += successes
@@ -53,13 +53,13 @@ def benchmark(callable, count_cycles: int, debug: bool = False) -> Stats:
     return stats
 
 
-async def benchmark_async(callable, *args, count_cycles: int = 10_000):
+async def benchmark_async(callable, *args, transmits_count: int = 10_000):
     return
     transmits_failed = 0
     transmits_success = 0
 
     start_time = time.time()
-    for _ in range(count_cycles):
+    for _ in range(transmits_count):
         try:
             await callable(*args)
             transmits_success += 1
@@ -69,10 +69,10 @@ async def benchmark_async(callable, *args, count_cycles: int = 10_000):
     _finalize_benchmark(transmits_success, transmits_failed, duration)
 
 
-def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100_000, debug: bool = False):
+def benchmark_parallel(callable, process_count: int = 1, transmits_count: int = 100_000, debug: bool = False):
 
     if process_count == 1:
-        return benchmark(callable=callable, count_cycles=count_cycles, debug=debug)
+        return benchmark(callable=callable, transmits_count=transmits_count, debug=debug)
 
     transmits_success = Value('i', 0)
     transmits_failed = Value('i', 0)
@@ -80,7 +80,7 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
     mean_latency_secs = Value('f', 0)
 
     def run():
-        stats = benchmark(callable, count_cycles, debug)
+        stats = benchmark(callable, transmits_count, debug)
         transmits_success.value += stats.transmits_success
         transmits_failed.value += stats.transmits_failed
         requests.value += stats.requests

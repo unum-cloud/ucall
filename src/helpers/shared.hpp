@@ -22,6 +22,9 @@ static constexpr std::size_t max_packet_size_k = 4096;
 /// A performance-oriented API will have maximum depth of 1 token.
 /// Some may go as far as 5 token, or roughly 50 character.
 static constexpr std::size_t json_pointer_capacity_k = 256;
+/// @brief Number of bytes in a printed integer.
+/// Used either for error codes, or for request IDs.
+static constexpr std::size_t max_integer_length_k = 32;
 /// @brief Needed for largest-register-aligned memory addressing.
 static constexpr std::size_t align_k = 64;
 /// @brief Accessing real time from user-space is very expensive.

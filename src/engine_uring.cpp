@@ -340,14 +340,14 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
-    if (scratch.id.empty())
+    if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
     if (!body_len)
         body_len = std::strlen(body);
 
     struct iovec iovecs[iovecs_for_content_k] {};
-    fill_with_content(iovecs, scratch.id, std::string_view(body, body_len), true);
+    fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len), true);
     connection.append_output<iovecs_for_content_k>(iovecs);
 }
 
@@ -355,20 +355,20 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
-    if (scratch.id.empty())
+    if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
     if (!note_len)
         note_len = std::strlen(note);
 
-    char code[16]{};
-    std::to_chars_result res = std::to_chars(code, code + sizeof(code), code_int);
+    char code[max_integer_length_k]{};
+    std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
         return ujrpc_call_send_error_unknown(call);
 
     struct iovec iovecs[iovecs_for_error_k] {};
-    fill_with_error(iovecs, scratch.id, std::string_view(code, code_len), std::string_view(note, note_len), true);
+    fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len), true);
     connection.append_output<iovecs_for_error_k>(iovecs);
 }
 
