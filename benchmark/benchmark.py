@@ -111,6 +111,8 @@ def socket_is_closed(sock: socket.socket) -> bool:
     """
     Returns True if the remote side did close the connection
     """
+    if sock is None:
+        return True
     try:
         buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
         if buf == b'':
