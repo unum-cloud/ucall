@@ -63,7 +63,7 @@ using namespace unum::ujrpc;
 
 static constexpr std::size_t sleep_growth_factor_k = 4;
 static constexpr std::size_t wakeup_initial_frequency_ns_k = 3'000;
-static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'00;
+static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'000;
 
 struct completed_event_t;
 struct exchange_buffer_t;
@@ -594,10 +594,10 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     connection.stage = stage_t::waiting_to_accept_k;
     submission_mutex.lock();
 
-    // sqe = io_uring_get_sqe(&ring);
-    // io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
-    // io_uring_sqe_set_data(sqe, con_ptr);
-    // io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
+    sqe = io_uring_get_sqe(&ring);
+    io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
+    io_uring_sqe_set_data(sqe, con_ptr);
+    io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
 
     sqe = io_uring_get_sqe(&ring);
     io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
@@ -605,7 +605,7 @@ bool engine_t::consider_accepting_new_connection() noexcept {
 
     uring_response = io_uring_submit(&ring);
     submission_mutex.unlock();
-    if (uring_response != 1) {
+    if (uring_response != 2) {
         connections.release(con_ptr);
         reserved_connections--;
         return false;
@@ -736,10 +736,11 @@ void automata_t::operator()() noexcept {
         if (completed_result == -ECANCELED) {
             connection.sleep_ns += connection.next_wakeup.tv_nsec;
             connection.next_wakeup.tv_nsec *= sleep_growth_factor_k;
-            return should_release() ? close_gracefully() : receive_next();
+            completed_result = 0;
         }
+
         // No data was received.
-        else if (completed_result == 0) {
+        if (completed_result == 0) {
             connection.empty_transmits++;
             return should_release() ? close_gracefully() : receive_next();
         }

@@ -110,7 +110,6 @@ def benchmark_parallel(callable, process_count: int = 1, count_cycles: int = 100
 def socket_is_closed(sock: socket.socket) -> bool:
     """
     Returns True if the remote side did close the connection
-
     """
     try:
         buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
