@@ -9,6 +9,7 @@ typedef char const* ujrpc_str_t;
 typedef void (*ujrpc_callback_t)(ujrpc_call_t);
 
 typedef struct ujrpc_config_t {
+    char const* interface;
     uint16_t port;
     uint16_t queue_depth;
     uint16_t callbacks_capacity;

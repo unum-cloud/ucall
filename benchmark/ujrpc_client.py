@@ -11,6 +11,8 @@ from benchmark import benchmark_parallel, socket_is_closed, safe_call
 
 current_process_id = os.getpid()
 pattern = '{"jsonrpc":"2.0","method":"sum","params":{"a":%i,"b":%i},"id":%i}'
+ip = '127.0.0.1' # For default interface
+# ip = '192.168.5.9' # For InfiniBand
 
 
 def random_request(identity) -> tuple[str, int]:
@@ -36,7 +38,7 @@ def parse_response(response: bytes) -> object:
 
 def make_socket():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('127.0.0.1', 8545))
+    sock.connect((ip, 8545))
     return sock
 
 

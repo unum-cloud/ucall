@@ -83,7 +83,8 @@ if(LINUX)
         PROPERTY IMPORTED_LOCATION
         ${URING_DIR}/src/liburing.a
     )
-    include_directories(${URING_DIR})
+
+    # include_directories(${URING_DIR}/src/include/)
     set(URING_LIBS liburing)
 endif()
 

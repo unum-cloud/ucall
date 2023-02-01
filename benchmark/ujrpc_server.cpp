@@ -4,6 +4,7 @@
  * Search queries.
  */
 #include <charconv> // `std::to_chars`
+#include <cstdio>   // `std::fprintf`
 #include <thread>
 #include <vector>
 
@@ -36,7 +37,9 @@ static void bot_or_not(ujrpc_call_t call) {
 int main(int argc, char** argv) {
     ujrpc_server_t server{};
     ujrpc_config_t config{};
-    config.max_threads = 3;
+    // config.interface = "192.168.5.9"; // For InfiniBand
+    config.port = 8545;
+    config.max_threads = 1;
     config.max_concurrent_connections = 10000;
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 100;
@@ -44,6 +47,7 @@ int main(int argc, char** argv) {
     if (!server)
         return -1;
 
+    std::printf("Initialized server!\n");
     ujrpc_add_procedure(server, "sum", &sum);
     ujrpc_add_procedure(server, "bot_or_not", &bot_or_not);
 

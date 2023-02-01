@@ -33,6 +33,7 @@
  * https://jvns.ca/blog/2017/06/03/async-io-on-linux--select--poll--and-epoll/
  * https://stackoverflow.com/a/17665015/2766161
  */
+#include <arpa/inet.h>  // `inet_addr`
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
@@ -241,12 +242,19 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.max_lifetime_micro_seconds = 100'000u;
     if (!config.max_lifetime_exchanges)
         config.max_lifetime_exchanges = 100u;
+    if (!config.interface)
+        config.interface = "0.0.0.0";
 
     // Allocate
-    int socket_options = 1;
-    int socket_descriptor = -1;
-    int uring_result = -1;
+    int socket_options{1};
+    int socket_descriptor{-1};
+    int uring_result{-1};
     struct io_uring ring {};
+    auto ring_flags{0};
+    // 5.19+
+    // ring_flags |= IORING_SETUP_COOP_TASKRUN;
+    // 6.0+
+    // ring_flags |= config.max_threads == 1 ? IORING_SETUP_SINGLE_ISSUER : 0;
     engine_t* server_ptr{};
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
@@ -255,11 +263,11 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_addr.s_addr = inet_addr(config.interface);
     address.sin_port = htons(config.port);
 
     // Initialize `io_uring` first, it is the most likely to fail.
-    uring_result = io_uring_queue_init(config.queue_depth, &ring, 0);
+    uring_result = io_uring_queue_init(config.queue_depth, &ring, ring_flags);
     if (uring_result != 0)
         goto cleanup;
 
@@ -679,7 +687,6 @@ void engine_t::submit_stats_heartbeat() noexcept {
     sqe = io_uring_get_sqe(&ring);
     io_uring_prep_timeout(sqe, &connection.next_wakeup, 0, 0);
     io_uring_sqe_set_data(sqe, &connection);
-
     uring_response = io_uring_submit(&ring);
     submission_mutex.unlock();
 }
@@ -697,34 +704,31 @@ void engine_t::log_and_reset_stats() noexcept {
     auto packets_sent = printable_normalized(stats_packets_sent);
     auto len = std::snprintf( //
         printed_message_k, max_packet_size_k,
-        "connections_added: %.1f %c/s, "
-        "connections_closed: %.1f %c/s, "
-        "data_recv: %.1f %cb/s, "
-        "data_sent: %.1f %cb/s, "
-        "packets_recv: %.1f %c/s, "
-        "packets_sent: %.1f %c/s.\n",
+        "connections: +%.1f %c/s, "
+        "-%.1f %c/s, "
+        "RX: %.1f %c msgs/s, "
+        "%.1f %cb/s, "
+        "TX: %.1f %c msgs/s, "
+        "%.1f %cb/s.\n",
         new_connections.number, new_connections.suffix,       //
         closed_connections.number, closed_connections.suffix, //
-        bytes_received.number, bytes_received.suffix,         //
-        bytes_sent.number, bytes_sent.suffix,                 //
         packets_received.number, packets_received.suffix,     //
-        packets_sent.number, packets_sent.suffix              //
+        bytes_received.number, bytes_received.suffix,         //
+        packets_sent.number, packets_sent.suffix,             //
+        bytes_sent.number, bytes_sent.suffix                  //
     );
     std::fwrite(printed_message_k, sizeof(char), len, stdout);
 }
 
 void engine_t::release_connection(connection_t& connection) noexcept {
+    auto is_active = connection.stage != stage_t::waiting_to_accept_k;
     connection.reset();
     connections_mutex.lock();
     connections.release(&connection);
     connections_mutex.unlock();
-    active_connections -= connection.stage != stage_t::waiting_to_accept_k;
-    stats_closed_connections.fetch_add(1, std::memory_order_relaxed);
+    active_connections -= is_active;
+    stats_closed_connections.fetch_add(is_active, std::memory_order_relaxed);
 }
-
-// TODO
-#define IORING_ASYNC_CANCEL_ALL 0
-#define IOSQE_CQE_SKIP_SUCCESS 0
 
 void automata_t::close_gracefully() noexcept {
     int uring_response{};
@@ -744,7 +748,7 @@ void automata_t::close_gracefully() noexcept {
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
     io_uring_sqe_set_data(sqe, &connection);
-    io_uring_sqe_set_flags(sqe, IOSQE_CQE_SKIP_SUCCESS);
+    io_uring_sqe_set_flags(sqe, 0 /*IOSQE_CQE_SKIP_SUCCESS*/);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
 }
@@ -759,6 +763,7 @@ void automata_t::send_next() noexcept {
 
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
+    // io_uring_prep_send_zc(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0, 0);
     io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
