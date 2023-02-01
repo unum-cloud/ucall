@@ -363,19 +363,17 @@ void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_ptr) {
+bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
+    name_len = string_length(name, name_len);
     std::memcpy(scratch.json_pointer, "/params/", 8);
-    std::memcpy(scratch.json_pointer + 8, name, std::strlen(name) + 1);
+    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
     auto value = scratch.tree.at_pointer(scratch.json_pointer);
 
-    if (value.is_int64()) {
-        *result_ptr = value.get_int64();
-        return true;
-    } else if (value.is_uint64()) {
-        *result_ptr = static_cast<int64_t>(value.get_uint64());
-        return true;
-    } else
+    if (!value.is_int64())
         return false;
+
+    *result_ptr = value.get_int64().value_unsafe();
+    return true;
 }

@@ -20,6 +20,7 @@ struct scratch_space_t {
     sjd::element tree{};
     bool is_batch{};
     bool is_async{};
+    bool is_http{};
 
     sjd::parser* dynamic_parser{};
     std::string_view dynamic_packet{};

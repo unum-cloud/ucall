@@ -10,8 +10,8 @@
 static void sum(ujrpc_call_t call) {
     int64_t a{}, b{};
     char c_str[256]{};
-    bool got_a = ujrpc_param_named_i64(call, "a", &a);
-    bool got_b = ujrpc_param_named_i64(call, "b", &b);
+    bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
+    bool got_b = ujrpc_param_named_i64(call, "b", 0, &b);
     if (!got_a || !got_b)
         return ujrpc_call_reply_error(call, 1, "Missing integer argument a and/or b", 0);
 

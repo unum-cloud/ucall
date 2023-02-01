@@ -64,6 +64,7 @@ using namespace unum::ujrpc;
 static constexpr std::size_t sleep_growth_factor_k = 4;
 static constexpr std::size_t wakeup_initial_frequency_ns_k = 3'000;
 static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'000;
+static constexpr std::size_t stats_heartbeat_s_k = 5;
 
 struct completed_event_t;
 struct exchange_buffer_t;
@@ -76,6 +77,7 @@ enum class stage_t {
     expecting_reception_k,
     responding_in_progress_k,
     waiting_to_close_k,
+    log_stats_k,
     unknown_k,
 };
 
@@ -122,8 +124,8 @@ struct connection_t {
     /// @brief Current state at which the automata has arrived.
     stage_t stage{};
 
-    struct sockaddr client_addr {};
-    socklen_t client_addr_len{sizeof(client_addr)};
+    struct sockaddr client_address {};
+    socklen_t client_address_len{sizeof(struct sockaddr)};
 
     std::size_t input_absorbed{};
     std::size_t output_submitted{};
@@ -164,6 +166,14 @@ struct engine_t {
     std::mutex submission_mutex{};
     std::mutex completion_mutex{};
 
+    std::atomic<std::size_t> stats_new_connections{};
+    std::atomic<std::size_t> stats_closed_connections{};
+    std::atomic<std::size_t> stats_bytes_received{};
+    std::atomic<std::size_t> stats_bytes_sent{};
+    std::atomic<std::size_t> stats_packets_received{};
+    std::atomic<std::size_t> stats_packets_sent{};
+    connection_t stats_pseudo_connection{};
+
     /// @brief An array of function callbacks. Can be in dozens.
     array_gt<named_callback_t> callbacks{};
     /// @brief A circular container of reusable connections. Can be in millions.
@@ -172,8 +182,10 @@ struct engine_t {
     buffer_gt<scratch_space_t> spaces{};
 
     bool consider_accepting_new_connection() noexcept;
+    void submit_stats_heartbeat() noexcept;
     completed_event_t pop_completed() noexcept;
     void release_connection(connection_t&) noexcept;
+    void log_and_reset_stats() noexcept;
 };
 
 struct automata_t {
@@ -305,6 +317,8 @@ void ujrpc_free(ujrpc_server_t server) {
 }
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t thread_idx) {
+    engine_t& engine = *reinterpret_cast<engine_t*>(server);
+    engine.submit_stats_heartbeat();
     while (true) {
         ujrpc_take_call(server, thread_idx);
     }
@@ -343,9 +357,8 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
-    if (!body_len)
-        body_len = std::strlen(body);
 
+    body_len = string_length(body, body_len);
     struct iovec iovecs[iovecs_for_content_k] {};
     fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len), true);
     connection.append_output<iovecs_for_content_k>(iovecs);
@@ -358,9 +371,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     if (scratch.dynamic_id.empty())
         // No response is needed for "id"-less notifications.
         return;
-    if (!note_len)
-        note_len = std::strlen(note);
 
+    note_len = string_length(note, note_len);
     char code[max_integer_length_k]{};
     std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
@@ -368,7 +380,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         return ujrpc_call_send_error_unknown(call);
 
     struct iovec iovecs[iovecs_for_error_k] {};
-    fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len), true);
+    fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len),
+                    true);
     connection.append_output<iovecs_for_error_k>(iovecs);
 }
 
@@ -384,23 +397,20 @@ void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, int64_t* result_ptr) {
+bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
-
+    name_len = string_length(name, name_len);
     std::memcpy(scratch.json_pointer, "/params/", 8);
-    std::memcpy(scratch.json_pointer + 8, name, std::strlen(name) + 1);
+    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
     auto value = scratch.tree.at_pointer(scratch.json_pointer);
 
-    if (value.is_int64()) {
-        *result_ptr = value.get_int64();
-        return true;
-    } else if (value.is_uint64()) {
-        *result_ptr = static_cast<int64_t>(value.get_uint64());
-        return true;
-    } else
+    if (!value.is_int64())
         return false;
+
+    *result_ptr = value.get_int64().value_unsafe();
+    return true;
 }
 
 #pragma endregion C Definitions
@@ -414,17 +424,22 @@ bool connection_t::expired() const noexcept {
 }
 
 void connection_t::reset() noexcept {
-    // TODO: deadline = cpu_cycle() + cpu_cycles_per_micro_second_k * 100'000'000;
-    std::memset(input.data(), 0, input.capacity());
 
+    stage = stage_t::unknown_k;
+    client_address = {};
+
+    input.reset();
+    output.reset();
     input_absorbed = 0;
     output_submitted = 0;
-    sleep_ns = 0;
-    empty_transmits = 0;
-    next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
+
     keep_alive.reset();
     content_length.reset();
     content_type.reset();
+
+    sleep_ns = 0;
+    empty_transmits = 0;
+    next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
 }
 
 std::string_view connection_t::reserve_input() noexcept {
@@ -531,7 +546,9 @@ void automata_t::parse_and_raise_request() noexcept {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    scratch.dynamic_packet = std::get<parsed_request_t>(json_or_error).body;
+    auto parsed_request = std::get<parsed_request_t>(json_or_error);
+    scratch.is_http = request.size() != parsed_request.body.size();
+    scratch.dynamic_packet = parsed_request.body;
     if (scratch.dynamic_packet.size() > max_packet_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
@@ -590,12 +607,11 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     int uring_response{};
     struct io_uring_sqe* sqe{};
     connection_t& connection = *con_ptr;
-    connection.reset();
     connection.stage = stage_t::waiting_to_accept_k;
     submission_mutex.lock();
 
     sqe = io_uring_get_sqe(&ring);
-    io_uring_prep_accept(sqe, socket, &connection.client_addr, &connection.client_addr_len, 0);
+    io_uring_prep_accept(sqe, socket, &connection.client_address, &connection.client_address_len, 0);
     io_uring_sqe_set_data(sqe, con_ptr);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
 
@@ -615,11 +631,56 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     return true;
 }
 
+void engine_t::submit_stats_heartbeat() noexcept {
+    int uring_response{};
+    struct io_uring_sqe* sqe{};
+    connection_t& connection = stats_pseudo_connection;
+    connection.stage = stage_t::log_stats_k;
+    connection.next_wakeup.tv_sec = stats_heartbeat_s_k;
+    submission_mutex.lock();
+
+    sqe = io_uring_get_sqe(&ring);
+    io_uring_prep_timeout(sqe, &connection.next_wakeup, 0, 0);
+    io_uring_sqe_set_data(sqe, &connection);
+
+    uring_response = io_uring_submit(&ring);
+    submission_mutex.unlock();
+}
+
+void engine_t::log_and_reset_stats() noexcept {
+    static char printed_message_k[max_packet_size_k]{};
+    auto printable_normalized = [](std::atomic<std::size_t>& i) noexcept {
+        return printable(i.exchange(0, std::memory_order_relaxed) / stats_heartbeat_s_k);
+    };
+    auto new_connections = printable_normalized(stats_new_connections);
+    auto closed_connections = printable_normalized(stats_closed_connections);
+    auto bytes_received = printable_normalized(stats_bytes_received);
+    auto bytes_sent = printable_normalized(stats_bytes_sent);
+    auto packets_received = printable_normalized(stats_packets_received);
+    auto packets_sent = printable_normalized(stats_packets_sent);
+    auto len = std::snprintf( //
+        printed_message_k, max_packet_size_k,
+        "connections_added: %.1f %c,"
+        "connections_closed: %.1f %c, "
+        "data_recv: %.1f %c, "
+        "data_sent: %.1f %c, "
+        "packets_recv: %.1f %c, "
+        "packets_sent: %.1f %c.\n",
+        new_connections.number, new_connections.suffix,       //
+        closed_connections.number, closed_connections.suffix, //
+        bytes_received.number, bytes_received.suffix,         //
+        bytes_sent.number, bytes_sent.suffix,                 //
+        packets_received.number, packets_received.suffix,     //
+        packets_sent.number, packets_sent.suffix              //
+    );
+    std::fwrite(printed_message_k, sizeof(char), len, stdout);
+}
+
 void engine_t::release_connection(connection_t& connection) noexcept {
-    connection.input.reset();
-    connection.output.reset();
+    connection.reset();
     connections.release(&connection);
     active_connections -= connection.stage != stage_t::waiting_to_accept_k;
+    stats_closed_connections.fetch_add(1, std::memory_order_relaxed);
 }
 
 // TODO
@@ -638,6 +699,7 @@ void automata_t::close_gracefully() noexcept {
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
+    io_uring_sqe_set_data(sqe, NULL);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
 
     sqe = io_uring_get_sqe(&engine.ring);
@@ -653,8 +715,8 @@ void automata_t::send_next() noexcept {
     struct io_uring_sqe* sqe{};
     auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
-    connection.input.reset();
     connection.input_absorbed = 0;
+    connection.input.reset();
 
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
@@ -715,6 +777,7 @@ void automata_t::operator()() noexcept {
         // Check if accepting the new connection request worked out.
         engine.reserved_connections--;
         engine.active_connections++;
+        engine.stats_new_connections.fetch_add(1, std::memory_order_relaxed);
         connection.descriptor = descriptor_t{completed_result};
         return receive_next();
 
@@ -749,6 +812,8 @@ void automata_t::operator()() noexcept {
         connection.input.length += completed_result;
         connection.empty_transmits = 0;
         connection.sleep_ns = 0;
+        engine.stats_bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
+        engine.stats_packets_received.fetch_add(1, std::memory_order_relaxed);
 
         // If we have reached the end of the stream,
         // it is time to analyze the contents
@@ -772,14 +837,21 @@ void automata_t::operator()() noexcept {
     case stage_t::responding_in_progress_k:
 
         connection.empty_transmits = completed_result == 0 ? ++connection.empty_transmits : 0;
+
         if (should_release())
             return close_gracefully();
 
         connection.output_submitted += completed_result;
+        engine.stats_bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
+        engine.stats_packets_sent.fetch_add(1, std::memory_order_relaxed);
         return !connection.submitted_all() ? send_next() : receive_next();
 
     case stage_t::waiting_to_close_k:
         return engine.release_connection(connection);
+
+    case stage_t::log_stats_k:
+        engine.log_and_reset_stats();
+        return engine.submit_stats_heartbeat();
     }
 }
 
