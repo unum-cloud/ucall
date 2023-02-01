@@ -3,7 +3,9 @@ import requests
 import random
 import socket
 import json
-import argparse
+import time
+
+import fire
 
 from benchmark import benchmark_parallel, socket_is_closed, safe_call
 
@@ -170,7 +172,7 @@ class ClientSumBatchesTCP:
         return 7
 
 
-def test_concurrent_connections(client_type=ClientSumTCP, count_connections=3, count_cycles=1000):
+def test_concurrency(client_type=ClientSumTCP, count_connections=3, count_cycles=1000):
 
     clients = [client_type(identity=identity)
                for identity in range(count_connections)]
@@ -183,21 +185,15 @@ def test_concurrent_connections(client_type=ClientSumTCP, count_connections=3, c
             safe_call(client.recv)
 
 
-if __name__ == '__main__':
+def test(threads: int = 100):
+    for concurrency in range(2, threads):
+        test_concurrency(concurrency, 1000)
+        print(f'- finished concurrency tests with {concurrency} connections')
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '-d', '--debug',
-        help='handle exception and log progress',
-        action='store_true')
-    args = parser.parse_args()
 
+def benchmark(debug: bool = False):
     processes_range = [1, 2, 4, 8, 16]
-    transmits_count = 1_000 if args.debug else 100_000
-
-    # for concurrency in range(2, 100):
-    #     test_concurrent_connections(concurrency, 1000)
-    #     print(f'- finished concurrency tests with {concurrency} connections')
+    transmits_count = 1_000 if debug else 100_000
 
     # Testing TCP connection
     for process_count in processes_range:
@@ -206,7 +202,7 @@ if __name__ == '__main__':
             lambda: ClientSumTCP()(),
             process_count=process_count,
             transmits_count=transmits_count,
-            debug=args.debug,
+            debug=debug,
         )
         print(stats)
 
@@ -217,7 +213,7 @@ if __name__ == '__main__':
             ClientSumTCP(),
             process_count=process_count,
             transmits_count=transmits_count,
-            debug=args.debug,
+            debug=debug,
         )
         print(stats)
 
@@ -228,6 +224,21 @@ if __name__ == '__main__':
             ClientSumBatchesTCP(),
             process_count=process_count,
             transmits_count=transmits_count,
-            debug=args.debug,
+            debug=debug,
         )
         print(stats)
+
+
+def run(seconds: int = 100, batch: bool = False):
+    client = ClientSumTCP() if not batch else ClientSumBatchesTCP()
+    start_time = time.time()
+    while time.time() - start_time < seconds:
+        safe_call(client)
+
+
+if __name__ == '__main__':
+    fire.Fire({
+        'test': test,
+        'benchmark': benchmark,
+        'run': run,
+    })
