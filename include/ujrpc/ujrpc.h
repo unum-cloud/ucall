@@ -11,14 +11,16 @@ typedef void (*ujrpc_callback_t)(ujrpc_call_t);
 typedef struct ujrpc_config_t {
     uint16_t port;
     uint16_t queue_depth;
-    uint16_t batch_capacity;
     uint16_t callbacks_capacity;
-    uint16_t connections_capacity;
-    uint16_t threads_limit;
-    uint32_t lifetime_microsec_limit;
+    uint16_t max_threads;
+
+    uint16_t max_batch_size;
+    uint32_t max_concurrent_connections;
+    uint32_t max_lifetime_micro_seconds;
+    uint32_t max_lifetime_exchanges;
 } ujrpc_config_t;
 
-void ujrpc_init(ujrpc_config_t const*, ujrpc_server_t*);
+void ujrpc_init(ujrpc_config_t*, ujrpc_server_t*);
 void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t);
 void ujrpc_take_call(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_take_calls(ujrpc_server_t, uint16_t thread_idx);

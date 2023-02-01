@@ -193,9 +193,9 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     // Retrieve configs, if present
     uint16_t port = config && config->port > 0 ? config->port : 8545u;
     uint16_t queue_depth = config && config->queue_depth > 0 ? config->queue_depth : 256u;
-    uint16_t batch_capacity = config && config->batch_capacity > 0 ? config->batch_capacity : 1024u;
+    uint16_t max_batch_size = config && config->max_batch_size > 0 ? config->max_batch_size : 1024u;
     uint16_t callbacks_capacity = config && config->callbacks_capacity > 0 ? config->callbacks_capacity : 128u;
-    uint16_t connections_capacity = config && config->connections_capacity > 0 ? config->connections_capacity : 1024u;
+    uint16_t max_concurrent_connections = config && config->max_concurrent_connections > 0 ? config->max_concurrent_connections : 1024u;
     int opt = 1;
     int server_fd = -1;
     engine_t* server_ptr = nullptr;
@@ -214,12 +214,12 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
-    // In the worst case we may have `batch_capacity` requests, where each will
+    // In the worst case we may have `max_batch_size` requests, where each will
     // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
     // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.reserve(batch_capacity * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
+    if (!embedded_iovecs.reserve(max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
         goto cleanup;
-    if (!embedded_copies.reserve(batch_capacity))
+    if (!embedded_copies.reserve(max_batch_size))
         goto cleanup;
     if (!embedded_callbacks.reserve(callbacks_capacity))
         goto cleanup;
@@ -238,7 +238,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     // Initialize all the members.
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{server_fd};
-    server_ptr->max_batch_size = batch_capacity;
+    server_ptr->max_batch_size = max_batch_size;
     server_ptr->callbacks = std::move(embedded_callbacks);
     server_ptr->scratch.parser = std::move(parser);
     server_ptr->batch_response.copies = std::move(embedded_copies);

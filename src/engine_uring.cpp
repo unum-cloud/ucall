@@ -133,6 +133,7 @@ struct connection_t {
     /// @brief Accumulated duration of sleep cycles.
     std::size_t sleep_ns{};
     std::size_t empty_transmits{};
+    std::size_t exchanges{};
 
     /// @brief Relative time set for the last wake-up call.
     struct __kernel_timespec next_wakeup {};
@@ -161,10 +162,12 @@ struct engine_t {
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};
     std::atomic<std::size_t> dismissed_connections{};
-    uint32_t lifetime_microsec_limit{};
+    std::uint32_t max_lifetime_micro_seconds{};
+    std::uint32_t max_lifetime_exchanges{};
 
     std::mutex submission_mutex{};
     std::mutex completion_mutex{};
+    std::mutex connections_mutex{};
 
     std::atomic<std::size_t> stats_new_connections{};
     std::atomic<std::size_t> stats_closed_connections{};
@@ -216,20 +219,28 @@ struct automata_t {
 #pragma endregion Cpp Declaration
 #pragma region C Definitions
 
-void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
+void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
 
     // Simple sanity check
-    if (!server)
+    if (!server_out && !config_inout)
         return;
 
     // Retrieve configs, if present
-    uint16_t port = config && config->port > 0 ? config->port : 8545u;
-    uint16_t queue_depth = config && config->queue_depth > 0 ? config->queue_depth : 4096u;
-    uint16_t callbacks_capacity = config && config->callbacks_capacity > 0 ? config->callbacks_capacity : 128u;
-    uint16_t connections_capacity = config && config->connections_capacity > 0 ? config->connections_capacity : 1024u;
-    uint16_t threads_limit = config && config->threads_limit ? config->threads_limit : 1u;
-    uint32_t lifetime_microsec_limit =
-        config && config->lifetime_microsec_limit ? config->lifetime_microsec_limit : 100'000u;
+    ujrpc_config_t& config = *config_inout;
+    if (!config.port)
+        config.port = 8545u;
+    if (!config.queue_depth)
+        config.queue_depth = 4096u;
+    if (!config.callbacks_capacity)
+        config.callbacks_capacity = 128u;
+    if (!config.max_concurrent_connections)
+        config.max_concurrent_connections = 100'000;
+    if (!config.max_threads)
+        config.max_threads = 1u;
+    if (!config.max_lifetime_micro_seconds)
+        config.max_lifetime_micro_seconds = 100'000u;
+    if (!config.max_lifetime_exchanges)
+        config.max_lifetime_exchanges = 100u;
 
     // Allocate
     int socket_options = 1;
@@ -245,10 +256,10 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     struct sockaddr_in address {};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = htons(port);
+    address.sin_port = htons(config.port);
 
     // Initialize `io_uring` first, it is the most likely to fail.
-    uring_result = io_uring_queue_init(queue_depth, &ring, 0);
+    uring_result = io_uring_queue_init(config.queue_depth, &ring, 0);
     if (uring_result != 0)
         goto cleanup;
 
@@ -256,11 +267,11 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
-    if (!callbacks.reserve(callbacks_capacity))
+    if (!callbacks.reserve(config.callbacks_capacity))
         goto cleanup;
-    if (!connections.reserve(connections_capacity))
+    if (!connections.reserve(config.max_concurrent_connections))
         goto cleanup;
-    if (!spaces.reserve(threads_limit))
+    if (!spaces.reserve(config.max_threads))
         goto cleanup;
     for (auto& space : spaces)
         if (space.parser.allocate(max_packet_size_k, max_packet_size_k / 2) != sj::SUCCESS)
@@ -275,18 +286,19 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
         goto cleanup;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
-    if (listen(socket_descriptor, queue_depth) < 0)
+    if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
 
     // Initialize all the members.
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{socket_descriptor};
-    server_ptr->lifetime_microsec_limit = lifetime_microsec_limit;
+    server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
+    server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
     server_ptr->callbacks = std::move(callbacks);
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
     server_ptr->ring = ring;
-    *server = (ujrpc_server_t)server_ptr;
+    *server_out = (ujrpc_server_t)server_ptr;
     return;
 
 cleanup:
@@ -297,7 +309,7 @@ cleanup:
         close(socket_descriptor);
     if (server_ptr)
         std::free(server_ptr);
-    *server = nullptr;
+    *server_out = nullptr;
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
@@ -318,7 +330,8 @@ void ujrpc_free(ujrpc_server_t server) {
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t thread_idx) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    engine.submit_stats_heartbeat();
+    if (!thread_idx)
+        engine.submit_stats_heartbeat();
     while (true) {
         ujrpc_take_call(server, thread_idx);
     }
@@ -329,7 +342,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     // is responsible for checking if a specific request has been completed. All of the submitted
     // memory must be preserved until we get the confirmation.
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    engine.consider_accepting_new_connection();
+    if (!thread_idx)
+        engine.consider_accepting_new_connection();
     completed_event_t completed = engine.pop_completed();
     if (!completed)
         return;
@@ -398,6 +412,7 @@ void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
 }
 
 bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
+
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
@@ -410,6 +425,25 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 
     *result_ptr = value.get_int64().value_unsafe();
+    return true;
+}
+
+bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, char const** result_ptr,
+                           size_t* result_len_ptr) {
+
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    connection_t& connection = automata.connection;
+    scratch_space_t& scratch = automata.scratch;
+    name_len = string_length(name, name_len);
+    std::memcpy(scratch.json_pointer, "/params/", 8);
+    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
+    auto value = scratch.tree.at_pointer(scratch.json_pointer);
+
+    if (!value.is_string())
+        return false;
+
+    *result_ptr = value.get_string().value_unsafe().data();
+    *result_len_ptr = value.get_string_length().value_unsafe();
     return true;
 }
 
@@ -439,6 +473,7 @@ void connection_t::reset() noexcept {
 
     sleep_ns = 0;
     empty_transmits = 0;
+    exchanges = 0;
     next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
 }
 
@@ -598,7 +633,9 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     if (!reserved_connections.compare_exchange_strong(reserved_connections_old, 1u))
         return false;
 
+    connections_mutex.lock();
     connection_t* con_ptr = connections.alloc();
+    connections_mutex.unlock();
     if (!con_ptr) {
         dismissed_connections++;
         return false;
@@ -660,12 +697,12 @@ void engine_t::log_and_reset_stats() noexcept {
     auto packets_sent = printable_normalized(stats_packets_sent);
     auto len = std::snprintf( //
         printed_message_k, max_packet_size_k,
-        "connections_added: %.1f %c,"
-        "connections_closed: %.1f %c, "
-        "data_recv: %.1f %c, "
-        "data_sent: %.1f %c, "
-        "packets_recv: %.1f %c, "
-        "packets_sent: %.1f %c.\n",
+        "connections_added: %.1f %c/s, "
+        "connections_closed: %.1f %c/s, "
+        "data_recv: %.1f %cb/s, "
+        "data_sent: %.1f %cb/s, "
+        "packets_recv: %.1f %c/s, "
+        "packets_sent: %.1f %c/s.\n",
         new_connections.number, new_connections.suffix,       //
         closed_connections.number, closed_connections.suffix, //
         bytes_received.number, bytes_received.suffix,         //
@@ -678,7 +715,9 @@ void engine_t::log_and_reset_stats() noexcept {
 
 void engine_t::release_connection(connection_t& connection) noexcept {
     connection.reset();
+    connections_mutex.lock();
     connections.release(&connection);
+    connections_mutex.unlock();
     active_connections -= connection.stage != stage_t::waiting_to_accept_k;
     stats_closed_connections.fetch_add(1, std::memory_order_relaxed);
 }
@@ -697,10 +736,10 @@ void automata_t::close_gracefully() noexcept {
     // socket, we can cancel everythin related to its "file descriptor",
     // and then close.
     engine.submission_mutex.lock();
-    sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
-    io_uring_sqe_set_data(sqe, NULL);
-    io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
+    // sqe = io_uring_get_sqe(&engine.ring);
+    // io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
+    // io_uring_sqe_set_data(sqe, NULL);
+    // io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
 
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_close(sqe, int(connection.descriptor));
@@ -823,9 +862,15 @@ void automata_t::operator()() noexcept {
             connection.input.reset();
             connection.input_absorbed = 0;
             // Some requests require no response at all, so we can go back to listening the port.
-            return connection.next_output_chunk().empty() //
-                       ? receive_next()
-                       : send_next();
+            if (!connection.next_output_chunk().empty()) {
+                return send_next();
+            } else {
+                connection.exchanges++;
+                if (connection.exchanges >= engine.max_lifetime_exchanges)
+                    return close_gracefully();
+                else
+                    return receive_next();
+            }
         }
         // We may fail to allocate memory to receive the next input
         else if (connection.reserve_input().empty()) {
@@ -844,7 +889,14 @@ void automata_t::operator()() noexcept {
         connection.output_submitted += completed_result;
         engine.stats_bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_sent.fetch_add(1, std::memory_order_relaxed);
-        return !connection.submitted_all() ? send_next() : receive_next();
+        if (connection.submitted_all()) {
+            connection.exchanges++;
+            if (connection.exchanges >= engine.max_lifetime_exchanges)
+                return close_gracefully();
+            else
+                return receive_next();
+        } else
+            return send_next();
 
     case stage_t::waiting_to_close_k:
         return engine.release_connection(connection);
