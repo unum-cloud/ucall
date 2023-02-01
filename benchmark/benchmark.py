@@ -1,6 +1,7 @@
 import socket
 import errno
 import time
+import sys
 from multiprocessing import Process, Value
 from dataclasses import dataclass
 from inspect import cleandoc as I
@@ -19,7 +20,7 @@ class Stats:
     @property
     def failure_percent(self):
         return self.transmits_failed * 100.0 / \
-            (self.transmits_success + self.transmits_failed)
+            (self.transmits_success + self.transmits_failed + 1)
 
     def __repr__(self) -> str:
         bandwidth = self.requests / \
@@ -35,10 +36,12 @@ class Stats:
 
 
 def benchmark(callable, transmits_count: int, debug: bool = False) -> Stats:
+    sys.excepthook = exception_hook
+
     stats = Stats()
     tasks_range = range(transmits_count)
-    if debug:
-        tasks_range = tqdm(tasks_range)
+    # if debug:
+    #     tasks_range = tqdm(tasks_range)
 
     for _ in range(transmits_count):
         t1 = time.monotonic_ns()
@@ -122,3 +125,18 @@ def socket_is_closed(sock: socket.socket) -> bool:
             # Raise on unknown exception
             raise
     return False
+
+
+def exception_hook(type, value, tb):
+    if hasattr(sys, 'ps1') or not sys.stderr.isatty() or type != AssertionError:
+        # we are in interactive mode or we don't have a tty-like
+        # device, so we call the default hook
+        sys.__excepthook__(type, value, tb)
+    else:
+        import traceback
+        import pdb
+        # we are NOT in interactive mode, print the exception...
+        traceback.print_exception(type, value, tb)
+        print
+        # ...then start the debugger in post-mortem mode.
+        pdb.pm()
