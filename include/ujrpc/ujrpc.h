@@ -1,6 +1,12 @@
 #pragma once
-#include <stddef.h> // `size_t`
-#include <stdint.h> // `int64_t`
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdbool.h> // `bool`
+#include <stddef.h>  // `size_t`
+#include <stdint.h>  // `int64_t`
 
 typedef void* ujrpc_server_t;
 typedef void* ujrpc_call_t;
@@ -39,3 +45,7 @@ void ujrpc_call_send_error(ujrpc_call_t, int, ujrpc_str_t, size_t);
 void ujrpc_call_send_error_invalid_params(ujrpc_call_t);
 void ujrpc_call_send_error_out_of_memory(ujrpc_call_t);
 void ujrpc_call_send_error_unknown(ujrpc_call_t);
+
+#ifdef __cplusplus
+} /* end extern "C" */
+#endif

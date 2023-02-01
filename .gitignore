@@ -3,7 +3,12 @@ build_debug/
 build_release/
 build/
 *.log
-
+_deps
+CMakeFiles
+CMakeCache.txt
+*.egg-info
+cmake_install.cmake
+Makefile
 # Prerequisites
 *.d
 

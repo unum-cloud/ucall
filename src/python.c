@@ -15,13 +15,13 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <ujrpc.h>
+#include "ujrpc/ujrpc.h"
 
 typedef struct {
     PyObject_HEAD;
     ujrpc_config_t config;
     ujrpc_server_t server;
-    std::size_t count_added;
+    size_t count_added;
 } py_server_t;
 
 static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
@@ -35,20 +35,20 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
 }
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
-    Py_ssize_t max_cycles{};
-    Py_ssize_t max_seconds{};
+    Py_ssize_t max_cycles;
+    Py_ssize_t max_seconds;
     if (!PyArg_ParseTuple(args, "nn", &max_seconds, &max_cycles)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a optional....");
         return NULL;
     }
 
-    ujrpc_take_call(self->server, 0);
+    ujrpc_take_call(self->server);
 }
 
-static Py_ssize_t server_callbacks_count(py_server_t* self, PyObject*) { return self->count_added; }
-static PyObject* server_port(py_server_t* self, PyObject*) { return self->config.port; }
-static PyObject* server_max_connections(py_server_t* self, PyObject*) { return self->config.connections_capacity; }
-static PyObject* server_max_lifetime(py_server_t* self, PyObject*) { return self->config.lifetime_microsec_limit; }
+static Py_ssize_t server_callbacks_count(py_server_t* self, PyObject* _) { return self->count_added; }
+static PyObject* server_port(py_server_t* self, PyObject* _) { return self->config.port; }
+static PyObject* server_max_connections(py_server_t* self, PyObject* _) { return 0; }
+static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) { return 0; }
 
 static PyMethodDef server_methods[] = {
     {"add", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
@@ -57,7 +57,7 @@ static PyMethodDef server_methods[] = {
     {NULL},
 };
 
-static PyGetSetDef server_computed_properties[]{
+static PyGetSetDef server_computed_properties[] = {
     {"port", (getter)&server_port, NULL, PyDoc_STR("On which port the server listens")},
     {"max_connections", (getter)&server_max_connections, NULL, PyDoc_STR("Max number of concurrent users")},
     {"max_lifetime", (getter)&server_max_lifetime, NULL, PyDoc_STR("Max lifetime of connections in microseconds")},
@@ -83,7 +83,7 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     static char const* keywords_list[] = {"port", "max_connections", "max_lifetime", NULL};
-    Py_ssize_t port = 0, max_connections = 0, max_lifetime = std::numeric_limits<Py_ssize_t>::max();
+    Py_ssize_t port = 0, max_connections = 0, max_lifetime = UINT64_MAX;
     char const* dtype = NULL;
     char const* metric = NULL;
 
@@ -92,9 +92,9 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
         return -1;
 
     ujrpc_config_t params;
-    params.port = static_cast<uint16_t>(port);
-    params.connections_capacity = static_cast<uint16_t>(max_connections);
-    params.lifetime_microsec_limit = static_cast<uint16_t>(max_lifetime);
+    params.port = (uint16_t)(port);
+    // params.connections_capacity = (uint16_t)(max_connections);
+    // params.lifetime_microsec_limit = (uint16_t)(max_lifetime);
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
