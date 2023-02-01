@@ -35,6 +35,15 @@ class Stats:
         return I(result)
 
 
+def safe_call(callable):
+    try:
+        return callable()
+    except AssertionError:
+        return 0
+    except Exception as e:
+        return 0
+
+
 def benchmark(callable, transmits_count: int, debug: bool = False) -> Stats:
     sys.excepthook = exception_hook
 
@@ -45,14 +54,15 @@ def benchmark(callable, transmits_count: int, debug: bool = False) -> Stats:
 
     for _ in range(transmits_count):
         t1 = time.monotonic_ns()
-        successes = callable()
+        successes = safe_call(callable)
         stats.requests += successes
         t2 = time.monotonic_ns()
         stats.transmits_success += successes != 0
         stats.transmits_failed += successes == 0
         stats.total_secs += (t2 - t1) / 1.0e9
 
-    stats.mean_latency_secs = stats.total_secs / stats.transmits_success
+    stats.mean_latency_secs = stats.total_secs / \
+        stats.transmits_success if stats.transmits_success > 0 else 0
     return stats
 
 
