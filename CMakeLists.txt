@@ -65,7 +65,7 @@ set_property(TARGET libpicohttpparser
 include_directories(${PICOHTTP_DIR})
 set(PICOHTTP_LIBS libpicohttpparser)
 
-if(LINUX) 
+if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
     ExternalProject_Add(
         liburing-ep
@@ -93,7 +93,7 @@ include_directories(include/ src/)
 add_library(ujrpc_server_posix src/engine_posix.cpp)
 target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
 
-if(LINUX AND LINUX_KERNEL_VERSION VERSION_LESS 5.15)
+if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.15)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
     target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring ${PICOHTTP_LIBS} ${URING_LIBS})
     message("Linux kernel version should be greater than 5.15 to use io_uring features")
@@ -103,7 +103,6 @@ else()
     add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
     target_link_libraries(ujrpc_server_bench ujrpc_server_posix)
 endif()
-
 
 add_executable(ujrpc_client_bench benchmark/ujrpc_client.cpp)
 target_link_libraries(ujrpc_client_bench benchmark::benchmark)
