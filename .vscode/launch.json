@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "GoLang: Current File",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${file}"
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
@@ -21,7 +28,8 @@
             "args": [
                 "-d"
             ],
-            "justMyCode": true
+            "justMyCode": false,
+            "subProcess": true
         },
         {
             "name": "C++: Test Server",
@@ -33,12 +41,7 @@
                 "--gtest_catch_exceptions=0"
             ],
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "ASAN_OPTIONS",
-                    "value": "detect_leaks=0:atexit=1:strict_init_order=1:strict_string_checks=1"
-                }
-            ],
+            "environment": [],
             "showDisplayString": true,
             "stopAtEntry": false,
             "externalConsole": false,

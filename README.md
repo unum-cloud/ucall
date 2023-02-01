@@ -135,7 +135,21 @@ We are inviting others to contribute bindings to other languages as well.
     ```sh
     cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release && make -j8 --silent -C ./build_release
     ./build_release/ujrpc_server_bench &
-    python ./benchmark/ujrpc_client.py
+    python ./benchmark/ujrpc_client.py test
+    go run ./benchmark/ujrpc_client.go
+    kill %% # Kill the most recent background job
+    ```
+</details>
+
+<details>
+  <summary>Stress-testing UJRPC</summary>
+
+    ```sh
+    sudo apt install parallel
+    cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release && make -j8 --silent -C ./build_release
+    ./build_release/ujrpc_server_bench --threads 64 &
+    parallel python benchmark/ujrpc_client.py run ::: {1..100}
+    parallel go run ./benchmark/ujrpc_client.go run ::: {1..100}
     kill %% # Kill the most recent background job
     ```
 </details>
