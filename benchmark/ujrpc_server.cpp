@@ -1,7 +1,5 @@
 /**
- * @brief A benchmark for the construction speed of the UNSW index
- * and the resulting accuracy (recall) of the Approximate Nearest Neighbors
- * Search queries.
+ * @brief Example of a web server built with UJRPC in C++.
  */
 #include <charconv> // `std::to_chars`
 #include <cstdio>   // `std::fprintf`
@@ -53,11 +51,14 @@ int main(int argc, char** argv) {
     ujrpc_add_procedure(server, "sum", &sum);
     ujrpc_add_procedure(server, "bot_or_not", &bot_or_not);
 
-    std::vector<std::thread> threads;
-    for (uint16_t i = 0; i != config.max_threads; ++i)
-        threads.emplace_back(&ujrpc_take_calls, server, i);
-    for (auto& thread : threads)
-        thread.join();
+    if (config.max_threads > 1) {
+        std::vector<std::thread> threads;
+        for (uint16_t i = 0; i != config.max_threads; ++i)
+            threads.emplace_back(&ujrpc_take_calls, server, i);
+        for (auto& thread : threads)
+            thread.join();
+    } else
+        ujrpc_take_calls(server, 0);
 
     ujrpc_free(server);
     return 0;
