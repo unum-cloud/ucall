@@ -153,7 +153,7 @@ struct alignas(align_k) connection_t {
     template <std::size_t> bool append_outputs(struct iovec const*) noexcept;
 
     bool shift_input_to_dynamic() noexcept {
-        if (input.dynamic.append_n(input.embedded, input.embedded_used))
+        if (!input.dynamic.append_n(input.embedded, input.embedded_used))
             return false;
         input.embedded_used = 0;
         return true;
@@ -173,6 +173,7 @@ struct alignas(align_k) connection_t {
     void release_outputs() noexcept {
         output.dynamic.reset();
         output.embedded_used = 0;
+        output_submitted = 0;
     }
     void mark_submitted_outputs(std::size_t n) noexcept { output_submitted += n; }
     void prepare_more_outputs() noexcept {
@@ -226,10 +227,11 @@ struct memory_map_t {
     }
 
     bool reserve(std::size_t length, int flags = MAP_ANONYMOUS | MAP_PRIVATE) noexcept {
-        auto page_size = sysconf(_SC_PAGE_SIZE);
+        // Make sure that the `length` is a multiple of `page_size`
+        // auto page_size = sysconf(_SC_PAGE_SIZE);
         auto new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, flags, -1, 0);
         if (new_ptr == MAP_FAILED) {
-            int e = errno;
+            errno;
             return false;
         }
         std::memset(new_ptr, 0, length);
@@ -247,7 +249,7 @@ struct memory_map_t {
 
 struct engine_t {
     descriptor_t socket{};
-    struct io_uring ring {};
+    struct io_uring uring {};
 
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};
@@ -325,8 +327,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.queue_depth = 4096u;
     if (!config.callbacks_capacity)
         config.callbacks_capacity = 128u;
-    // if (!config.max_concurrent_connections)
-    config.max_concurrent_connections = 1024u;
+    if (!config.max_concurrent_connections)
+        config.max_concurrent_connections = 1024u;
     if (!config.max_threads)
         config.max_threads = 1u;
     if (!config.max_lifetime_micro_seconds)
@@ -340,18 +342,18 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     int socket_options{1};
     int socket_descriptor{-1};
     int uring_result{-1};
-    struct io_uring ring {};
-    auto ring_flags{0};
-    ring_flags |= IORING_SETUP_SQPOLL;
-    // 5.19+
-    // ring_flags |= IORING_SETUP_COOP_TASKRUN;
-    // 6.0+
-    // ring_flags |= config.max_threads == 1 ? IORING_SETUP_SINGLE_ISSUER : 0;
+    struct io_uring uring {};
+    struct io_uring_params uring_params {};
+    uring_params.features |= IORING_FEAT_SQPOLL_NONFIXED;
+    uring_params.features |= IORING_FEAT_FAST_POLL;
+    // uring_params.flags |= IORING_SETUP_SQPOLL;
+    // uring_params.sq_thread_idle = 2000;
+    // uring_params.flags |= IORING_SETUP_COOP_TASKRUN; // 5.19+
+    // uring_params.flags |= config.max_threads == 1 ? IORING_SETUP_SINGLE_ISSUER : 0; // 6.0+
     engine_t* server_ptr{};
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
-    buffer_gt<descriptor_t> registered_descriptors{};
     buffer_gt<struct iovec> registered_buffers{};
     memory_map_t fixed_buffers{};
 
@@ -362,7 +364,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     address.sin_port = htons(config.port);
 
     // Initialize `io_uring` first, it is the most likely to fail.
-    uring_result = io_uring_queue_init(config.queue_depth, &ring, ring_flags);
+    uring_result = io_uring_queue_init_params(config.queue_depth, &uring, &uring_params);
     if (uring_result != 0)
         goto cleanup;
 
@@ -383,8 +385,6 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
             goto cleanup;
 
     // Additional `io_uring` setup.
-    if (!registered_descriptors.resize(config.max_concurrent_connections))
-        goto cleanup;
     if (!registered_buffers.resize(config.max_concurrent_connections * 2u))
         goto cleanup;
     for (std::size_t i = 0; i != config.max_concurrent_connections; ++i) {
@@ -392,18 +392,16 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         connection.input.embedded = fixed_buffers.ptr + ram_page_size_k * 2u;
         connection.output.embedded = fixed_buffers.ptr + ram_page_size_k * (2u + 1u);
 
-        registered_descriptors[i] = invalid_descriptor_k;
         registered_buffers[i * 2u].iov_base = connection.input.embedded;
         registered_buffers[i * 2u].iov_len = ram_page_size_k;
         registered_buffers[i * 2u + 1u].iov_base = connection.output.embedded;
         registered_buffers[i * 2u + 1u].iov_len = ram_page_size_k;
     }
-    uring_result = io_uring_register_files(&ring, (int const*)registered_descriptors.data(),
-                                           static_cast<unsigned>(registered_descriptors.size()));
+    uring_result = io_uring_register_files_sparse(&uring, config.max_concurrent_connections);
     if (uring_result != 0)
         goto cleanup;
     uring_result =
-        io_uring_register_buffers(&ring, registered_buffers.data(), static_cast<unsigned>(registered_buffers.size()));
+        io_uring_register_buffers(&uring, registered_buffers.data(), static_cast<unsigned>(registered_buffers.size()));
     if (uring_result != 0)
         goto cleanup;
 
@@ -427,14 +425,14 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->callbacks = std::move(callbacks);
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
-    server_ptr->ring = ring;
+    server_ptr->uring = uring;
     *server_out = (ujrpc_server_t)server_ptr;
     return;
 
 cleanup:
     errno;
-    if (ring.ring_fd)
-        io_uring_queue_exit(&ring);
+    if (uring.ring_fd)
+        io_uring_queue_exit(&uring);
     if (socket_descriptor >= 0)
         close(socket_descriptor);
     if (server_ptr)
@@ -453,7 +451,7 @@ void ujrpc_free(ujrpc_server_t server) {
         return;
 
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    io_uring_queue_exit(&engine.ring);
+    io_uring_queue_exit(&engine.uring);
     engine.~engine_t();
     std::free(server);
 }
@@ -723,14 +721,14 @@ completed_event_t engine_t::pop_completed() noexcept {
     polling_timeout.tv_nsec = wakeup_initial_frequency_ns_k;
 
     completion_mutex.lock();
-    uring_response = io_uring_wait_cqe_timeout(&ring, &cqe, &polling_timeout);
-    // uring_response = io_uring_wait_cqe(&ring, &cqe);
+    // uring_response = io_uring_wait_cqe(&uring, &cqe);
+    uring_response = io_uring_wait_cqe_timeout(&uring, &cqe, &polling_timeout);
 
     // Some results are not worth evaluating in automata.
     if (uring_response < 0 || !cqe || !cqe->user_data) {
         // We should skip over timer events without any payload.
         if (cqe && !cqe->user_data)
-            io_uring_cq_advance(&ring, 1);
+            io_uring_cq_advance(&uring, 1);
         completion_mutex.unlock();
         return {*(connection_t*)nullptr, stage_t::unknown_k, 0};
     }
@@ -741,7 +739,7 @@ completed_event_t engine_t::pop_completed() noexcept {
         .stage = connection.stage,
         .result = cqe->res,
     };
-    io_uring_cq_advance(&ring, 1);
+    io_uring_cq_advance(&uring, 1);
     completion_mutex.unlock();
     return completed;
 }
@@ -765,17 +763,19 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     connection.stage = stage_t::waiting_to_accept_k;
     submission_mutex.lock();
 
-    sqe = io_uring_get_sqe(&ring);
+    sqe = io_uring_get_sqe(&uring);
+    // On older kernels:
+    // io_uring_prep_accept(sqe, socket, &connection.client_address, &connection.client_address_len, 0);
     io_uring_prep_accept_direct(sqe, socket, &connection.client_address, &connection.client_address_len, 0,
-                                connections.offset_of(connection));
+                                IORING_FILE_INDEX_ALLOC);
     io_uring_sqe_set_data(sqe, con_ptr);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
 
-    sqe = io_uring_get_sqe(&ring);
+    sqe = io_uring_get_sqe(&uring);
     io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
     io_uring_sqe_set_data(sqe, NULL);
 
-    uring_response = io_uring_submit(&ring);
+    uring_response = io_uring_submit(&uring);
     submission_mutex.unlock();
     if (uring_response != 2) {
         connections.release(con_ptr);
@@ -795,17 +795,17 @@ void engine_t::submit_stats_heartbeat() noexcept {
     connection.next_wakeup.tv_sec = stats_heartbeat_s_k;
     submission_mutex.lock();
 
-    sqe = io_uring_get_sqe(&ring);
+    sqe = io_uring_get_sqe(&uring);
     io_uring_prep_timeout(sqe, &connection.next_wakeup, 0, 0);
     io_uring_sqe_set_data(sqe, &connection);
-    uring_response = io_uring_submit(&ring);
+    uring_response = io_uring_submit(&uring);
     submission_mutex.unlock();
 }
 
 void engine_t::log_and_reset_stats() noexcept {
     static char printed_message_k[ram_page_size_k]{};
     auto printable_normalized = [](std::atomic<std::size_t>& i) noexcept {
-        return printable(i.exchange(0, std::memory_order_relaxed) / stats_heartbeat_s_k);
+        return printable(double(i.exchange(0, std::memory_order_relaxed)) / stats_heartbeat_s_k);
     };
     auto new_connections = printable_normalized(stats_new_connections);
     auto closed_connections = printable_normalized(stats_closed_connections);
@@ -851,16 +851,16 @@ void automata_t::close_gracefully() noexcept {
     // socket, we can cancel everything related to its "file descriptor",
     // and then close.
     engine.submission_mutex.lock();
-    // sqe = io_uring_get_sqe(&engine.ring);
+    // sqe = io_uring_get_sqe(&engine.uring);
     // io_uring_prep_cancel(sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
     // io_uring_sqe_set_data(sqe, NULL);
     // io_uring_sqe_set_flags(sqe, IOSQE_IO_HARDLINK);
 
-    sqe = io_uring_get_sqe(&engine.ring);
+    sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_close(sqe, int(connection.descriptor));
     io_uring_sqe_set_data(sqe, &connection);
     io_uring_sqe_set_flags(sqe, 0 /*IOSQE_CQE_SKIP_SUCCESS*/);
-    uring_response = io_uring_submit(&engine.ring);
+    uring_response = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }
 
@@ -871,13 +871,13 @@ void automata_t::send_next() noexcept {
     connection.release_inputs();
 
     engine.submission_mutex.lock();
-    sqe = io_uring_get_sqe(&engine.ring);
+    sqe = io_uring_get_sqe(&engine.uring);
     // io_uring_prep_send_zc(sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
     // connection.next_output_length(), 0, 0);
     io_uring_prep_write_fixed(sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
                               connection.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
     io_uring_sqe_set_data(sqe, &connection);
-    uring_response = io_uring_submit(&engine.ring);
+    uring_response = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }
 
@@ -897,7 +897,7 @@ void automata_t::receive_next() noexcept {
     // https://man7.org/linux/man-pages/man2/recv.2.html
     //
     // In this case we are waiting for an actual data, not some artificial wakeup.
-    sqe = io_uring_get_sqe(&engine.ring);
+    sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_read_fixed(sqe, int(connection.descriptor), (void*)connection.next_input_begin(),
                              connection.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
     io_uring_sqe_set_data(sqe, &connection);
@@ -907,10 +907,10 @@ void automata_t::receive_next() noexcept {
     // We can't afford to keep connections alive indefinitely, so we need to set a timeout
     // on this operation.
     // The `io_uring_prep_link_timeout` is a convenience method for poorly documented `IORING_OP_LINK_TIMEOUT`.
-    sqe = io_uring_get_sqe(&engine.ring);
+    sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
     io_uring_sqe_set_data(sqe, NULL);
-    uring_response = io_uring_submit(&engine.ring);
+    uring_response = io_uring_submit(&engine.uring);
 
     engine.submission_mutex.unlock();
 }
@@ -963,9 +963,12 @@ void automata_t::operator()() noexcept {
         }
 
         // Absorb the arrived data.
-        connection.absorb_input(completed_result);
         engine.stats_bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_received.fetch_add(1, std::memory_order_relaxed);
+        if (!connection.absorb_input(completed_result)) {
+            ujrpc_call_send_error_out_of_memory(this);
+            return send_next();
+        }
 
         // If we have reached the end of the stream,
         // it is time to analyze the contents
@@ -1002,9 +1005,9 @@ void automata_t::operator()() noexcept {
         if (should_release())
             return close_gracefully();
 
-        connection.mark_submitted_outputs(completed_result);
         engine.stats_bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_sent.fetch_add(1, std::memory_order_relaxed);
+        connection.mark_submitted_outputs(completed_result);
         if (!connection.has_remaining_outputs()) {
             connection.exchanges++;
             if (connection.exchanges >= engine.max_lifetime_exchanges)

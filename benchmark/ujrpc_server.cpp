@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
     // config.interface = "192.168.5.9"; // For InfiniBand
     config.port = 8545;
     config.max_threads = 1;
-    config.max_concurrent_connections = 10000;
+    config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 100;
     ujrpc_init(&config, &server);
