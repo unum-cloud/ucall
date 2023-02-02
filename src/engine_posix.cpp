@@ -25,10 +25,10 @@ struct engine_t {
     descriptor_t socket{};
     std::size_t max_batch_size{};
 
-    /// @brief The file descriptor of the statefull connection over TCP.
+    /// @brief The file descriptor of the stateful connection over TCP.
     descriptor_t connection{};
     /// @brief A small memory buffer to store small requests.
-    alignas(align_k) char packet_buffer[max_packet_size_k + sj::SIMDJSON_PADDING]{};
+    alignas(align_k) char packet_buffer[ram_page_size_k + sj::SIMDJSON_PADDING]{};
     /// @brief An array of function callbacks. Can be in dozens.
     array_gt<named_callback_t> callbacks{};
     /// @brief Statically allocated memory to process small requests.
@@ -149,7 +149,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
     auto buffer_ptr = &engine.packet_buffer[0];
-    auto bytes_expected = recv(engine.connection, buffer_ptr, max_packet_size_k, MSG_PEEK | MSG_TRUNC);
+    auto bytes_expected = recv(engine.connection, buffer_ptr, ram_page_size_k, MSG_PEEK | MSG_TRUNC);
     if (bytes_expected <= 0) {
         close(engine.connection);
         return;
@@ -157,8 +157,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
-    if (bytes_expected <= max_packet_size_k) {
-        auto bytes_received = recv(engine.connection, buffer_ptr, max_packet_size_k, 0);
+    if (bytes_expected <= ram_page_size_k) {
+        auto bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         forward_packet(engine);
@@ -195,7 +195,8 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     uint16_t queue_depth = config && config->queue_depth > 0 ? config->queue_depth : 256u;
     uint16_t max_batch_size = config && config->max_batch_size > 0 ? config->max_batch_size : 1024u;
     uint16_t callbacks_capacity = config && config->callbacks_capacity > 0 ? config->callbacks_capacity : 128u;
-    uint16_t max_concurrent_connections = config && config->max_concurrent_connections > 0 ? config->max_concurrent_connections : 1024u;
+    uint16_t max_concurrent_connections =
+        config && config->max_concurrent_connections > 0 ? config->max_concurrent_connections : 1024u;
     int opt = 1;
     int server_fd = -1;
     engine_t* server_ptr = nullptr;
@@ -210,16 +211,16 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    // Try allocating all the neccessary memory.
+    // Try allocating all the necessary memory.
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
     // In the worst case we may have `max_batch_size` requests, where each will
     // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
     // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.reserve(max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
+    if (!embedded_iovecs.resize(max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
         goto cleanup;
-    if (!embedded_copies.reserve(max_batch_size))
+    if (!embedded_copies.resize(max_batch_size))
         goto cleanup;
     if (!embedded_callbacks.reserve(callbacks_capacity))
         goto cleanup;
@@ -232,7 +233,7 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
         goto cleanup;
     if (listen(server_fd, queue_depth) < 0)
         goto cleanup;
-    if (parser.allocate(max_packet_size_k, max_packet_size_k / 2) != sj::SUCCESS)
+    if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
     // Initialize all the members.
@@ -258,7 +259,7 @@ cleanup:
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back({name, callback});
+        engine.callbacks.push_back_reserved({name, callback});
 }
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t) {

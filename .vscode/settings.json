@@ -96,5 +96,10 @@
         "stack": "cpp",
         "typeindex": "cpp",
         "source_location": "cpp"
-    }
+    },
+    "cSpell.words": [
+        "endregion",
+        "simdjson",
+        "ujrpc"
+    ]
 }

@@ -16,7 +16,7 @@ namespace unum::ujrpc {
 
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
-static constexpr std::size_t max_packet_size_k = 4096;
+static constexpr std::size_t ram_page_size_k = 4096;
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.
@@ -55,7 +55,7 @@ template <typename element_at> class buffer_gt {
         std::swap(capacity_, other.capacity_);
         return *this;
     }
-    bool reserve(std::size_t n) noexcept {
+    bool resize(std::size_t n) noexcept {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         if (!elements_)
             return false;
@@ -83,6 +83,7 @@ template <typename element_at> class array_gt {
     std::size_t count_{};
     std::size_t capacity_{};
     static_assert(std::is_nothrow_default_constructible<element_at>());
+    static_assert(std::is_trivially_copy_constructible<element_at>(), "Can't use realloc and memcpy");
 
   public:
     array_gt() = default;
@@ -97,17 +98,30 @@ template <typename element_at> class array_gt {
         return *this;
     }
     bool reserve(std::size_t n) noexcept {
-        elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
-        if (!elements_)
-            return false;
+        if (n <= capacity_)
+            return true;
+        if (!elements_) {
+            auto ptr = (element_at*)std::malloc(sizeof(element_at) * n);
+            if (!ptr)
+                return false;
+            elements_ = ptr;
+        } else {
+            auto ptr = (element_at*)std::realloc(elements_, sizeof(element_at) * n);
+            if (!ptr)
+                return false;
+            elements_ = ptr;
+        }
+        std::uninitialized_default_construct(elements_ + capacity_, elements_ + n);
         capacity_ = n;
-        std::uninitialized_default_construct(elements_, elements_ + capacity_);
         return true;
     }
-    ~array_gt() noexcept {
+    ~array_gt() noexcept { reset(); }
+    void reset() noexcept {
         if constexpr (!std::is_trivially_destructible<element_at>())
             std::destroy_n(elements_, count_);
         std::free(elements_);
+        elements_ = nullptr;
+        capacity_ = count_ = 0;
     }
     element_at const* data() const noexcept { return elements_; }
     element_at* data() noexcept { return elements_; }
@@ -116,7 +130,13 @@ template <typename element_at> class array_gt {
     std::size_t size() const noexcept { return count_; }
     std::size_t capacity() const noexcept { return capacity_; }
     element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
-    void push_back(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
+    void push_back_reserved(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
+    bool append_n(element_at const* elements, std::size_t n) noexcept {
+        if (!reserve(size() + n))
+            return false;
+        std::memcpy(end(), elements, n * sizeof(element_at));
+        return true;
+    }
 };
 
 template <typename element_at> class pool_gt {
@@ -159,6 +179,8 @@ template <typename element_at> class pool_gt {
     }
     element_at* alloc() noexcept { return free_count_ ? elements_ + free_offsets_[--free_count_] : nullptr; }
     void release(element_at* released) noexcept { free_offsets_[free_count_++] = released - elements_; }
+    std::size_t offset_of(element_at& element) const noexcept { return &element - elements_; }
+    element_at& at_offset(std::size_t i) const noexcept { return elements_[i]; }
 };
 
 using timestamp_t = std::uint64_t;

@@ -44,8 +44,10 @@ int main(int argc, char** argv) {
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 100;
     ujrpc_init(&config, &server);
-    if (!server)
+    if (!server) {
+        std::printf("Failed to initialize server!\n");
         return -1;
+    }
 
     std::printf("Initialized server!\n");
     ujrpc_add_procedure(server, "sum", &sum);

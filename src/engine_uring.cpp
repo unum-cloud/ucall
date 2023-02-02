@@ -2,7 +2,7 @@
  * @brief JSON-RPC implementation for TCP/IP stack with `io_uring`.
  *
  * Supports:
- * > Millions of concurrent statefull connections.
+ * > Millions of concurrent stateful connections.
  * > Hundreds of physical execution threads.
  * > Both HTTP and HTTP-less raw JSON-RPC calls.
  *
@@ -15,17 +15,29 @@
  * @section Concurrency
  * The whole class is thread safe and can be used with as many threads as
  * defined during construction with `ujrpc_init`. Some `connection_t`-s
- * can, however, be simulatenaously handled by two threads, if one logical
- * operation is split into multiple phisical calls:
+ * can, however, be simultaneously handled by two threads, if one logical
+ * operation is split into multiple physical calls:
  *
  *      1.  Receiving packets with timeouts.
  *          This allows us to reconsider closing a connection every once
  *          in a while, instead of loyally waiting for more data to come.
  *      2.  Closing sockets gracefully.
  *
+ * @section Linux kernel requirements
+ * We need Submission Queue Polling to extract maximum performance from `io_uring`.
+ * Many of the requests would get an additional `IOSQE_FIXED_FILE` flag, and the
+ * setup call would receive `IORING_SETUP_SQPOLL`. Aside from those, we also
+ * need to prioritize following efficient interfaces:
+ * - `io_uring_prep_accept_direct` to alloc from reusable files list.
+ * - `io_uring_prep_read_fixed` to read into registered buffers.
+ * - `io_uring_register_buffers`.
+ * - `io_uring_prep_accept_direct` > 5.19.
+ * - `io_uring_register_files_sparse` > 5.19, or `io_uring_register_files` before that.
+ * - `IORING_SETUP_COOP_TASKRUN` > 5.19.
+ * - `IORING_SETUP_SINGLE_ISSUER` > 6.0.
  *
- * @section Suggested compilation flags:
- * -fno-exceptions
+ * @section Suggested compilation flags
+ *  - -fno-exceptions
  *
  * @author Ashot Vardanian
  * @see Notable links:
@@ -37,6 +49,7 @@
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
+#include <sys/mman.h>   // `mmap`
 #include <sys/socket.h> // `recv`, `setsockopt`
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -62,10 +75,15 @@ namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ujrpc;
 
-static constexpr std::size_t sleep_growth_factor_k = 4;
-static constexpr std::size_t wakeup_initial_frequency_ns_k = 3'000;
-static constexpr std::size_t max_inactive_duration_ns_k = 100'000'000'000;
-static constexpr std::size_t stats_heartbeat_s_k = 5;
+/// @brief As we use SIMDJSON, we don't want to fill our message buffers entirely.
+/// If there is a @b padding at the end, matching the size of the largest CPU register
+/// on the machine, we would avoid copies.
+static constexpr std::size_t max_embedded_length_k{ram_page_size_k - sj::SIMDJSON_PADDING};
+static constexpr std::size_t sleep_growth_factor_k{4};
+static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
+static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
+static constexpr std::size_t stats_heartbeat_s_k{5};
+static constexpr descriptor_t invalid_descriptor_k{-1};
 
 struct completed_event_t;
 struct exchange_buffer_t;
@@ -92,44 +110,28 @@ struct completed_event_t {
 };
 
 struct exchange_buffer_t {
-    static constexpr std::size_t embedded_size_k = max_packet_size_k + sj::SIMDJSON_PADDING;
-
-    // We always read the data into this buffer.
-    // If it goes beyond it, we allocate dynamic memory, move existing contents there,
-    // and then reallocate.
-    alignas(align_k) char embedded[embedded_size_k]{};
-    char* dynamic{};
-    std::size_t length{};
-    std::size_t volume{embedded_size_k};
-
-    char* data() noexcept { return dynamic ? dynamic : embedded; }
-    char const* data() const noexcept { return dynamic ? dynamic : embedded; }
-    std::size_t size() const noexcept { return length; }
-    std::size_t capacity() const noexcept { return volume; }
-    std::string_view view() const noexcept { return {data(), length}; }
-    std::string_view view_buffer() const noexcept { return {data(), volume}; }
-    std::size_t next_capacity() const noexcept { return capacity() * 2; }
-    void reset() noexcept { std::free(dynamic), dynamic = nullptr, length = 0, volume = embedded_size_k; }
+    char* embedded{};
+    std::size_t embedded_used{};
+    array_gt<char> dynamic{};
 };
 
-struct connection_t {
+struct alignas(align_k) connection_t {
+
     /// @brief A combination of a embedded and dynamic memory pools for content reception.
     /// We always absorb new packets in the embedded part, later moving them into dynamic memory,
     /// if any more data is expected. Requires @b padding at the end, to accelerate parsing.
     exchange_buffer_t input{};
     /// @brief A combination of a embedded and dynamic memory pools for content reception.
     exchange_buffer_t output{};
+    std::size_t output_submitted{};
 
-    /// @brief The file descriptor of the statefull connection over TCP.
-    descriptor_t descriptor{};
+    /// @brief The file descriptor of the stateful connection over TCP.
+    descriptor_t descriptor{invalid_descriptor_k};
     /// @brief Current state at which the automata has arrived.
     stage_t stage{};
 
     struct sockaddr client_address {};
     socklen_t client_address_len{sizeof(struct sockaddr)};
-
-    std::size_t input_absorbed{};
-    std::size_t output_submitted{};
 
     /// @brief Accumulated duration of sleep cycles.
     std::size_t sleep_ns{};
@@ -145,15 +147,102 @@ struct connection_t {
     /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
     std::optional<std::string_view> content_type{};
 
-    bool submitted_all() const noexcept { return output_submitted >= output.size(); }
-    std::string_view next_inputs() const noexcept { return input.view_buffer().substr(input_absorbed); }
-    std::string_view next_output_chunk() const noexcept { return output.view().substr(output_submitted); }
-
-    template <std::size_t iovecs_count_ak> bool append_output(struct iovec const* iovecs) noexcept;
-    std::string_view reserve_input() noexcept;
-
     bool expired() const noexcept;
     void reset() noexcept;
+
+    template <std::size_t> bool append_outputs(struct iovec const*) noexcept;
+
+    bool shift_input_to_dynamic() noexcept {
+        if (input.dynamic.append_n(input.embedded, input.embedded_used))
+            return false;
+        input.embedded_used = 0;
+        return true;
+    }
+    bool absorb_input(std::size_t embedded_used) noexcept {
+        input.embedded_used = embedded_used;
+        empty_transmits = 0;
+        sleep_ns = 0;
+        if (!input.dynamic.size())
+            return true;
+        return shift_input_to_dynamic();
+    }
+    void release_inputs() noexcept {
+        input.dynamic.reset();
+        input.embedded_used = 0;
+    }
+    void release_outputs() noexcept {
+        output.dynamic.reset();
+        output.embedded_used = 0;
+    }
+    void mark_submitted_outputs(std::size_t n) noexcept { output_submitted += n; }
+    void prepare_more_outputs() noexcept {
+        if (output.dynamic.size()) {
+            output.embedded_used = std::min(output.dynamic.size() - output_submitted, ram_page_size_k);
+            std::memcpy(output.embedded, output.dynamic.data() + output_submitted, output.embedded_used);
+        }
+    }
+    bool has_outputs() noexcept { return std::max(output.embedded_used, output.dynamic.size()); }
+    bool has_remaining_outputs() const noexcept {
+        return output_submitted < std::max(output.embedded_used, output.dynamic.size());
+    }
+    char const* next_output_begin() const noexcept {
+        return output.dynamic.size() ? output.embedded : output.embedded + output_submitted;
+    }
+
+    std::size_t next_output_length() const noexcept {
+        return output.dynamic.size() ? output.embedded_used : output.embedded_used - output_submitted;
+    }
+
+    char const* next_input_begin() const noexcept { return input.embedded; }
+    std::size_t next_input_length() const noexcept { return max_embedded_length_k; }
+    std::string_view input_view() const noexcept {
+        return input.dynamic.size() ? std::string_view{input.dynamic.data(), input.dynamic.size()}
+                                    : std::string_view{input.embedded, input.embedded_used};
+    }
+
+    char& output_back() noexcept {
+        return output.dynamic.size() ? output.dynamic[output.dynamic.size() - 1]
+                                     : output.embedded[output.embedded_used - 1];
+    }
+};
+
+struct memory_map_t {
+    char* ptr{};
+    std::size_t length{};
+
+    memory_map_t() = default;
+    memory_map_t(memory_map_t const&) = delete;
+    memory_map_t& operator=(memory_map_t const&) = delete;
+
+    memory_map_t(memory_map_t&& other) noexcept {
+        std::swap(ptr, other.ptr);
+        std::swap(length, other.length);
+    }
+
+    memory_map_t& operator=(memory_map_t&& other) noexcept {
+        std::swap(ptr, other.ptr);
+        std::swap(length, other.length);
+        return *this;
+    }
+
+    bool reserve(std::size_t length, int flags = MAP_ANONYMOUS | MAP_PRIVATE) noexcept {
+        auto page_size = sysconf(_SC_PAGE_SIZE);
+        auto new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, flags, -1, 0);
+        if (new_ptr == MAP_FAILED) {
+            int e = errno;
+            return false;
+        }
+        std::memset(new_ptr, 0, length);
+        ptr = new_ptr;
+        return true;
+    }
+
+    ~memory_map_t() noexcept {
+        if (ptr)
+            munmap(ptr, length);
+        ptr = nullptr;
+        length = 0;
+    }
 };
 
 struct engine_t {
@@ -184,6 +273,8 @@ struct engine_t {
     pool_gt<connection_t> connections{};
     /// @brief Same number of them, as max physical threads. Can be in hundreds.
     buffer_gt<scratch_space_t> spaces{};
+    /// @brief Pre-allocated buffered to be submitted to `io_uring` for shared use.
+    memory_map_t fixed_buffers{};
 
     bool consider_accepting_new_connection() noexcept;
     void submit_stats_heartbeat() noexcept;
@@ -234,8 +325,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.queue_depth = 4096u;
     if (!config.callbacks_capacity)
         config.callbacks_capacity = 128u;
-    if (!config.max_concurrent_connections)
-        config.max_concurrent_connections = 100'000;
+    // if (!config.max_concurrent_connections)
+    config.max_concurrent_connections = 1024u;
     if (!config.max_threads)
         config.max_threads = 1u;
     if (!config.max_lifetime_micro_seconds)
@@ -251,6 +342,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     int uring_result{-1};
     struct io_uring ring {};
     auto ring_flags{0};
+    ring_flags |= IORING_SETUP_SQPOLL;
     // 5.19+
     // ring_flags |= IORING_SETUP_COOP_TASKRUN;
     // 6.0+
@@ -259,6 +351,9 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
+    buffer_gt<descriptor_t> registered_descriptors{};
+    buffer_gt<struct iovec> registered_buffers{};
+    memory_map_t fixed_buffers{};
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -271,19 +366,46 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     if (uring_result != 0)
         goto cleanup;
 
-    // Try allocating all the neccessary memory.
+    // Try allocating all the necessary memory.
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
     if (!callbacks.reserve(config.callbacks_capacity))
         goto cleanup;
+    if (!fixed_buffers.reserve(ram_page_size_k * 2u * config.max_concurrent_connections))
+        goto cleanup;
     if (!connections.reserve(config.max_concurrent_connections))
         goto cleanup;
-    if (!spaces.reserve(config.max_threads))
+    if (!spaces.resize(config.max_threads))
         goto cleanup;
     for (auto& space : spaces)
-        if (space.parser.allocate(max_packet_size_k, max_packet_size_k / 2) != sj::SUCCESS)
+        if (space.parser.allocate(ram_page_size_k, ram_page_size_k / 2u) != sj::SUCCESS)
             goto cleanup;
+
+    // Additional `io_uring` setup.
+    if (!registered_descriptors.resize(config.max_concurrent_connections))
+        goto cleanup;
+    if (!registered_buffers.resize(config.max_concurrent_connections * 2u))
+        goto cleanup;
+    for (std::size_t i = 0; i != config.max_concurrent_connections; ++i) {
+        auto& connection = connections.at_offset(i);
+        connection.input.embedded = fixed_buffers.ptr + ram_page_size_k * 2u;
+        connection.output.embedded = fixed_buffers.ptr + ram_page_size_k * (2u + 1u);
+
+        registered_descriptors[i] = invalid_descriptor_k;
+        registered_buffers[i * 2u].iov_base = connection.input.embedded;
+        registered_buffers[i * 2u].iov_len = ram_page_size_k;
+        registered_buffers[i * 2u + 1u].iov_base = connection.output.embedded;
+        registered_buffers[i * 2u + 1u].iov_len = ram_page_size_k;
+    }
+    uring_result = io_uring_register_files(&ring, (int const*)registered_descriptors.data(),
+                                           static_cast<unsigned>(registered_descriptors.size()));
+    if (uring_result != 0)
+        goto cleanup;
+    uring_result =
+        io_uring_register_buffers(&ring, registered_buffers.data(), static_cast<unsigned>(registered_buffers.size()));
+    if (uring_result != 0)
+        goto cleanup;
 
     // Configure the socket.
     socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -323,7 +445,7 @@ cleanup:
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back({name, callback});
+        engine.callbacks.push_back_reserved({name, callback});
 }
 
 void ujrpc_free(ujrpc_server_t server) {
@@ -383,7 +505,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     body_len = string_length(body, body_len);
     struct iovec iovecs[iovecs_for_content_k] {};
     fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len), true);
-    connection.append_output<iovecs_for_content_k>(iovecs);
+    connection.append_outputs<iovecs_for_content_k>(iovecs);
 }
 
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
@@ -404,7 +526,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     struct iovec iovecs[iovecs_for_error_k] {};
     fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len),
                     true);
-    connection.append_output<iovecs_for_error_k>(iovecs);
+    connection.append_outputs<iovecs_for_error_k>(iovecs);
 }
 
 void ujrpc_call_send_error_invalid_params(ujrpc_call_t call) {
@@ -470,10 +592,8 @@ void connection_t::reset() noexcept {
     stage = stage_t::unknown_k;
     client_address = {};
 
-    input.reset();
-    output.reset();
-    input_absorbed = 0;
-    output_submitted = 0;
+    release_inputs();
+    release_outputs();
 
     keep_alive.reset();
     content_length.reset();
@@ -485,36 +605,26 @@ void connection_t::reset() noexcept {
     next_wakeup.tv_nsec = wakeup_initial_frequency_ns_k;
 }
 
-std::string_view connection_t::reserve_input() noexcept {
-    if (input.size() + max_packet_size_k + sj::SIMDJSON_PADDING < input.capacity())
-        return {input.data() + input.size(), max_packet_size_k};
-
-    else if (auto dynamic_replacement = std::aligned_alloc(align_k, input.next_capacity()); dynamic_replacement) {
-        std::memcpy(dynamic_replacement, input.data(), input.size());
-        input.dynamic = (char*)dynamic_replacement;
-        input.volume = input.next_capacity();
-        return {input.dynamic, input.volume - input.size()};
-    } else
-        return {};
-}
-
 template <std::size_t iovecs_count_ak> //
-bool connection_t::append_output(struct iovec const* iovecs) noexcept {
+bool connection_t::append_outputs(struct iovec const* iovecs) noexcept {
     std::size_t added_length = iovecs_length<iovecs_count_ak>(iovecs);
+    bool was_in_embedded = !output.dynamic.size();
+    bool fit_into_embedded = output.embedded_used + added_length < ram_page_size_k;
 
-    if (output.size() + added_length > output.capacity()) {
-        // TODO: More efficient growth strategy, in powers of two and till next page size multiple
-        if (auto dynamic_replacement = std::malloc(output.size() + added_length); dynamic_replacement) {
-            std::memcpy(dynamic_replacement, output.data(), output.size());
-            output.dynamic = (char*)dynamic_replacement;
-            output.volume = output.size() + added_length;
-        } else
+    if (was_in_embedded && fit_into_embedded) {
+        iovecs_memcpy<iovecs_count_ak>(iovecs, output.embedded + output.embedded_used);
+        output.embedded_used += added_length;
+        return true;
+    } else {
+        if (!output.dynamic.reserve(output.dynamic.size() + output.embedded_used + added_length))
             return false;
+        if (!was_in_embedded)
+            output.dynamic.append_n(output.embedded, output.embedded_used);
+        output.embedded_used = 0;
+        for (std::size_t i = 0; i != iovecs_count_ak; ++i)
+            output.dynamic.append_n((char const*)iovecs[i].iov_base, iovecs[i].iov_len);
+        return true;
     }
-
-    iovecs_memcpy<iovecs_count_ak>(iovecs, output.data() + output.size());
-    output.length += added_length;
-    return true;
 }
 
 bool automata_t::should_release() const noexcept {
@@ -523,7 +633,7 @@ bool automata_t::should_release() const noexcept {
 
 bool automata_t::received_full_request() const noexcept {
     if (connection.content_length)
-        if (connection.input.size() < *connection.content_length)
+        if (connection.input_view().size() < *connection.content_length)
             return false;
 
     // TODO: If we don't have explicit information about the expected length,
@@ -555,14 +665,14 @@ void automata_t::raise_call_or_calls() noexcept {
     // until answers to all requests are accumulated and we can submit them
     // simultaneously.
     // Linux supports `MSG_MORE` flag for submissions, which could have helped,
-    // but it is less effictive than assembling a copy here.
+    // but it is less effective than assembling a copy here.
     if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array();
         scratch.is_batch = true;
 
         // Start a JSON array. Originally it must fit into `embedded` part.
         connection.output.embedded[0] = '[';
-        connection.output.length = 1;
+        connection.output.embedded_used = 1;
 
         for (sjd::element const one : many) {
             scratch.tree = one;
@@ -570,21 +680,21 @@ void automata_t::raise_call_or_calls() noexcept {
         }
 
         // Replace the last comma with the closing bracket.
-        (connection.output.dynamic ? connection.output.dynamic
-                                   : connection.output.embedded)[connection.output.length - 1] = ']';
+        connection.output_back() = ']';
     } else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value();
         raise_call();
 
         // Drop the last comma, if present.
-        connection.output.length -= connection.output.length != 0;
+        if (connection.has_outputs())
+            connection.output_back() = '\0';
     }
 }
 
 void automata_t::parse_and_raise_request() noexcept {
 
-    auto request = connection.input.view();
+    auto request = connection.input_view();
     auto json_or_error = strip_http_headers(request);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
@@ -592,7 +702,7 @@ void automata_t::parse_and_raise_request() noexcept {
     auto parsed_request = std::get<parsed_request_t>(json_or_error);
     scratch.is_http = request.size() != parsed_request.body.size();
     scratch.dynamic_packet = parsed_request.body;
-    if (scratch.dynamic_packet.size() > max_packet_size_k) {
+    if (scratch.dynamic_packet.size() > ram_page_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
             ujrpc_call_send_error_out_of_memory(this);
@@ -656,7 +766,8 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     submission_mutex.lock();
 
     sqe = io_uring_get_sqe(&ring);
-    io_uring_prep_accept(sqe, socket, &connection.client_address, &connection.client_address_len, 0);
+    io_uring_prep_accept_direct(sqe, socket, &connection.client_address, &connection.client_address_len, 0,
+                                connections.offset_of(connection));
     io_uring_sqe_set_data(sqe, con_ptr);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
 
@@ -692,7 +803,7 @@ void engine_t::submit_stats_heartbeat() noexcept {
 }
 
 void engine_t::log_and_reset_stats() noexcept {
-    static char printed_message_k[max_packet_size_k]{};
+    static char printed_message_k[ram_page_size_k]{};
     auto printable_normalized = [](std::atomic<std::size_t>& i) noexcept {
         return printable(i.exchange(0, std::memory_order_relaxed) / stats_heartbeat_s_k);
     };
@@ -703,7 +814,7 @@ void engine_t::log_and_reset_stats() noexcept {
     auto packets_received = printable_normalized(stats_packets_received);
     auto packets_sent = printable_normalized(stats_packets_sent);
     auto len = std::snprintf( //
-        printed_message_k, max_packet_size_k,
+        printed_message_k, ram_page_size_k,
         "connections: +%.1f %c/s, "
         "-%.1f %c/s, "
         "RX: %.1f %c msgs/s, "
@@ -737,7 +848,7 @@ void automata_t::close_gracefully() noexcept {
 
     // The operations are not expected to complete in exactly the same order
     // as their submissions. So to stop all existing communication on the
-    // socket, we can cancel everythin related to its "file descriptor",
+    // socket, we can cancel everything related to its "file descriptor",
     // and then close.
     engine.submission_mutex.lock();
     // sqe = io_uring_get_sqe(&engine.ring);
@@ -756,15 +867,15 @@ void automata_t::close_gracefully() noexcept {
 void automata_t::send_next() noexcept {
     int uring_response{};
     struct io_uring_sqe* sqe{};
-    auto next = connection.next_output_chunk();
     connection.stage = stage_t::responding_in_progress_k;
-    connection.input_absorbed = 0;
-    connection.input.reset();
+    connection.release_inputs();
 
     engine.submission_mutex.lock();
     sqe = io_uring_get_sqe(&engine.ring);
-    // io_uring_prep_send_zc(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0, 0);
-    io_uring_prep_send(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
+    // io_uring_prep_send_zc(sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
+    // connection.next_output_length(), 0, 0);
+    io_uring_prep_write_fixed(sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
+                              connection.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
     io_uring_sqe_set_data(sqe, &connection);
     uring_response = io_uring_submit(&engine.ring);
     engine.submission_mutex.unlock();
@@ -773,10 +884,8 @@ void automata_t::send_next() noexcept {
 void automata_t::receive_next() noexcept {
     int uring_response{};
     struct io_uring_sqe* sqe{};
-    auto next = connection.next_inputs();
     connection.stage = stage_t::expecting_reception_k;
-    connection.output_submitted = 0;
-    connection.output.reset();
+    connection.release_outputs();
 
     engine.submission_mutex.lock();
 
@@ -789,14 +898,15 @@ void automata_t::receive_next() noexcept {
     //
     // In this case we are waiting for an actual data, not some artificial wakeup.
     sqe = io_uring_get_sqe(&engine.ring);
-    io_uring_prep_recv(sqe, int(connection.descriptor), (void*)next.data(), next.size(), 0);
+    io_uring_prep_read_fixed(sqe, int(connection.descriptor), (void*)connection.next_input_begin(),
+                             connection.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
     io_uring_sqe_set_data(sqe, &connection);
     io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
 
     // More than other operations this depends on the information coming from the client.
     // We can't afford to keep connections alive indefinitely, so we need to set a timeout
     // on this operation.
-    // The `io_uring_prep_link_timeout` is a conveniece method for poorly documented `IORING_OP_LINK_TIMEOUT`.
+    // The `io_uring_prep_link_timeout` is a convenience method for poorly documented `IORING_OP_LINK_TIMEOUT`.
     sqe = io_uring_get_sqe(&engine.ring);
     io_uring_prep_link_timeout(sqe, &connection.next_wakeup, 0);
     io_uring_sqe_set_data(sqe, NULL);
@@ -853,9 +963,7 @@ void automata_t::operator()() noexcept {
         }
 
         // Absorb the arrived data.
-        connection.input.length += completed_result;
-        connection.empty_transmits = 0;
-        connection.sleep_ns = 0;
+        connection.absorb_input(completed_result);
         engine.stats_bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_received.fetch_add(1, std::memory_order_relaxed);
 
@@ -864,25 +972,28 @@ void automata_t::operator()() noexcept {
         // and send back a response.
         if (received_full_request()) {
             parse_and_raise_request();
-            connection.input.reset();
-            connection.input_absorbed = 0;
-            // Some requests require no response at all, so we can go back to listening the port.
-            if (!connection.next_output_chunk().empty()) {
-                return send_next();
-            } else {
+            connection.release_inputs();
+            // Some requests require no response at all,
+            // so we can go back to listening the port.
+            if (!connection.has_outputs()) {
                 connection.exchanges++;
                 if (connection.exchanges >= engine.max_lifetime_exchanges)
                     return close_gracefully();
                 else
                     return receive_next();
+            } else {
+                return send_next();
             }
         }
+        // We are looking for more data to come
+        else if (connection.shift_input_to_dynamic()) {
+            return receive_next();
+        }
         // We may fail to allocate memory to receive the next input
-        else if (connection.reserve_input().empty()) {
+        else {
             ujrpc_call_send_error_out_of_memory(this);
             return send_next();
-        } else
-            return receive_next();
+        }
 
     case stage_t::responding_in_progress_k:
 
@@ -891,10 +1002,10 @@ void automata_t::operator()() noexcept {
         if (should_release())
             return close_gracefully();
 
-        connection.output_submitted += completed_result;
+        connection.mark_submitted_outputs(completed_result);
         engine.stats_bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_sent.fetch_add(1, std::memory_order_relaxed);
-        if (connection.submitted_all()) {
+        if (!connection.has_remaining_outputs()) {
             connection.exchanges++;
             if (connection.exchanges >= engine.max_lifetime_exchanges)
                 return close_gracefully();
