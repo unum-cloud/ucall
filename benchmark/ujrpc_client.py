@@ -189,7 +189,7 @@ def test_concurrency(client_type=ClientSumTCP, count_connections=3, count_cycles
 
 def test(threads: int = 100):
     for concurrency in range(2, threads):
-        test_concurrency(concurrency, 1000)
+        test_concurrency(ClientSumTCP, count_connections=concurrency, count_cycles=1000)
         print(f'- finished concurrency tests with {concurrency} connections')
 
 
