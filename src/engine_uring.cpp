@@ -110,6 +110,22 @@ struct exchange_buffer_t {
     array_gt<char> dynamic{};
 };
 
+class alignas(align_k) mutex_t {
+    std::atomic<bool> flag{false};
+
+  public:
+    void lock() noexcept {
+        while (flag.exchange(true, std::memory_order_relaxed))
+            ;
+        std::atomic_thread_fence(std::memory_order_acquire);
+    }
+
+    void unlock() noexcept {
+        std::atomic_thread_fence(std::memory_order_release);
+        flag.store(false, std::memory_order_relaxed);
+    }
+};
+
 struct alignas(align_k) connection_t {
 
     /// @brief A combination of a embedded and dynamic memory pools for content reception.
@@ -254,9 +270,9 @@ struct engine_t {
     std::uint32_t max_lifetime_micro_seconds{};
     std::uint32_t max_lifetime_exchanges{};
 
-    std::mutex submission_mutex{};
-    std::mutex completion_mutex{};
-    std::mutex connections_mutex{};
+    mutex_t submission_mutex{};
+    mutex_t completion_mutex{};
+    mutex_t connections_mutex{};
 
     std::atomic<std::size_t> stats_new_connections{};
     std::atomic<std::size_t> stats_closed_connections{};
