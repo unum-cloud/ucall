@@ -1,8 +1,8 @@
 /**
- * Notable links:
- * https://man7.org/linux/man-pages/dir_by_project.html#liburing
- * https://stackoverflow.com/a/17665015/2766161
+ * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
+ * @author Ashot Vardanian
  */
+#include <arpa/inet.h>  // `inet_addr`
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
@@ -42,7 +42,20 @@ struct engine_t {
     } batch_response{};
 };
 
-void send_reply(engine_t& engine) {
+sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
+    engine_t& engine = *reinterpret_cast<engine_t*>(call);
+    scratch_space_t& scratch = engine.scratch;
+    name_len = string_length(name, name_len);
+    return scratch.point_to_param({name, name_len});
+}
+
+sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) noexcept {
+    engine_t& engine = *reinterpret_cast<engine_t*>(call);
+    scratch_space_t& scratch = engine.scratch;
+    return scratch.point_to_param(position);
+}
+
+void send_reply(engine_t& engine) noexcept {
     if (!engine.batch_response.iovecs_count)
         return;
 
@@ -52,7 +65,7 @@ void send_reply(engine_t& engine) {
     sendmsg(engine.connection, &message, 0);
 }
 
-void forward_call(engine_t& engine) {
+void forward_call(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     auto callback_or_error = find_callback(engine.callbacks, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
@@ -65,7 +78,7 @@ void forward_call(engine_t& engine) {
 /**
  * @brief Analyzes the contents of the packet, bifurcating batched and singular JSON-RPC requests.
  */
-void forward_call_or_calls(engine_t& engine) {
+void forward_call_or_calls(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
@@ -82,7 +95,7 @@ void forward_call_or_calls(engine_t& engine) {
     // Linux supports `MSG_MORE` flag for submissions, which could have helped,
     // but it is less effictive than assembling a copy here.
     if (one_or_many.is_array()) {
-        sjd::array many = one_or_many.get_array();
+        sjd::array many = one_or_many.get_array().value_unsafe();
         scratch.is_batch = false;
         if (many.size() > engine.max_batch_size)
             return ujrpc_call_reply_error(&engine, -32603, "Too many requests in the batch.", 31);
@@ -115,13 +128,13 @@ void forward_call_or_calls(engine_t& engine) {
             std::free(engine.batch_response.copies[response_idx]);
     } else {
         scratch.is_batch = false;
-        scratch.tree = one_or_many.value();
+        scratch.tree = one_or_many.value_unsafe();
         forward_call(engine);
         send_reply(engine);
     }
 }
 
-void forward_packet(engine_t& engine) {
+void forward_packet(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     auto json_or_error = strip_http_headers(scratch.dynamic_packet);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
@@ -164,15 +177,12 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         forward_packet(engine);
     } else {
         sjd::parser parser;
-        if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS) {
-            ujrpc_call_send_error_out_of_memory(&engine);
-            return;
-        }
+        if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS)
+            return ujrpc_call_reply_error_out_of_memory(&engine);
+
         buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
-        if (!buffer_ptr) {
-            ujrpc_call_send_error_out_of_memory(&engine);
-            return;
-        }
+        if (!buffer_ptr)
+            return ujrpc_call_reply_error_out_of_memory(&engine);
 
         auto bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
         scratch.dynamic_parser = &parser;
@@ -184,21 +194,33 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     close(engine.connection);
 }
 
-void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
+void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
 
     // Simple sanity check
-    if (!server)
+    if (!server_out || !config_inout)
         return;
 
     // Retrieve configs, if present
-    uint16_t port = config && config->port > 0 ? config->port : 8545u;
-    uint16_t queue_depth = config && config->queue_depth > 0 ? config->queue_depth : 256u;
-    uint16_t max_batch_size = config && config->max_batch_size > 0 ? config->max_batch_size : 1024u;
-    uint16_t callbacks_capacity = config && config->callbacks_capacity > 0 ? config->callbacks_capacity : 128u;
-    uint16_t max_concurrent_connections =
-        config && config->max_concurrent_connections > 0 ? config->max_concurrent_connections : 1024u;
-    int opt = 1;
-    int server_fd = -1;
+    ujrpc_config_t& config = *config_inout;
+    if (!config.port)
+        config.port = 8545u;
+    if (!config.queue_depth)
+        config.queue_depth = 128u;
+    if (!config.max_callbacks)
+        config.max_callbacks = 128u;
+    if (!config.max_batch_size)
+        config.max_batch_size = 1024u;
+    if (!config.interface)
+        config.interface = "0.0.0.0";
+
+    // Some limitations are hard-coded for this non-concurrent implementation
+    config.max_threads = 1u;
+    config.max_concurrent_connections = 1;
+    config.max_lifetime_micro_seconds = 0u;
+    config.max_lifetime_exchanges = 1u;
+
+    int socket_options{1};
+    int socket_descriptor{-1};
     engine_t* server_ptr = nullptr;
     buffer_gt<struct iovec> embedded_iovecs;
     buffer_gt<char*> embedded_copies;
@@ -208,8 +230,8 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address;
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
+    address.sin_addr.s_addr = inet_addr(config.interface);
+    address.sin_port = htons(config.port);
 
     // Try allocating all the necessary memory.
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
@@ -218,42 +240,43 @@ void ujrpc_init(ujrpc_config_t const* config, ujrpc_server_t* server) {
     // In the worst case we may have `max_batch_size` requests, where each will
     // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
     // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.resize(max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
+    if (!embedded_iovecs.resize(config.max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
         goto cleanup;
-    if (!embedded_copies.resize(max_batch_size))
+    if (!embedded_copies.resize(config.max_batch_size))
         goto cleanup;
-    if (!embedded_callbacks.reserve(callbacks_capacity))
+    if (!embedded_callbacks.reserve(config.max_callbacks))
         goto cleanup;
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0)
+    socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_descriptor < 0)
         goto cleanup;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0)
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &socket_options,
+                   sizeof(socket_options)) < 0)
         goto cleanup;
-    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0)
+    if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
-    if (listen(server_fd, queue_depth) < 0)
+    if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
     if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
     // Initialize all the members.
     new (server_ptr) engine_t();
-    server_ptr->socket = descriptor_t{server_fd};
-    server_ptr->max_batch_size = max_batch_size;
+    server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->max_batch_size = config.max_batch_size;
     server_ptr->callbacks = std::move(embedded_callbacks);
     server_ptr->scratch.parser = std::move(parser);
     server_ptr->batch_response.copies = std::move(embedded_copies);
     server_ptr->batch_response.iovecs = std::move(embedded_iovecs);
-    *server = (ujrpc_server_t)server_ptr;
+    *server_out = (ujrpc_server_t)server_ptr;
     return;
 
 cleanup:
     errno;
-    if (server_fd >= 0)
-        close(server_fd);
+    if (socket_descriptor >= 0)
+        close(socket_descriptor);
     if (server_ptr)
         std::free(server_ptr);
-    *server = nullptr;
+    *server_out = nullptr;
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
@@ -293,14 +316,14 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_content_k;
         if (sendmsg(engine.connection, &message, 0) < 0)
-            return ujrpc_call_send_error_unknown(call);
+            return ujrpc_call_reply_error_unknown(call);
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.
     else {
         auto body_copy = (char*)std::malloc(body_len);
         if (!body_copy)
-            return ujrpc_call_send_error_out_of_memory(call);
+            return ujrpc_call_reply_error_out_of_memory(call);
         std::memcpy(body_copy, body, body_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = body_copy;
         fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id,
@@ -322,7 +345,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
-        return ujrpc_call_send_error_unknown(call);
+        return ujrpc_call_reply_error_unknown(call);
 
     // In case of a sinle request - immediately push into the socket.
     if (!scratch.is_batch) {
@@ -334,14 +357,14 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_error_k;
         if (sendmsg(engine.connection, &message, 0) < 0)
-            return ujrpc_call_send_error_unknown(call);
+            return ujrpc_call_reply_error_unknown(call);
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.
     else {
         auto code_and_node = (char*)std::malloc(code_len + note_len);
         if (!code_and_node)
-            return ujrpc_call_send_error_out_of_memory(call);
+            return ujrpc_call_reply_error_out_of_memory(call);
         std::memcpy(code_and_node, code, code_len);
         std::memcpy(code_and_node + code_len, note, note_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = code_and_node;
@@ -352,29 +375,81 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     }
 }
 
-void ujrpc_call_send_error_invalid_params(ujrpc_call_t call) {
+void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32602, "Invalid method param(s).", 24);
 }
 
-void ujrpc_call_send_error_unknown(ujrpc_call_t call) {
+void ujrpc_call_reply_error_unknown(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32603, "Unknown error.", 14);
 }
 
-void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
+void ujrpc_call_reply_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
-    engine_t& engine = *reinterpret_cast<engine_t*>(call);
-    scratch_space_t& scratch = engine.scratch;
-    name_len = string_length(name, name_len);
-    std::memcpy(scratch.json_pointer, "/params/", 8);
-    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
-    auto value = scratch.tree.at_pointer(scratch.json_pointer);
-
-    if (!value.is_int64())
+bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, bool* result_ptr) {
+    if (auto value = param_at(call, name, name_len); value.is_bool()) {
+        *result_ptr = value.get_bool().value_unsafe();
+        return true;
+    } else
         return false;
+}
 
-    *result_ptr = value.get_int64().value_unsafe();
-    return true;
+bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
+    if (auto value = param_at(call, name, name_len); value.is_int64() && !value.is_double()) {
+        *result_ptr = value.get_int64().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
+    if (auto value = param_at(call, name, name_len); !value.is_int64() && value.is_double()) {
+        *result_ptr = value.get_double().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, ujrpc_str_t* result_ptr,
+                           size_t* result_len_ptr) {
+    if (auto value = param_at(call, name, name_len); value.is_string()) {
+        *result_ptr = value.get_string().value_unsafe().data();
+        *result_len_ptr = value.get_string_length().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* result_ptr) {
+    if (auto value = param_at(call, position); value.is_bool()) {
+        *result_ptr = value.get_bool().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* result_ptr) {
+    if (auto value = param_at(call, position); value.is_int64() && !value.is_double()) {
+        *result_ptr = value.get_int64().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* result_ptr) {
+    if (auto value = param_at(call, position); !value.is_int64() && value.is_double()) {
+        *result_ptr = value.get_double().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_str(ujrpc_call_t call, size_t position, ujrpc_str_t* result_ptr, size_t* result_len_ptr) {
+    if (auto value = param_at(call, position); value.is_string()) {
+        *result_ptr = value.get_string().value_unsafe().data();
+        *result_len_ptr = value.get_string_length().value_unsafe();
+        return true;
+    } else
+        return false;
 }

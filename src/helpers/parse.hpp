@@ -26,14 +26,23 @@ struct scratch_space_t {
     std::string_view dynamic_packet{};
     std::string_view dynamic_id{};
 
-    sj::simdjson_result<sjd::element> point_to_param(std::string_view n) const noexcept {
-        bool needs_slash = n.size() && n.front() != '/';
-        std::memcpy(json_pointer, "/params/", 8 - needs_slash;
-        std::memcpy(json_pointer + 8 - needs_slash, n.data(), n.size());
-        return tree.at_pointer(json_pointer);
+    sj::simdjson_result<sjd::element> point_to_param(std::string_view name) noexcept {
+        bool needs_slash = name.size() && name.front() != '/';
+        std::size_t final_size = name.size() + 8u - needs_slash;
+        if (final_size > json_pointer_capacity_k)
+            return sj::INVALID_JSON_POINTER;
+        std::memcpy((void*)json_pointer, "/params/", 8u - needs_slash);
+        std::memcpy((void*)(json_pointer + 8u - needs_slash), name.data(), name.size());
+        return tree.at_pointer({json_pointer, final_size});
     }
-    sj::simdjson_result<sjd::element> point_to_param(std::size_t i) const noexcept {
-        return tree.at_pointer(json_pointer);
+
+    sj::simdjson_result<sjd::element> point_to_param(std::size_t position) noexcept {
+        std::memcpy((void*)json_pointer, "/params/", 8u);
+        std::to_chars_result res = std::to_chars(json_pointer + 8u, json_pointer + json_pointer_capacity_k, position);
+        if (res.ec != std::error_code())
+            return sj::INVALID_JSON_POINTER;
+        std::size_t final_size = res.ptr - json_pointer;
+        return tree.at_pointer({json_pointer, final_size});
     }
 };
 
@@ -61,7 +70,7 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
 
     // We don't support JSON-RPC before version 2.0.
     sj::simdjson_result<sjd::element> version = doc["jsonrpc"];
-    if (!version.is_string() || version.get_string().value() != "2.0")
+    if (!version.is_string() || version.get_string().value_unsafe() != "2.0")
         return default_error_t{-32600, "The request doesn't specify the 2.0 version."};
 
     // Check if the shape of the requst is correct:

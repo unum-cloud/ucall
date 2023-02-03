@@ -36,10 +36,8 @@
  * - `IORING_SETUP_COOP_TASKRUN` > 5.19.
  * - `IORING_SETUP_SINGLE_ISSUER` > 6.0.
  *
- * @section Suggested compilation flags
- *  - -fno-exceptions
- *
  * @author Ashot Vardanian
+ *
  * @see Notable links:
  * https://man7.org/linux/man-pages/dir_by_project.html#liburing
  * https://jvns.ca/blog/2017/06/03/async-io-on-linux--select--poll--and-epoll/
@@ -310,6 +308,19 @@ struct automata_t {
     void parse_and_raise_request() noexcept;
 };
 
+sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    scratch_space_t& scratch = automata.scratch;
+    name_len = string_length(name, name_len);
+    return scratch.point_to_param({name, name_len});
+}
+
+sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) noexcept {
+    automata_t& automata = *reinterpret_cast<automata_t*>(call);
+    scratch_space_t& scratch = automata.scratch;
+    return scratch.point_to_param(position);
+}
+
 #pragma endregion Cpp Declaration
 #pragma region C Definitions
 
@@ -325,8 +336,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.port = 8545u;
     if (!config.queue_depth)
         config.queue_depth = 4096u;
-    if (!config.callbacks_capacity)
-        config.callbacks_capacity = 128u;
+    if (!config.max_callbacks)
+        config.max_callbacks = 128u;
     if (!config.max_concurrent_connections)
         config.max_concurrent_connections = 1024u;
     if (!config.max_threads)
@@ -374,7 +385,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
-    if (!callbacks.reserve(config.callbacks_capacity))
+    if (!callbacks.reserve(config.max_callbacks))
         goto cleanup;
     if (!fixed_buffers.reserve(ram_page_size_k * 2u * config.max_concurrent_connections))
         goto cleanup;
@@ -524,7 +535,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
-        return ujrpc_call_send_error_unknown(call);
+        return ujrpc_call_reply_error_unknown(call);
 
     struct iovec iovecs[iovecs_for_error_k] {};
     fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len),
@@ -532,28 +543,28 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     connection.append_outputs<iovecs_for_error_k>(iovecs);
 }
 
-void ujrpc_call_send_error_invalid_params(ujrpc_call_t call) {
+void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32602, "Invalid method param(s).", 24);
 }
 
-void ujrpc_call_send_error_unknown(ujrpc_call_t call) {
+void ujrpc_call_reply_error_unknown(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32603, "Unknown error.", 14);
 }
 
-void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
+void ujrpc_call_reply_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-sj::simdjson_result<sjd::element> param_named(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    connection_t& connection = automata.connection;
-    scratch_space_t& scratch = automata.scratch;
-    name_len = string_length(name, name_len);
-    return scratch.point_to_param({name, name_len});
+bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, bool* result_ptr) {
+    if (auto value = param_at(call, name, name_len); value.is_bool()) {
+        *result_ptr = value.get_bool().value_unsafe();
+        return true;
+    } else
+        return false;
 }
 
 bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
-    if (auto value = param_named(call, name, name_len); value.is_int64() && !value.is_double()) {
+    if (auto value = param_at(call, name, name_len); value.is_int64() && !value.is_double()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
     } else
@@ -561,16 +572,49 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
 }
 
 bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
-    if (auto value = param_named(call, name, name_len); !value.is_int64() && value.is_double()) {
+    if (auto value = param_at(call, name, name_len); !value.is_int64() && value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
     } else
         return false;
 }
 
-bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, char const** result_ptr,
+bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, ujrpc_str_t* result_ptr,
                            size_t* result_len_ptr) {
-    if (auto value = param_named(call, name, name_len); value.is_string()) {
+    if (auto value = param_at(call, name, name_len); value.is_string()) {
+        *result_ptr = value.get_string().value_unsafe().data();
+        *result_len_ptr = value.get_string_length().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* result_ptr) {
+    if (auto value = param_at(call, position); value.is_bool()) {
+        *result_ptr = value.get_bool().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* result_ptr) {
+    if (auto value = param_at(call, position); value.is_int64() && !value.is_double()) {
+        *result_ptr = value.get_int64().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* result_ptr) {
+    if (auto value = param_at(call, position); !value.is_int64() && value.is_double()) {
+        *result_ptr = value.get_double().value_unsafe();
+        return true;
+    } else
+        return false;
+}
+
+bool ujrpc_param_positional_str(ujrpc_call_t call, size_t position, ujrpc_str_t* result_ptr, size_t* result_len_ptr) {
+    if (auto value = param_at(call, position); value.is_string()) {
         *result_ptr = value.get_string().value_unsafe().data();
         *result_len_ptr = value.get_string_length().value_unsafe();
         return true;
@@ -657,7 +701,7 @@ void automata_t::raise_call_or_calls() noexcept {
     parser.set_max_capacity(json_body.size());
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() == sj::CAPACITY)
-        return ujrpc_call_send_error_out_of_memory(this);
+        return ujrpc_call_reply_error_out_of_memory(this);
     if (one_or_many.error() != sj::SUCCESS)
         return ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
 
@@ -668,7 +712,7 @@ void automata_t::raise_call_or_calls() noexcept {
     // Linux supports `MSG_MORE` flag for submissions, which could have helped,
     // but it is less effective than assembling a copy here.
     if (one_or_many.is_array()) {
-        sjd::array many = one_or_many.get_array();
+        sjd::array many = one_or_many.get_array().value_unsafe();
         scratch.is_batch = true;
 
         // Start a JSON array. Originally it must fit into `embedded` part.
@@ -684,7 +728,7 @@ void automata_t::raise_call_or_calls() noexcept {
         connection.output_back() = ']';
     } else {
         scratch.is_batch = false;
-        scratch.tree = one_or_many.value();
+        scratch.tree = one_or_many.value_unsafe();
         raise_call();
 
         // Drop the last comma, if present.
@@ -706,7 +750,7 @@ void automata_t::parse_and_raise_request() noexcept {
     if (scratch.dynamic_packet.size() > ram_page_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
-            ujrpc_call_send_error_out_of_memory(this);
+            ujrpc_call_reply_error_out_of_memory(this);
         else {
             scratch.dynamic_parser = &parser;
             return raise_call_or_calls();
@@ -966,7 +1010,7 @@ void automata_t::operator()() noexcept {
         engine.stats_bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         engine.stats_packets_received.fetch_add(1, std::memory_order_relaxed);
         if (!connection.absorb_input(completed_result)) {
-            ujrpc_call_send_error_out_of_memory(this);
+            ujrpc_call_reply_error_out_of_memory(this);
             return send_next();
         }
 
@@ -994,7 +1038,7 @@ void automata_t::operator()() noexcept {
         }
         // We may fail to allocate memory to receive the next input
         else {
-            ujrpc_call_send_error_out_of_memory(this);
+            ujrpc_call_reply_error_out_of_memory(this);
             return send_next();
         }
 
