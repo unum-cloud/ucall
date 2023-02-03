@@ -25,6 +25,16 @@ struct scratch_space_t {
     sjd::parser* dynamic_parser{};
     std::string_view dynamic_packet{};
     std::string_view dynamic_id{};
+
+    sj::simdjson_result<sjd::element> point_to_param(std::string_view n) const noexcept {
+        bool needs_slash = n.size() && n.front() != '/';
+        std::memcpy(json_pointer, "/params/", 8 - needs_slash;
+        std::memcpy(json_pointer + 8 - needs_slash, n.data(), n.size());
+        return tree.at_pointer(json_pointer);
+    }
+    sj::simdjson_result<sjd::element> point_to_param(std::size_t i) const noexcept {
+        return tree.at_pointer(json_pointer);
+    }
 };
 
 struct default_error_t {
