@@ -10,12 +10,13 @@ import fire
 from benchmark import benchmark_parallel, socket_is_closed, safe_call
 
 current_process_id = os.getpid()
-pattern = '{"jsonrpc":"2.0","method":"sum","params":{"a":%i,"b":%i},"id":%i}'
+request_sum_pattern = '{"jsonrpc":"2.0","method":"sum","params":{"a":%i,"b":%i},"id":%i}'
+request_bot_pattern = '{"jsonrpc":"2.0","method":"bot_or_not","params":{"text":"%s"},"id":%i}'
 ip = '127.0.0.1' # For default interface
 # ip = '192.168.5.9' # For InfiniBand
 
 
-def random_request(identity) -> tuple[str, int]:
+def random_sum_request(identity) -> tuple[str, int]:
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
     # Using such strings is much faster than JSON package
@@ -25,7 +26,7 @@ def random_request(identity) -> tuple[str, int]:
     #     'jsonrpc': '2.0',
     #     'id': identity,
     # })
-    rpc = pattern % (a, b, identity)
+    rpc = request_sum_pattern % (a, b, identity)
     return rpc, a + b
 
 
@@ -43,12 +44,12 @@ def make_socket():
 
 
 def request_sum_pythonic():
-    jsonrpc, expected = random_request(current_process_id)
+    jsonrpc, expected = random_sum_request(current_process_id)
     response = requests.get('http://127.0.0.1:8545/', json=jsonrpc).json()
     received = int(response['result'])
 
     assert response['jsonrpc']
-    assert response['id'] == current_process_id
+    assert int(response['id']) == current_process_id
     assert expected == received, 'Wrong sum'
     return 1
 
@@ -67,7 +68,7 @@ class ClientSumHTTP:
         if socket_is_closed(self.sock):
             self.sock = make_socket()
 
-        jsonrpc, expected = random_request(self.identity)
+        jsonrpc, expected = random_sum_request(self.identity)
         lines = [
             'POST / HTTP/1.1',
             'Content-Type: application/json-rpc',
@@ -85,7 +86,7 @@ class ClientSumHTTP:
         response = parse_response(response_bytes)
         received = int(response['result'])
         assert response['jsonrpc']
-        assert response['id'] == self.identity
+        assert int(response['id']) == self.identity
         assert self.expected == received, 'Wrong sum'
         return 1
 
@@ -104,7 +105,7 @@ class ClientSumTCP:
         if socket_is_closed(self.sock):
             self.sock = make_socket()
 
-        jsonrpc, expected = random_request(self.identity)
+        jsonrpc, expected = random_sum_request(self.identity)
         self.sock.send(jsonrpc.encode())
         self.expected = expected
 
@@ -116,9 +117,39 @@ class ClientSumTCP:
         response = parse_response(response_bytes)
         received = int(response['result'])
         assert response['jsonrpc']
-        assert response['id'] == self.identity
+        assert int(response['id']) == self.identity
         assert self.expected == received, 'Wrong sum'
         return 1
+
+
+class ClientBotOrNotTCP:
+    def __init__(self, sock: socket.socket = None, identity: int = current_process_id) -> None:
+        self.sock = sock
+        self.identity = identity
+        self.text = ''.join((random.choice('abcdxyzpqr') for i in range(2_000)))
+
+    def __call__(self) -> int:
+        self.send()
+        return self.recv()
+
+    def send(self):
+        if socket_is_closed(self.sock):
+            self.sock = make_socket()
+
+        jsonrpc = request_bot_pattern % (self.text, self.identity)
+        self.sock.send(jsonrpc.encode())
+
+    def recv(self):
+        self.sock.settimeout(0.01)
+        response_bytes = self.sock.recv(4096)
+        self.sock.settimeout(None)
+
+        response = parse_response(response_bytes)
+        received = int(response['result'])
+        assert response['jsonrpc']
+        assert int(response['id']) == self.identity
+        return 1
+
 
 
 class ClientSumBatchesTCP:
@@ -188,7 +219,7 @@ def test_concurrency(client_type=ClientSumTCP, count_connections=3, count_cycles
 
 
 def test(threads: int = 100):
-    for concurrency in range(2, threads):
+    for concurrency in range(1, threads):
         test_concurrency(ClientSumTCP, count_connections=concurrency, count_cycles=1000)
         print(f'- finished concurrency tests with {concurrency} connections')
 
@@ -230,6 +261,16 @@ def benchmark(debug: bool = False):
         )
         print(stats)
 
+    # Testing TCP connection with large packets
+    for process_count in processes_range:
+        print('TCP on %i processes with large packets' % process_count)
+        stats = benchmark_parallel(
+            ClientBotOrNotTCP(),
+            process_count=process_count,
+            transmits_count=transmits_count,
+            debug=debug,
+        )
+        print(stats)
 
 def run(seconds: int = 100, batch: bool = False):
     client = ClientSumTCP() if not batch else ClientSumBatchesTCP()
