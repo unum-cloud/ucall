@@ -771,7 +771,6 @@ completed_event_t engine_t::pop_completed() noexcept {
 
     completion_mutex.lock();
     uring_result = io_uring_wait_cqe_timeout(&uring, &uring_cqe, &polling_timeout);
-    // uring_result = io_uring_wait_cqe(&uring, &uring_cqe);
 
     // Some results are not worth evaluating in automata.
     if (uring_result < 0 || !uring_cqe || !uring_cqe->user_data) {
@@ -815,7 +814,7 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     uring_sqe = io_uring_get_sqe(&uring);
     io_uring_prep_accept_direct(uring_sqe, socket, &connection.client_address, &connection.client_address_len, 0,
                                 IORING_FILE_INDEX_ALLOC);
-    io_uring_sqe_set_data(uring_sqe, con_ptr);
+    io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
 
     uring_sqe = io_uring_get_sqe(&uring);
@@ -898,15 +897,15 @@ void automata_t::close_gracefully() noexcept {
     // socket, we can cancel everything related to its "file descriptor",
     // and then close.
     engine.submission_mutex.lock();
-    // uring_sqe = io_uring_get_sqe(&engine.uring);
-    // io_uring_prep_cancel(uring_sqe, &connection, IORING_ASYNC_CANCEL_ALL | IOSQE_CQE_SKIP_SUCCESS);
-    // io_uring_sqe_set_data(uring_sqe, NULL);
-    // io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
+    uring_sqe = io_uring_get_sqe(&engine.uring);
+    io_uring_prep_cancel_fd(uring_sqe, int(connection.descriptor), 0);
+    io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
 
     uring_sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_close(uring_sqe, int(connection.descriptor));
     io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, 0 /*IOSQE_CQE_SKIP_SUCCESS*/);
+    io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }
@@ -917,12 +916,14 @@ void automata_t::send_next() noexcept {
     connection.stage = stage_t::responding_in_progress_k;
     connection.release_inputs();
 
-    engine.submission_mutex.lock();
-    uring_sqe = io_uring_get_sqe(&engine.uring);
     // io_uring_prep_send_zc(uring_sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
     //                       connection.next_output_length(), 0, 0);
+    engine.submission_mutex.lock();
+    uring_sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_write_fixed(uring_sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
                               connection.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
+    io_uring_sqe_set_data(uring_sqe, &connection);
+    io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }
@@ -947,7 +948,7 @@ void automata_t::receive_next() noexcept {
     io_uring_prep_read_fixed(uring_sqe, int(connection.descriptor), (void*)connection.next_input_begin(),
                              connection.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
     io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
+    io_uring_sqe_set_flags(uring_sqe, 0 | IOSQE_IO_LINK);
 
     // More than other operations this depends on the information coming from the client.
     // We can't afford to keep connections alive indefinitely, so we need to set a timeout
@@ -956,6 +957,7 @@ void automata_t::receive_next() noexcept {
     uring_sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
     io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);
 
     engine.submission_mutex.unlock();
