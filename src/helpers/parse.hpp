@@ -1,11 +1,10 @@
 #pragma once
 #include <variant>
 
+#include <picohttpparser.h>
 #include <simdjson.h>
 
 #include "shared.hpp"
-
-#include <picohttpparser.h>
 
 namespace unum::ujrpc {
 
@@ -27,12 +26,12 @@ struct scratch_space_t {
     std::string_view dynamic_id{};
 
     sj::simdjson_result<sjd::element> point_to_param(std::string_view name) noexcept {
-        bool needs_slash = name.size() && name.front() != '/';
-        std::size_t final_size = name.size() + 8u - needs_slash;
+        bool has_slash = name.size() && name.front() == '/';
+        std::size_t final_size = name.size() + 8u - has_slash;
         if (final_size > json_pointer_capacity_k)
             return sj::INVALID_JSON_POINTER;
-        std::memcpy((void*)json_pointer, "/params/", 8u - !needs_slash);
-        std::memcpy((void*)(json_pointer + 8u - !needs_slash), name.data(), name.size());
+        std::memcpy((void*)json_pointer, "/params/", 8u);
+        std::memcpy((void*)(json_pointer + 8u - has_slash), name.data(), name.size());
         return tree.at_pointer({json_pointer, final_size});
     }
 
