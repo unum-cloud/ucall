@@ -396,7 +396,7 @@ bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len
 }
 
 bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
-    if (auto value = param_at(call, name, name_len); value.is_int64() && !value.is_double()) {
+    if (auto value = param_at(call, name, name_len); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
     } else
@@ -404,7 +404,7 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
 }
 
 bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
-    if (auto value = param_at(call, name, name_len); !value.is_int64() && value.is_double()) {
+    if (auto value = param_at(call, name, name_len); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
     } else
@@ -430,7 +430,7 @@ bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* resul
 }
 
 bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* result_ptr) {
-    if (auto value = param_at(call, position); value.is_int64() && !value.is_double()) {
+    if (auto value = param_at(call, position); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
     } else
@@ -438,7 +438,7 @@ bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* res
 }
 
 bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* result_ptr) {
-    if (auto value = param_at(call, position); !value.is_int64() && value.is_double()) {
+    if (auto value = param_at(call, position); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
     } else
