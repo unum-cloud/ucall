@@ -27,11 +27,13 @@ void ujrpc_take_call(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_take_calls(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_free(ujrpc_server_t);
 
+bool ujrpc_param_named_bool(ujrpc_call_t, ujrpc_str_t, size_t, bool*);
 bool ujrpc_param_named_i64(ujrpc_call_t, ujrpc_str_t, size_t, int64_t*);
 bool ujrpc_param_named_f64(ujrpc_call_t, ujrpc_str_t, size_t, double*);
 bool ujrpc_param_named_str(ujrpc_call_t, ujrpc_str_t, size_t, ujrpc_str_t*, size_t*);
 bool ujrpc_param_named_json(ujrpc_call_t, ujrpc_str_t, size_t, ujrpc_str_t*, size_t*);
 
+bool ujrpc_param_positional_bool(ujrpc_call_t, size_t, int64_t*);
 bool ujrpc_param_positional_i64(ujrpc_call_t, size_t, int64_t*);
 bool ujrpc_param_positional_f64(ujrpc_call_t, size_t, double*);
 bool ujrpc_param_positional_str(ujrpc_call_t, size_t, ujrpc_str_t*, size_t*);

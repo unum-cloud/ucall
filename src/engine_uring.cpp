@@ -177,10 +177,10 @@ struct alignas(align_k) connection_t {
     }
     void mark_submitted_outputs(std::size_t n) noexcept { output_submitted += n; }
     void prepare_more_outputs() noexcept {
-        if (output.dynamic.size()) {
-            output.embedded_used = std::min(output.dynamic.size() - output_submitted, ram_page_size_k);
-            std::memcpy(output.embedded, output.dynamic.data() + output_submitted, output.embedded_used);
-        }
+        if (!output.dynamic.size())
+            return;
+        output.embedded_used = std::min(output.dynamic.size() - output_submitted, ram_page_size_k);
+        std::memcpy(output.embedded, output.dynamic.data() + output_submitted, output.embedded_used);
     }
     bool has_outputs() noexcept { return std::max(output.embedded_used, output.dynamic.size()); }
     bool has_remaining_outputs() const noexcept {
@@ -544,40 +544,38 @@ void ujrpc_call_send_error_out_of_memory(ujrpc_call_t call) {
     return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
-
+sj::simdjson_result<sjd::element> param_named(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
     name_len = string_length(name, name_len);
-    std::memcpy(scratch.json_pointer, "/params/", 8);
-    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
-    auto value = scratch.tree.at_pointer(scratch.json_pointer);
+    return scratch.point_to_param({name, name_len});
+}
 
-    if (!value.is_int64())
+bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
+    if (auto value = param_named(call, name, name_len); value.is_int64() && !value.is_double()) {
+        *result_ptr = value.get_int64().value_unsafe();
+        return true;
+    } else
         return false;
+}
 
-    *result_ptr = value.get_int64().value_unsafe();
-    return true;
+bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
+    if (auto value = param_named(call, name, name_len); !value.is_int64() && value.is_double()) {
+        *result_ptr = value.get_double().value_unsafe();
+        return true;
+    } else
+        return false;
 }
 
 bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, char const** result_ptr,
                            size_t* result_len_ptr) {
-
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    connection_t& connection = automata.connection;
-    scratch_space_t& scratch = automata.scratch;
-    name_len = string_length(name, name_len);
-    std::memcpy(scratch.json_pointer, "/params/", 8);
-    std::memcpy(scratch.json_pointer + 8, name, name_len + 1);
-    auto value = scratch.tree.at_pointer(scratch.json_pointer);
-
-    if (!value.is_string())
+    if (auto value = param_named(call, name, name_len); value.is_string()) {
+        *result_ptr = value.get_string().value_unsafe().data();
+        *result_len_ptr = value.get_string_length().value_unsafe();
+        return true;
+    } else
         return false;
-
-    *result_ptr = value.get_string().value_unsafe().data();
-    *result_len_ptr = value.get_string_length().value_unsafe();
-    return true;
 }
 
 #pragma endregion C Definitions
