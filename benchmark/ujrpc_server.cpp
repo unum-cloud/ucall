@@ -37,10 +37,10 @@ int main(int argc, char** argv) {
     ujrpc_config_t config{};
     // config.interface = "192.168.5.9"; // For InfiniBand
     config.port = 8545;
-    config.max_threads = 1;
+    config.max_threads = 4;
     config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
-    config.max_lifetime_exchanges = 100;
+    config.max_lifetime_exchanges = 512;
     ujrpc_init(&config, &server);
     if (!server) {
         std::printf("Failed to initialize server!\n");

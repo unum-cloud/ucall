@@ -148,8 +148,8 @@ We are inviting others to contribute bindings to other languages as well.
     sudo apt install parallel
     cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release && make -j8 --silent -C ./build_release
     ./build_release/ujrpc_server_bench --threads 64 &
-    parallel python benchmark/ujrpc_client.py run ::: {1..64}
-    parallel go run ./benchmark/ujrpc_client.go run ::: {1..64}
+    parallel python benchmark/ujrpc_client.py run ::: {1..8}
+    parallel go run ./benchmark/ujrpc_client.go run ::: {1..8}
     kill %% # Kill the most recent background job
     ```
 </details>
