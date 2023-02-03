@@ -4,10 +4,12 @@
 #include <numeric>     // `std::iota`
 #include <string_view> // `std::string_view`
 
+#if defined(__x86_64__)
 #ifdef _MSC_VER
 #include <intrin.h>
 #else
 #include <x86intrin.h>
+#endif
 #endif
 
 #include "ujrpc/ujrpc.h" // `ujrpc_callback_t`

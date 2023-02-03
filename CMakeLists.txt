@@ -9,6 +9,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+
 # Check if we are running on Linux
 if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
@@ -77,15 +79,15 @@ if(LINUX)
         INSTALL_COMMAND ""
         UPDATE_COMMAND ""
     )
-    add_library(liburing STATIC IMPORTED GLOBAL)
-    add_dependencies(liburing liburing-ep)
-    set_property(TARGET liburing
+    add_library(liburing_internal STATIC IMPORTED GLOBAL)
+    add_dependencies(liburing_internal liburing-ep)
+    set_property(TARGET liburing_internal
         PROPERTY IMPORTED_LOCATION
         ${URING_DIR}/src/liburing.a
     )
 
-    # include_directories(${URING_DIR}/src/include/)
-    set(URING_LIBS liburing)
+    include_directories(${URING_DIR}/src/include/)
+    set(URING_LIBS liburing_internal)
 endif()
 
 find_package(Threads REQUIRED)
@@ -96,11 +98,11 @@ target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${P
 
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.15)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
-    target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads uring ${PICOHTTP_LIBS} ${URING_LIBS})
-    message("Linux kernel version should be greater than 5.15 to use io_uring features")
+    target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS} ${URING_LIBS})
     add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
     target_link_libraries(ujrpc_server_bench ujrpc_server_uring)
 else()
+    message("Linux kernel version should be greater than 5.15 to use io_uring features")
     add_executable(ujrpc_server_bench benchmark/ujrpc_server.cpp)
     target_link_libraries(ujrpc_server_bench ujrpc_server_posix)
 endif()
