@@ -31,8 +31,8 @@ struct scratch_space_t {
         std::size_t final_size = name.size() + 8u - needs_slash;
         if (final_size > json_pointer_capacity_k)
             return sj::INVALID_JSON_POINTER;
-        std::memcpy((void*)json_pointer, "/params/", 8u - needs_slash);
-        std::memcpy((void*)(json_pointer + 8u - needs_slash), name.data(), name.size());
+        std::memcpy((void*)json_pointer, "/params/", 8u - !needs_slash);
+        std::memcpy((void*)(json_pointer + 8u - !needs_slash), name.data(), name.size());
         return tree.at_pointer({json_pointer, final_size});
     }
 

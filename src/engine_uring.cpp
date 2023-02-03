@@ -137,7 +137,9 @@ struct alignas(align_k) connection_t {
     std::size_t exchanges{};
 
     /// @brief Relative time set for the last wake-up call.
-    struct __kernel_timespec next_wakeup {};
+    struct __kernel_timespec next_wakeup {
+        0, wakeup_initial_frequency_ns_k
+    };
     /// @brief Absolute time extracted from HTTP headers, for the requested lifetime of this channel.
     std::optional<struct __kernel_timespec> keep_alive{};
     /// @brief Expected reception length extracted from HTTP headers.
@@ -358,10 +360,10 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     struct io_uring_sqe* uring_sqe{};
     struct io_uring_cqe* uring_cqe{};
     uring_params.features |= IORING_FEAT_FAST_POLL;
-    // uring_params.features |= IORING_FEAT_SQPOLL_NONFIXED;
-    // uring_params.flags |= IORING_SETUP_SQPOLL;
-    // uring_params.sq_thread_idle = 2000;
+    uring_params.features |= IORING_FEAT_SQPOLL_NONFIXED;
     // uring_params.flags |= IORING_SETUP_COOP_TASKRUN;
+    uring_params.flags |= IORING_SETUP_SQPOLL;
+    uring_params.sq_thread_idle = wakeup_initial_frequency_ns_k;
     // uring_params.flags |= config.max_threads == 1 ? IORING_SETUP_SINGLE_ISSUER : 0; // 6.0+
     engine_t* server_ptr{};
     pool_gt<connection_t> connections{};
@@ -769,6 +771,7 @@ completed_event_t engine_t::pop_completed() noexcept {
 
     completion_mutex.lock();
     uring_result = io_uring_wait_cqe_timeout(&uring, &uring_cqe, &polling_timeout);
+    // uring_result = io_uring_wait_cqe(&uring, &uring_cqe);
 
     // Some results are not worth evaluating in automata.
     if (uring_result < 0 || !uring_cqe || !uring_cqe->user_data) {
@@ -821,7 +824,7 @@ bool engine_t::consider_accepting_new_connection() noexcept {
 
     uring_result = io_uring_submit(&uring);
     submission_mutex.unlock();
-    if (uring_result != 2) {
+    if (uring_result < 0) {
         connections.release(con_ptr);
         reserved_connections--;
         return false;
@@ -917,10 +920,9 @@ void automata_t::send_next() noexcept {
     engine.submission_mutex.lock();
     uring_sqe = io_uring_get_sqe(&engine.uring);
     // io_uring_prep_send_zc(uring_sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
-    // connection.next_output_length(), 0, 0);
+    //                       connection.next_output_length(), 0, 0);
     io_uring_prep_write_fixed(uring_sqe, int(connection.descriptor), (void*)connection.next_output_begin(),
                               connection.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
-    io_uring_sqe_set_data(uring_sqe, &connection);
     uring_result = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }
