@@ -99,12 +99,9 @@ enum class stage_t {
 };
 
 struct completed_event_t {
-    connection_t& connection;
+    connection_t* connection_ptr{};
     stage_t stage{};
     int result{};
-
-    explicit operator bool() const noexcept { return stage != stage_t::unknown_k; }
-    bool is_corrupted() const noexcept { return result == -EPIPE || result == -EBADF; }
 };
 
 struct exchange_buffer_t {
@@ -280,9 +277,10 @@ struct engine_t {
 
     bool consider_accepting_new_connection() noexcept;
     void submit_stats_heartbeat() noexcept;
-    completed_event_t pop_completed() noexcept;
     void release_connection(connection_t&) noexcept;
     void log_and_reset_stats() noexcept;
+
+    template <std::size_t max_count_ak> std::size_t pop_completed(completed_event_t*) noexcept;
 };
 
 struct automata_t {
@@ -294,6 +292,7 @@ struct automata_t {
     int completed_result{};
 
     void operator()() noexcept;
+    bool is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
 
     // Computed properties:
     bool received_full_request() const noexcept;
@@ -490,24 +489,24 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (!thread_idx)
         engine.consider_accepting_new_connection();
-    completed_event_t completed = engine.pop_completed();
-    if (!completed)
-        return;
 
-    if (completed.is_corrupted()) {
-        return engine.release_connection(completed.connection);
+    constexpr std::size_t completed_max_k{16};
+    completed_event_t completed_events[completed_max_k]{};
+    std::size_t completed_count = engine.pop_completed<completed_max_k>(completed_events);
+
+    for (std::size_t i = 0; i != completed_count; ++i) {
+        completed_event_t& completed = completed_events[i];
+        automata_t automata{
+            .engine = engine,
+            .scratch = engine.spaces[thread_idx],
+            .connection = *completed.connection_ptr,
+            .completed_stage = completed.stage,
+            .completed_result = completed.result,
+        };
+
+        // If everything is fine, let automata work in its normal regime.
+        automata();
     }
-
-    automata_t automata{
-        .engine = engine,
-        .scratch = engine.spaces[thread_idx],
-        .connection = completed.connection,
-        .completed_stage = completed.stage,
-        .completed_result = completed.result,
-    };
-
-    // If everything is fine, let automata work in its normal regime.
-    return automata();
 }
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
@@ -763,31 +762,27 @@ void automata_t::parse_and_raise_request() noexcept {
     }
 }
 
-completed_event_t engine_t::pop_completed() noexcept {
-    int uring_result{};
+template <std::size_t max_count_ak> std::size_t engine_t::pop_completed(completed_event_t* events) noexcept {
+
+    unsigned uring_head{};
+    unsigned completed{};
+    unsigned passed{};
     struct io_uring_cqe* uring_cqe{};
-    struct __kernel_timespec polling_timeout {};
-    polling_timeout.tv_nsec = wakeup_initial_frequency_ns_k;
 
     completion_mutex.lock();
-    uring_result = io_uring_wait_cqe_timeout(&uring, &uring_cqe, &polling_timeout);
-
-    // Some results are not worth evaluating in automata.
-    if (uring_result < 0 || !uring_cqe || !uring_cqe->user_data) {
-        // We should skip over timer events without any payload.
-        if (uring_cqe && !uring_cqe->user_data)
-            io_uring_cq_advance(&uring, 1);
-        completion_mutex.unlock();
-        return {*(connection_t*)nullptr, stage_t::unknown_k, 0};
+    io_uring_for_each_cqe(&uring, uring_head, uring_cqe) {
+        ++passed;
+        if (!uring_cqe->user_data)
+            continue;
+        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
+        events[completed].stage = events[completed].connection_ptr->stage;
+        events[completed].result = uring_cqe->res;
+        ++completed;
+        if (completed == max_count_ak)
+            break;
     }
 
-    connection_t& connection = *(connection_t*)uring_cqe->user_data;
-    completed_event_t completed{
-        .connection = connection,
-        .stage = connection.stage,
-        .result = uring_cqe->res,
-    };
-    io_uring_cq_advance(&uring, 1);
+    io_uring_cq_advance(&uring, passed);
     completion_mutex.unlock();
     return completed;
 }
@@ -964,6 +959,9 @@ void automata_t::receive_next() noexcept {
 }
 
 void automata_t::operator()() noexcept {
+
+    if (is_corrupted())
+        return close_gracefully();
 
     switch (connection.stage) {
 
