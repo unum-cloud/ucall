@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package grpc_sum;
+package grpc;
 
-service gRPC_sum{
+service gRPC{
   // A simple RPC.
   //
   // Obtains the SumResponse at a given position.

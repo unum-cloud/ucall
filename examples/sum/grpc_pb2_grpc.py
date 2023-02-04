@@ -2,10 +2,10 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import grpc_sum_pb2 as grpc__sum__pb2
+import grpc_pb2 as grpc__sum__pb2
 
 
-class gRPC_sumStub(object):
+class gRPCStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -15,13 +15,13 @@ class gRPC_sumStub(object):
             channel: A grpc.Channel.
         """
         self.GetServerResponse = channel.unary_unary(
-                '/grpc_sum.gRPC_sum/GetServerResponse',
-                request_serializer=grpc__sum__pb2.Sum.SerializeToString,
-                response_deserializer=grpc__sum__pb2.SumResponse.FromString,
-                )
+            '/grpc.gRPC/GetServerResponse',
+            request_serializer=grpc__sum__pb2.Sum.SerializeToString,
+            response_deserializer=grpc__sum__pb2.SumResponse.FromString,
+        )
 
 
-class gRPC_sumServicer(object):
+class gRPCServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GetServerResponse(self, request, context):
@@ -34,36 +34,37 @@ class gRPC_sumServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_gRPC_sumServicer_to_server(servicer, server):
+def add_gRPCServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'GetServerResponse': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetServerResponse,
-                    request_deserializer=grpc__sum__pb2.Sum.FromString,
-                    response_serializer=grpc__sum__pb2.SumResponse.SerializeToString,
-            ),
+        'GetServerResponse': grpc.unary_unary_rpc_method_handler(
+            servicer.GetServerResponse,
+            request_deserializer=grpc__sum__pb2.Sum.FromString,
+            response_serializer=grpc__sum__pb2.SumResponse.SerializeToString,
+        ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'grpc_sum.gRPC_sum', rpc_method_handlers)
+        'grpc.gRPC', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
-
  # This class is part of an EXPERIMENTAL API.
-class gRPC_sum(object):
+
+
+class gRPC(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
     def GetServerResponse(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/grpc_sum.gRPC_sum/GetServerResponse',
-            grpc__sum__pb2.Sum.SerializeToString,
-            grpc__sum__pb2.SumResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+                          target,
+                          options=(),
+                          channel_credentials=None,
+                          call_credentials=None,
+                          insecure=False,
+                          compression=None,
+                          wait_for_ready=None,
+                          timeout=None,
+                          metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/grpc.gRPC/GetServerResponse',
+                                             grpc__sum__pb2.Sum.SerializeToString,
+                                             grpc__sum__pb2.SumResponse.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

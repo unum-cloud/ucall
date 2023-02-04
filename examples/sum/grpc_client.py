@@ -2,13 +2,13 @@
 import random
 
 import grpc
-import grpc_sum_pb2_grpc as pb2_grpc
-import grpc_sum_pb2 as pb2
+import grpc_pb2_grpc as pb2_grpc
+import grpc_pb2 as pb2
 
 from benchmark import benchmark_request
 
 
-class gRPC_sumClient(object):
+class gRPCClient(object):
     """
     Client for gRPC functionality
     """
@@ -22,7 +22,7 @@ class gRPC_sumClient(object):
             '{}:{}'.format(self.host, self.server_port))
 
         # bind the client and the server
-        self.stub = pb2_grpc.gRPC_sumStub(self.channel)
+        self.stub = pb2_grpc.gRPCStub(self.channel)
 
     def get_url(self, a, b):
         """
@@ -34,7 +34,7 @@ class gRPC_sumClient(object):
 
 def request_sum(client=None):
     if not client:
-        client = gRPC_sumClient()
+        client = gRPCClient()
     a = random.randint(1, 1000)
     b = random.randint(1, 1000)
     result = client.get_url(a=a, b=b)
@@ -45,7 +45,7 @@ def request_sum(client=None):
 if __name__ == '__main__':
 
     print('Will benchmark gRPC reusing client')
-    client = gRPC_sumClient()
+    client = gRPCClient()
     benchmark_request(lambda: request_sum(client))
 
     print('Will benchmark gRPC recreating client')
