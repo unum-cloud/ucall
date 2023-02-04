@@ -94,73 +94,79 @@ We are inviting others to contribute bindings to other languages as well.
 > First column shows timing for a server with Ubuntu 22.04, based on a 64-core AMD Epyc CPU.
 > Second column shows timing of a Macbook Pro with Intel Core i9 CPU.
 
-<details>
-  <summary>Replicating Fast API Results</summary>
+### Reproducing Results
 
-    ```sh
-    pip install uvicorn[standard] fastapi
-    pip install websocket-client requests
-    uvicorn benchmark.fast_api_server:app --log-level critical &
-    python ./benchmark/fast_api_client.py
-    kill %% # Kill the most recent background job
-    ```
-</details>
+#### FastAPI
 
-<details>
-  <summary>Replicating Py-UCX Results</summary>
+```sh
+pip install uvicorn fastapi websocket-client requests
+cd examples && uvicorn sum.fastapi_server:app --log-level critical & ; cd ..
+python examples/bench.py "sum.fastapi_client.ClientREST" --progress
+python examples/bench.py "sum.fastapi_client.ClientWebSocket" --progress
+kill %%
+```
 
-    ```sh
-    conda create -y -n ucx -c conda-forge -c rapidsai ucx-proc=*=cpu ucx ucx-py python=3.9
-    conda activate ucx
-    uvicorn benchmark.fast_api_server:app --log-level critical &
-    python ./benchmark/fast_api_client.py
-    kill %% # Kill the most recent background job
-    ```
-</details>
+Want to dispatch more clients and aggregate statistics?
 
-<details>
-  <summary>Replicating gRPC Results</summary>
+```sh
+python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
+python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
+```
 
-    ```sh
-    pip install grpcio grpcio-tools
-    python ./benchmark/grpc_server.py &
-    python ./benchmark/grpc_client.py
-    kill %% # Kill the most recent background job
-    ```
-</details>
+#### UJRPC
 
-<details>
-  <summary>Replicating UJRPC Results</summary>
+UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
+You would either run `ujrpc_server_posix_bench` or `ujrpc_server_uring_bench`.
 
-    ```sh
-    cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release && make -j8 --silent -C ./build_release
-    ./build_release/ujrpc_server_bench &
-    python ./benchmark/ujrpc_client.py test
-    go run ./benchmark/ujrpc_client.go
-    kill %% # Kill the most recent background job
-    ```
-</details>
+```sh
+cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -j8 -C ./build_release
+./build_release/ujrpc_server_posix_bench &
+python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
+python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
+python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
+kill %%
+```
 
-<details>
-  <summary>Stress-testing UJRPC</summary>
+Want to dispatch more clients and aggregate statistics?
 
-    ```sh
-    sudo apt install parallel
-    cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release && make -j8 --silent -C ./build_release
-    ./build_release/ujrpc_server_bench --threads 64 &
-    parallel python benchmark/ujrpc_client.py run ::: {1..8}
-    parallel go run ./benchmark/ujrpc_client.go run ::: {1..8}
-    kill %% # Kill the most recent background job
-    ```
-</details>
+```sh
+python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 8
+python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 8
+python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 8
+```
 
-<details>
-  <summary>Debugging</summary>
-  
-    ```sh
-    cmake -DCMAKE_BUILD_TYPE=Debug -B ./build_debug && make -j8 --silent -C ./build_debug
-    ```
-</details>
+A lot has been said about the speed of Python code ~~or the lack of~~.
+To get more accurate numbers for mean request latency, you can use the GoLang version:
+
+```sh
+go run ./examples/sum/ujrpc_client.go
+```
+
+Or push it even further dispatching dozens of processes with GNU `parallel` utility:
+
+```
+sudo apt install parallel
+parallel go run ./examples/sum/ujrpc_client.go run ::: {1..8}
+```
+
+#### Py-UCX Results
+
+```sh
+conda create -y -n ucx -c conda-forge -c rapidsai ucx-proc=*=cpu ucx ucx-py python=3.9
+conda activate ucx
+? &
+python ./sum/ucx_client.py
+kill %%
+```
+
+#### gRPC Results
+
+```sh
+pip install grpcio grpcio-tools
+python ./sum/grpc_server.py &
+python ./sum/grpc_client.py
+kill %%
+```
 
 ## Why JSON RPC?
 
@@ -172,7 +178,8 @@ We are inviting others to contribute bindings to other languages as well.
 - [x] Batch requests
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
-- [ ] Concurrent sessions
+- [x] Concurrent sessions
+- [ ] HTTPs Support
+- [ ] Complementing JSON with Amazon Ion
+- [ ] Custom UDP-based JSON-RPC like protocol
 - [ ] AF_XDP on Linux
-- [ ] Amazon Ion support
-- [ ] UDP support

@@ -20,7 +20,7 @@ class Stats:
 
     @property
     def success_rate(self) -> float:
-        return self.requests_correct * 100.0 / (self.requests + 1)
+        return self.requests_correct * 1.0 / (self.requests + 1)
 
     def __repr__(self) -> str:
         bandwidth = self.requests / \
@@ -38,29 +38,36 @@ class Stats:
 def bench_serial(
     callable, *,
     requests_count: int = 100_000,
-    seconds: float = 100,
+    seconds: float = 10,
     progress: bool = False,
 ) -> Stats:
 
     stats = Stats()
     transmits_range = range(requests_count)
     if progress:
-        transmits_range = tqdm(transmits_range)
+        transmits_range = tqdm(transmits_range, leave=False)
 
-    for _ in range(transmits_range):
+    should_stop = False
+    for _ in transmits_range:
         t1 = time.monotonic_ns()
         try:
             callable()
+            stats.requests += 1
             stats.requests_correct += 1
         except AssertionError:
+            stats.requests += 1
             stats.requests_incorrect += 1
         except Exception as e:
+            stats.requests += 1
             stats.requests_failure += 1
             stats.last_failure = str(e)
+        except KeyboardInterrupt:
+            should_stop = True
+
         t2 = time.monotonic_ns()
-        stats.requests += 1
         stats.total_secs += (t2 - t1) / 1.0e9
-        if stats.total_secs > seconds:
+        should_stop = should_stop or stats.total_secs > seconds
+        if should_stop:
             break
 
     stats.mean_latency_secs = stats.total_secs / stats.requests
@@ -72,7 +79,7 @@ def bench_parallel(
     *,
     threads: int = 1,
     requests_count: int = 100_000,
-    seconds: float = 100,
+    seconds: float = 10,
     progress: bool = False,
 ):
 
@@ -120,15 +127,16 @@ def bench_parallel(
     )
 
 
-def main(class_name: str, *, threads: int = 1, requests: int = 100_000, seconds: float = 100, progress: bool = False):
+def main(class_name: str, *, threads: int = 1, requests: int = 100_000, seconds: float = 10, progress: bool = False):
     class_ = locate(class_name)
-    bench_parallel(
+    stats = bench_parallel(
         callable=class_(),
         threads=threads,
         requests_count=requests,
         seconds=seconds,
         progress=progress,
     )
+    print(stats)
 
 
 if __name__ == '__main__':
