@@ -3,6 +3,7 @@
  * @author Ashot Vardanian
  */
 #include <arpa/inet.h>  // `inet_addr`
+#include <errno.h>      // `strerror`
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
@@ -219,6 +220,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     config.max_lifetime_micro_seconds = 0u;
     config.max_lifetime_exchanges = 1u;
 
+    int received_errno{};
     int socket_options{1};
     int socket_descriptor{-1};
     engine_t* server_ptr = nullptr;
@@ -249,9 +251,10 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_descriptor < 0)
         goto cleanup;
+    // Optionally configure the socket, but don't always expect it to succeed.
     if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &socket_options,
-                   sizeof(socket_options)) < 0)
-        goto cleanup;
+                   sizeof(socket_options)) == -1)
+        errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
@@ -271,12 +274,13 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     return;
 
 cleanup:
-    errno;
+    received_errno = errno;
     if (socket_descriptor >= 0)
         close(socket_descriptor);
     if (server_ptr)
         std::free(server_ptr);
     *server_out = nullptr;
+    std::printf("%s\n", strerror(received_errno));
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
