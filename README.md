@@ -119,8 +119,7 @@ UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uri
 You would either run `ujrpc_server_posix_bench` or `ujrpc_server_uring_bench`.
 
 ```sh
-cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -j8 -C ./build_release
-./build_release/ujrpc_server_posix_bench &
+cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release && ./build_release/ujrpc_server_posix_bench &
 python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress

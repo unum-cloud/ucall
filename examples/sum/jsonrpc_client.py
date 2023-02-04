@@ -5,7 +5,7 @@ import requests
 import random
 import socket
 import json
-from typing import Optional
+from typing import Optional, List
 
 
 # Using such strings is much faster than JSON package
@@ -66,7 +66,7 @@ class ClientHTTP:
         jsonrpc = REQUEST_PATTERN % (a, b, self.identity)
         expected = a + b
         response = requests.post(self.url, json=jsonrpc).json()
-        received = int(response['result'])
+        received = response['result']
 
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
@@ -89,7 +89,6 @@ class ClientTCP:
 
     def send(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
 
-        if jsonrpc is None:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
         jsonrpc = REQUEST_PATTERN % (a, b, self.identity)
@@ -104,7 +103,7 @@ class ClientTCP:
         self.sock.settimeout(None)
 
         response = parse_response(response_bytes)
-        received = int(response['result'])
+        received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
         assert self.expected == received, 'Wrong sum'
@@ -118,13 +117,14 @@ class ClientHTTPBatches:
         self.identity = identity
         self.url = f'http://{uri}:{port}/'
 
-    def __call__(self, a: list[int], b: list[int]) -> int:
+    def __call__(self, a: List[int], b: List[int]) -> int:
         expected = [ai + bi for ai, bi in zip(a, b)]
-        jsonrpc = [REQUEST_PATTERN % (ai, bi, self.identity)
-                   for ai, bi in zip(a, b)]
+        jsonrpc = [
+            REQUEST_PATTERN % (ai, bi, self.identity)
+            for ai, bi in zip(a, b)]
         jsonrpc = '[%s]' % ','.join(jsonrpc)
         response = requests.post(self.url, json=jsonrpc).json()
-        received = [int(ri['result']) for ri in response]
+        received = [ri['result'] for ri in response]
 
         assert response['jsonrpc']
         assert expected == received, 'Wrong sum'
