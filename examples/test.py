@@ -2,6 +2,8 @@ import random
 import json
 import requests
 
+import pytest
+
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
@@ -62,6 +64,17 @@ class ClientGeneric:
         return requests.post(self.url, json=json.dumps(jsonrpc)).json()
 
 
+def test_normal():
+    client = ClientGeneric()
+    response = client({
+        'method': 'sum',
+        'params': {'a': 2, 'b': 2},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    assert response == 4
+
+
 def test_notification():
     client = ClientGeneric()
     response = client({
@@ -118,3 +131,14 @@ def test_non_uniform_batch():
         r_normal,
         r_notification,
     ])
+
+
+if __name__ == '__main__':
+    pytest.main()
+
+    test_normal()
+    test_notification()
+    test_method_missing()
+    test_param_missing()
+    test_param_type()
+    test_non_uniform_batch()

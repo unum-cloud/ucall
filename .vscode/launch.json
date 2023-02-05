@@ -23,11 +23,8 @@
             "name": "Python: Test Client",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/benchmark/ujrpc_client.py",
+            "program": "${workspaceFolder}/examples/test.py",
             "console": "integratedTerminal",
-            "args": [
-                "-d"
-            ],
             "justMyCode": false,
             "subProcess": true
         },
