@@ -3,40 +3,13 @@
 
 #include <string_view> // `std::string_view`
 
-#include "ujrpc/ujrpc.h" // `ujrpc_callback_t`
-
 namespace unum::ujrpc {
 
-/// @brief To avoid dynamic memory allocations on tiny requests,
-/// for every connection we keep a tiny embedded buffer of this capacity.
-static constexpr std::size_t embedded_buffer_capacity_k = 4096;
-/// @brief The maximum length of JSON-Pointer, we will use
-/// to lookup parameters in heavily nested requests.
-/// A performance-oriented API will have maximum depth of 1 token.
-/// Some may go as far as 5 token, or roughly 50 character.
-static constexpr std::size_t json_pointer_capacity_k = 256;
-/// @brief Assuming we have a static 4KB `embedded_buffer_capacity_k`
-/// for our messages, we may receive an entirely invalid request like:
-///     [0,0,0,0,...]
-/// It will be recognized as a batch request with up to 2048 unique
-/// requests, and each will be replied with an error message.
-static constexpr std::size_t embedded_batch_capacity_k = 2048;
 /// @brief When preparing replies to requests, instead of allocating
 /// a new tape and joining them together, we assemble the requests
 /// `iovec`-s to pass to the kernel.
 static constexpr std::size_t iovecs_for_content_k = 5;
 static constexpr std::size_t iovecs_for_error_k = 7;
-/// @brief Needed for largest-register-aligned memory addressing.
-static constexpr std::size_t align_k = 64;
-
-template <std::size_t multiple_ak> constexpr std::size_t round_up_to(std::size_t n) {
-    return ((n + multiple_ak - 1) / multiple_ak) * multiple_ak;
-}
-
-struct named_callback_t {
-    ujrpc_str_t name{};
-    ujrpc_callback_t callback{};
-};
 
 void fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
                        bool append_comma = false) {
@@ -83,6 +56,22 @@ void fill_with_error(struct iovec* buffers, std::string_view request_id, std::st
     char const* protocol_suffix = R"("}},)";
     buffers[6].iov_base = (char*)protocol_suffix;
     buffers[6].iov_len = 3 + append_comma;
+}
+
+template <std::size_t iovecs_len_ak> std::size_t iovecs_length(struct iovec const* iovecs) noexcept {
+    std::size_t added_length = 0;
+#pragma unroll
+    for (std::size_t i = 0; i != iovecs_len_ak; ++i)
+        added_length += iovecs[i].iov_len;
+    return added_length;
+}
+
+template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iovecs, char* output) noexcept {
+#pragma unroll
+    for (std::size_t i = 0; i != iovecs_len_ak; ++i) {
+        std::memcpy(output, iovecs[i].iov_base, iovecs[i].iov_len);
+        output += iovecs[i].iov_len;
+    }
 }
 
 } // namespace unum::ujrpc

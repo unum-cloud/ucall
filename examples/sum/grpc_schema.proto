@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package grpc;
+
+service gRPC{
+  // A simple RPC.
+  //
+  // Obtains the SumResponse at a given position.
+ rpc GetServerResponse(Sum) returns (SumResponse) {}
+
+}
+
+message Sum{
+ int64 a = 1;
+ int64 b = 2;
+}
+
+message SumResponse{
+ int64 c = 1;
+}

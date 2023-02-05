@@ -1,7 +1,12 @@
 __pycache__
 build_debug/
 build_release/
+CMakeFiles
+_deps
 build/
+cmake_install.cmake
+CMakeCache.txt
+Makefile
 *.log
 _deps
 CMakeFiles
@@ -9,6 +14,8 @@ CMakeCache.txt
 *.egg-info
 cmake_install.cmake
 Makefile
+.DS_Store
+
 # Prerequisites
 *.d
 

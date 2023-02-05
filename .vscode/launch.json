@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "GoLang: Current File",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${file}"
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
@@ -16,32 +23,48 @@
             "name": "Python: Test Client",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/benchmark/ujrpc_client.py",
+            "program": "${workspaceFolder}/examples/test.py",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false,
+            "subProcess": true
         },
         {
-            "name": "C++: Test Server",
+            "name": "C++: Test io_uring Server",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build_debug/ujrpc_server_bench",
-            "args": [
-                "--gtest_break_on_failure",
-                "--gtest_catch_exceptions=0"
-            ],
+            "program": "${workspaceFolder}/build_debug/ujrpc_example_sum_uring",
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "ASAN_OPTIONS",
-                    "value": "detect_leaks=0:atexit=1:strict_init_order=1:strict_string_checks=1"
-                }
-            ],
+            "environment": [],
             "showDisplayString": true,
             "stopAtEntry": false,
             "externalConsole": false,
             "preLaunchTask": "Build Debug",
             "MIMode": "gdb",
             "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "C++: Test POSIX Server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build_debug/ujrpc_example_sum_posix",
+            "cwd": "${workspaceFolder}",
+            "showDisplayString": true,
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "Build Debug",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+            },
+            "osx": {
+                "MIMode": "lldb",
+                "environment": [
+                    {
+                        "name": "CPATH",
+                        "value": "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/"
+                    }
+                ],
+            },
         },
     ]
 }
