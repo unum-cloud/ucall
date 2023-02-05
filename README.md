@@ -1,7 +1,7 @@
 <h1 align="center">Uninterrupted JSON RPC</h1>
 <h3 align="center">
 Simplest Remote Procedure Calls Library<br/>
-1000x Faster than FastAPI<br/>
+100x Faster than FastAPI<br/>
 </h3>
 <br/>
 
@@ -57,7 +57,7 @@ def sum(a: int, b: int):
 ```
 
 This tiny solution already works for C, C++, and Python.
-It is even easier to use than FastAPI but is 1000x faster.
+It is even easier to use than FastAPI but is 100x faster.
 Moreover, it supports tensor-like types common in Machine Learning and useful for batch processing:
 
 ```python
@@ -75,32 +75,40 @@ We are inviting others to contribute bindings to other languages as well.
 
 ## Benchmarks
 
-| Setup                       | Linux, AMD Epyc | MacOS, Intel i9 |
-| :-------------------------- | --------------: | --------------: |
-| Fast API REST               |          995 μs |        2,854 μs |
-| Fast API WebSocket          |          896 μs |        2,820 μs |
-| Fast API WebSocket, reusing |          103 μs |          396 μs |
-|                             |                 |                 |
-| gRPC                        |          373 μs |         1061 μs |
-| gRCP, reusing               |          270 μs |          459 μs |
-|                             |                 |                 |
-| UCX                         |       18'141 μs |                 |
-| UCX, reusing                |           90 μs |                 |
-|                             |                 |                 |
-| UJRPC over TCP              |           90 μs |                 |
-| UJRPC over TCP, reusing     |           25 μs |                 |
+All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider io_uring support for networking operations.
 
+| Setup                   |   🔁   | 1 client on m6i.metal | 32 clients on m6i.metal |
+| :---------------------- | :---: | --------------------: | ----------------------: |
+| Fast API over REST      |   ❌   |    1'002 rps @ 998 μs |    3'553 rps @ 8'988 μs |
+| Fast API over WebSocket |   ✅   |    12'312 rps @ 81 μs |                         |
+| gRPC                    |   ✅   |                       |                         |
+|                         |       |                       |                         |
+| UJRPC over TCP, reset   |   ❌   |                 90 μs |                         |
+| UJRPC over TCP, reuse   |   ✅   |                 25 μs |                         |
+
+> In every cell we report the average number of Requests Per Second, as well as the average request latency as measured on the client side.
 > μ stands for micro, μs subsequently means microseconds.
-> First column shows timing for a server with Ubuntu 22.04, based on a 64-core AMD Epyc CPU.
-> Second column shows timing of a Macbook Pro with Intel Core i9 CPU.
+
+Lets start a cluster of small clients and attack some free-tier AWS services, measuring the number of operations they can handle.
+
+| Setup                   |   🔁   | t2.micro | t4g.small |
+| :---------------------- | :---: | -------: | --------: |
+| Fast API over REST      |   ❌   |          |           |
+| Fast API over WebSocket |   ✅   |          |           |
+| gRPC                    |   ✅   |          |           |
+|                         |       |          |           |
+| UJRPC over TCP, reset   |   ❌   |          |           |
+| UJRPC over TCP, reuse   |   ✅   |          |           |
+
 
 ### Reproducing Results
 
 #### FastAPI
 
 ```sh
-pip install uvicorn fastapi websocket-client requests
-cd examples && uvicorn sum.fastapi_server:app --log-level critical & ; cd ..
+pip install uvicorn fastapi websocket-client requests tqdm fire
+cd examples && uvicorn sum.fastapi_server:app --log-level critical &
+cd ..
 python examples/bench.py "sum.fastapi_client.ClientREST" --progress
 python examples/bench.py "sum.fastapi_client.ClientWebSocket" --progress
 kill %%
@@ -119,7 +127,8 @@ UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uri
 You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
 
 ```sh
-cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release && ./build_release/ujrpc_example_sum_posix &
+sudo apt-get install cmake g++ build-essential
+cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release ujrpc_example_sum_posix && ./build_release/ujrpc_example_sum_posix &
 python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
@@ -129,9 +138,9 @@ kill %%
 Want to dispatch more clients and aggregate statistics?
 
 ```sh
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 8
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 8
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 8
+python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 32
+python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 32
+python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 32
 ```
 
 A lot has been said about the speed of Python code ~~or the lack of~~.
@@ -145,25 +154,17 @@ Or push it even further dispatching dozens of processes with GNU `parallel` util
 
 ```
 sudo apt install parallel
-parallel go run ./examples/sum/ujrpc_client.go run ::: {1..8}
+parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 ```
 
-#### Py-UCX Results
-
-```sh
-conda create -y -n ucx -c conda-forge -c rapidsai ucx-proc=*=cpu ucx ucx-py python=3.9
-conda activate ucx
-? &
-python ./sum/ucx_client.py
-kill %%
-```
 
 #### gRPC Results
 
 ```sh
 pip install grpcio grpcio-tools
 python ./sum/grpc_server.py &
-python ./sum/grpc_client.py
+python examples/bench.py "sum.grpc_client.gRPCClient" --progress
+python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
 kill %%
 ```
 
@@ -178,7 +179,7 @@ kill %%
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
-- [ ] HTTPs Support
+- [ ] HTTP**S** Support
 - [ ] Complementing JSON with Amazon Ion
 - [ ] Custom UDP-based JSON-RPC like protocol
 - [ ] AF_XDP on Linux

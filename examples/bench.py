@@ -70,7 +70,7 @@ def bench_serial(
         if should_stop:
             break
 
-    stats.mean_latency_secs = stats.total_secs / stats.requests
+    stats.mean_latency_secs = stats.total_secs / (stats.requests + 1)
     return stats
 
 
