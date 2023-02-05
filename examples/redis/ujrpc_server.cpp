@@ -19,12 +19,8 @@ static void set(ujrpc_call_t call) {
     if (!key_found || !value_found)
         return ujrpc_call_reply_error_invalid_params(call);
 
-    try {
-        store.insert_or_assign(std::string_view{key_ptr, key_len}, std::string_view{value_ptr, value_len});
-        return ujrpc_call_reply_content(call, "OK", 2);
-    } catch (...) {
-        return ujrpc_call_reply_error_out_of_memory(call);
-    }
+    store.insert_or_assign(std::string_view{key_ptr, key_len}, std::string_view{value_ptr, value_len});
+    return ujrpc_call_reply_content(call, "OK", 2);
 }
 
 static void get(ujrpc_call_t call) {

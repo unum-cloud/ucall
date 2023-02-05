@@ -4,6 +4,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
+option(UJRPC_BUILD_BENCHMARKS "Builds all available backend for the summation server to run benchmarks" ON)
+option(UJRPC_BUILD_EXAMPLES "Builds examples for Redis-like server and PyTorch deployment")
+
+
 # Make Release by default
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -101,14 +105,23 @@ include_directories(include/ src/)
 add_library(ujrpc_server_posix src/engine_posix.cpp)
 target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
 
-add_executable(ujrpc_server_posix_bench examples/sum/ujrpc_server.cpp)
-target_link_libraries(ujrpc_server_posix_bench ujrpc_server_posix)
+add_executable(ujrpc_example_sum_posix examples/sum/ujrpc_server.cpp)
+target_link_libraries(ujrpc_example_sum_posix ujrpc_server_posix)
 
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
     target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS} ${URING_LIBS})
-    add_executable(ujrpc_server_uring_bench examples/sum/ujrpc_server.cpp)
-    target_link_libraries(ujrpc_server_uring_bench ujrpc_server_uring)
+    add_executable(ujrpc_example_sum_uring examples/sum/ujrpc_server.cpp)
+    target_link_libraries(ujrpc_example_sum_uring ujrpc_server_uring)
 else()
     message("Linux kernel version should be greater than 5.19 to use io_uring features")
+endif()
+
+if(UJRPC_BUILD_EXAMPLES)
+    add_executable(ujrpc_example_redis examples/redis/ujrpc_server.cpp)
+    target_link_libraries(ujrpc_example_redis ujrpc_server_posix)
+
+    find_package(Torch)
+    add_executable(ujrpc_example_pytorcs examples/pytorch/ujrpc_server.cpp)
+    target_link_libraries(ujrpc_example_pytorcs ujrpc_server_posix "${TORCH_LIBRARIES}")
 endif()
