@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 import random
+from typing import Optional
 
 import grpc
-import grpc_pb2_grpc as pb2_grpc
-import grpc_pb2 as pb2
-
-from benchmark import benchmark_request
+import grpc_schema_pb2 as pb2
+import grpc_schema_pb2_grpc as pb2_grpc
 
 
-class gRPCClient(object):
+class gRPCClient:
     """
     Client for gRPC functionality
     """
 
-    def __init__(self):
-        self.host = 'localhost'
-        self.server_port = 50051
+    def __init__(self, uri: str = '127.0.0.1', port: int = 50051) -> None:
+        self.host = uri
+        self.server_port = port
 
         # instantiate a channel
-        self.channel = grpc.insecure_channel(
-            '{}:{}'.format(self.host, self.server_port))
+        self.channel = grpc.insecure_channel(f'{self.host}:{self.server_port}')
 
         # bind the client and the server
         self.stub = pb2_grpc.gRPCStub(self.channel)
@@ -31,22 +29,10 @@ class gRPCClient(object):
         result = pb2.Sum(a=a, b=b)
         return self.stub.GetServerResponse(result)
 
-
-def request_sum(client=None):
-    if not client:
-        client = gRPCClient()
-    a = random.randint(1, 1000)
-    b = random.randint(1, 1000)
-    result = client.get_url(a=a, b=b)
-    c = result.c
-    assert a + b == c, 'Wrong sum'
-
-
-if __name__ == '__main__':
-
-    print('Will benchmark gRPC reusing client')
-    client = gRPCClient()
-    benchmark_request(lambda: request_sum(client))
-
-    print('Will benchmark gRPC recreating client')
-    benchmark_request(request_sum)
+    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+        a = random.randint(1, 1000) if a is None else a
+        b = random.randint(1, 1000) if b is None else b
+        result = self.get_url(a=a, b=b)
+        c = result.c
+        assert a + b == c, 'Wrong sum'
+        return c

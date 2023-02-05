@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import grpc_pb2 as grpc__sum__pb2
+import grpc_schema_pb2 as grpc__schema__pb2
 
 
 class gRPCStub(object):
@@ -16,8 +16,8 @@ class gRPCStub(object):
         """
         self.GetServerResponse = channel.unary_unary(
             '/grpc.gRPC/GetServerResponse',
-            request_serializer=grpc__sum__pb2.Sum.SerializeToString,
-            response_deserializer=grpc__sum__pb2.SumResponse.FromString,
+            request_serializer=grpc__schema__pb2.Sum.SerializeToString,
+            response_deserializer=grpc__schema__pb2.SumResponse.FromString,
         )
 
 
@@ -38,8 +38,8 @@ def add_gRPCServicer_to_server(servicer, server):
     rpc_method_handlers = {
         'GetServerResponse': grpc.unary_unary_rpc_method_handler(
             servicer.GetServerResponse,
-            request_deserializer=grpc__sum__pb2.Sum.FromString,
-            response_serializer=grpc__sum__pb2.SumResponse.SerializeToString,
+            request_deserializer=grpc__schema__pb2.Sum.FromString,
+            response_serializer=grpc__schema__pb2.SumResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -64,7 +64,7 @@ class gRPC(object):
                           timeout=None,
                           metadata=None):
         return grpc.experimental.unary_unary(request, target, '/grpc.gRPC/GetServerResponse',
-                                             grpc__sum__pb2.Sum.SerializeToString,
-                                             grpc__sum__pb2.SumResponse.FromString,
+                                             grpc__schema__pb2.Sum.SerializeToString,
+                                             grpc__schema__pb2.SumResponse.FromString,
                                              options, channel_credentials,
                                              insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

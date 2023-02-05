@@ -1,8 +1,8 @@
-import grpc
 from concurrent import futures
-import time
-import grpc_pb2_grpc as pb2_grpc
-import grpc_pb2 as pb2
+
+import grpc
+import grpc_schema_pb2_grpc as pb2_grpc
+import grpc_schema_pb2 as pb2
 
 
 class gRPCService(pb2_grpc.gRPCServicer):
@@ -11,7 +11,7 @@ class gRPCService(pb2_grpc.gRPCServicer):
         pass
 
     def GetServerResponse(self, request, context):
-        return pb2.SumResponse(c=request.a + request.b)
+        return pb2.SumResponse(c=(request.a + request.b))
 
 
 def serve():
