@@ -1,20 +1,20 @@
 <h1 align="center">Uninterrupted JSON RPC</h1>
 <h3 align="center">
-Simplest Remote Procedure Calls Library<br/>
+Understandable Remote Procedure Calls<br/>
 100x Faster than FastAPI<br/>
 </h3>
 <br/>
 
 <p align="center">
-  <a href="https://discord.gg/xuDmpbEDnQ"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg" alt="Discord"></a>
-	&nbsp;&nbsp;&nbsp;
-  <a href="https://www.linkedin.com/company/unum-cloud/"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg" alt="LinkedIn"></a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="https://twitter.com/unum_cloud"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg" alt="Twitter"></a>
-  &nbsp;&nbsp;&nbsp;
-	<a href="https://unum.cloud/post"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg" alt="Blog"></a>
-	&nbsp;&nbsp;&nbsp;
-	<a href="https://github.com/unum-cloud/ujrpc"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg" alt="GitHub"></a>
+<a href="https://discord.gg/xuDmpbEDnQ"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg" alt="Discord"></a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://www.linkedin.com/company/unum-cloud/"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg" alt="LinkedIn"></a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://twitter.com/unum_cloud"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg" alt="Twitter"></a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://unum.cloud/post"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg" alt="Blog"></a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://github.com/unum-cloud/ujrpc"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg" alt="GitHub"></a>
 </p>
 
 ---
@@ -157,7 +157,6 @@ sudo apt install parallel
 parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 ```
 
-
 #### gRPC Results
 
 ```sh
@@ -168,10 +167,11 @@ python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
 kill %%
 ```
 
-## Why JSON RPC?
+## Why JSON-RPC?
 
 - Transport independant: UDP, TCP, bring what you want.
 - Application layer is optional: use HTTP or not.
+- Unlike REST APIs, there is just one way to pass arguments.
 
 ## Roadmap
 
