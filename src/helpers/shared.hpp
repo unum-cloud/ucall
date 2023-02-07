@@ -57,7 +57,7 @@ template <typename element_at> class buffer_gt {
         std::swap(capacity_, other.capacity_);
         return *this;
     }
-    bool resize(std::size_t n) noexcept {
+    [[nodiscard]] bool resize(std::size_t n) noexcept {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         if (!elements_)
             return false;
@@ -70,14 +70,14 @@ template <typename element_at> class buffer_gt {
             std::destroy_n(elements_, capacity_);
         std::free(elements_);
     }
-    element_at const* data() const noexcept { return elements_; }
-    element_at* data() noexcept { return elements_; }
-    element_at* begin() noexcept { return elements_; }
-    element_at* end() noexcept { return elements_ + capacity_; }
-    std::size_t size() const noexcept { return capacity_; }
-    std::size_t capacity() const noexcept { return capacity_; }
-    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
-    element_at const& operator[](std::size_t i) const noexcept { return elements_[i]; }
+    [[nodiscard]] element_at const* data() const noexcept { return elements_; }
+    [[nodiscard]] element_at* data() noexcept { return elements_; }
+    [[nodiscard]] element_at* begin() noexcept { return elements_; }
+    [[nodiscard]] element_at* end() noexcept { return elements_ + capacity_; }
+    [[nodiscard]] std::size_t size() const noexcept { return capacity_; }
+    [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
+    [[nodiscard]] element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+    [[nodiscard]] element_at const& operator[](std::size_t i) const noexcept { return elements_[i]; }
 };
 
 template <typename element_at> class array_gt {
@@ -99,7 +99,7 @@ template <typename element_at> class array_gt {
         std::swap(capacity_, other.capacity_);
         return *this;
     }
-    bool reserve(std::size_t n) noexcept {
+    [[nodiscard]] bool reserve(std::size_t n) noexcept {
         if (n <= capacity_)
             return true;
         if (!elements_) {
@@ -125,18 +125,20 @@ template <typename element_at> class array_gt {
         elements_ = nullptr;
         capacity_ = count_ = 0;
     }
-    element_at const* data() const noexcept { return elements_; }
-    element_at* data() noexcept { return elements_; }
-    element_at* begin() noexcept { return elements_; }
-    element_at* end() noexcept { return elements_ + count_; }
-    std::size_t size() const noexcept { return count_; }
-    std::size_t capacity() const noexcept { return capacity_; }
-    element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+    [[nodiscard]] element_at const* data() const noexcept { return elements_; }
+    [[nodiscard]] element_at* data() noexcept { return elements_; }
+    [[nodiscard]] element_at* begin() noexcept { return elements_; }
+    [[nodiscard]] element_at* end() noexcept { return elements_ + count_; }
+    [[nodiscard]] std::size_t size() const noexcept { return count_; }
+    [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
+    [[nodiscard]] element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
+
     void push_back_reserved(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
-    bool append_n(element_at const* elements, std::size_t n) noexcept {
+    [[nodiscard]] bool append_n(element_at const* elements, std::size_t n) noexcept {
         if (!reserve(size() + n))
             return false;
         std::memcpy(end(), elements, n * sizeof(element_at));
+        count_ += n;
         return true;
     }
 };
@@ -162,7 +164,7 @@ template <typename element_at> class pool_gt {
         return *this;
     }
 
-    bool reserve(std::size_t n) noexcept {
+    [[nodiscard]] bool reserve(std::size_t n) noexcept {
         auto mem = std::malloc((sizeof(element_at) + sizeof(std::size_t)) * n);
         if (!mem)
             return false;
@@ -179,10 +181,12 @@ template <typename element_at> class pool_gt {
             std::destroy_n(elements_, capacity_);
         std::free(elements_);
     }
-    element_at* alloc() noexcept { return free_count_ ? elements_ + free_offsets_[--free_count_] : nullptr; }
+    [[nodiscard]] element_at* alloc() noexcept {
+        return free_count_ ? elements_ + free_offsets_[--free_count_] : nullptr;
+    }
     void release(element_at* released) noexcept { free_offsets_[free_count_++] = released - elements_; }
-    std::size_t offset_of(element_at& element) const noexcept { return &element - elements_; }
-    element_at& at_offset(std::size_t i) const noexcept { return elements_[i]; }
+    [[nodiscard]] std::size_t offset_of(element_at& element) const noexcept { return &element - elements_; }
+    [[nodiscard]] element_at& at_offset(std::size_t i) const noexcept { return elements_[i]; }
 };
 
 using timestamp_t = std::uint64_t;
