@@ -20,8 +20,6 @@
 #include "helpers/py_parse.hpp"
 #include "ujrpc/ujrpc.h"
 
-const size_t max_response_length = 1024;
-
 typedef struct {
     PyObject_HEAD;
     ujrpc_config_t config;
@@ -196,7 +194,8 @@ static void wrapper(ujrpc_call_t call) { //
     }
 
     PyObject* response = PyObject_CallObject(wrap.callable, args);
-    char parsed_response[max_response_length];
+    size_t sz = calculate_size_as_str(response);
+    char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     size_t len = 0;
     int res = to_string(response, &parsed_response[0], &len);
     ujrpc_call_reply_content(call, &parsed_response[0], len);
