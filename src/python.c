@@ -1,5 +1,5 @@
 /**
- * @file python.cpp
+ * @file python.c
  * @author Ashot Vardanian
  * @date 2023-01-30
  * @copyright Copyright (c) 2023
@@ -13,16 +13,193 @@
  * https://docs.python.org/3/extending/newtypes_tutorial.html#adding-data-and-methods-to-the-basic-example
  */
 #define PY_SSIZE_T_CLEAN
+#include "helpers/py_parse.hpp"
 #include <Python.h>
+#include <time.h>
 
 #include "ujrpc/ujrpc.h"
+
+const size_t max_response_length = 1024;
 
 typedef struct {
     PyObject_HEAD;
     ujrpc_config_t config;
     ujrpc_server_t server;
     size_t count_added;
+    size_t thread_cnt;
 } py_server_t;
+
+typedef enum {
+    POSITIONAL_ONLY,       //
+    POSITIONAL_OR_KEYWORD, //
+    VAR_POSITIONAL,        //
+    KEYWORD_ONLY,          //
+    VAR_KEYWORD            //
+} py_param_kind_t;
+
+typedef struct {
+    PyObject* name;       // UTF8 String
+    PyObject* value;      // Any or NULL
+    PyTypeObject* type;   // Type or NULL
+    py_param_kind_t kind; // Kind
+} py_param_t;
+
+typedef struct {
+    py_param_t* u_params;
+    size_t params_cnt;
+    PyObject* callable;
+} py_wrapper_t;
+
+static py_wrapper_t wrap;
+
+static int deduce_parameters(PyObject* callable) {
+    // TODO Add safety checks
+    PyObject* func_code = PyObject_GetAttrString(callable, "__code__");
+
+    PyObject* arg_names = PyObject_GetAttrString(func_code, "co_varnames"); // Tuple
+
+    long co_flags = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_flags"));
+    long pos_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_argcount"));
+    long posonly_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_posonlyargcount"));
+    long keyword_only_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_kwonlyargcount"));
+    long pos_default_count = 0;
+
+    PyObject* annotations = PyFunction_GetAnnotations(callable); // Dict
+
+    PyObject* defaults = PyObject_GetAttrString(callable, "__defaults__");     // Tuple
+    PyObject* kwdefaults = PyObject_GetAttrString(callable, "__kwdefaults__"); // Dict
+
+    if (PyTuple_CheckExact(defaults))
+        pos_default_count = PyTuple_Size(defaults);
+
+    if (PyMethod_Check(callable)) {
+        // When this is a class method...
+        // ToDo What?
+    }
+
+    long non_default_count = pos_count - pos_default_count;
+    long posonly_left = posonly_count;
+
+    // if (posonly_count != pos_count) {
+    //     PyErr_SetString(PyExc_TypeError, "Strictly positional or Keyword arguments are allowed.");
+    //     return -1;
+    // }
+
+    long total_params = pos_count + (co_flags & CO_VARARGS) + keyword_only_count + (co_flags & CO_VARKEYWORDS);
+    py_param_t* parameters = (py_param_t*)malloc(total_params * sizeof(py_param_t));
+
+    size_t param_i = 0;
+
+    // Non-keyword-only parameters w/o defaults.
+    for (Py_ssize_t i = 0; i < non_default_count; ++i) {
+        py_param_t param;
+        param.name = PyTuple_GetItem(arg_names, i);
+        param.value = NULL;
+        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
+        parameters[param_i++] = param;
+    }
+
+    //... w / defaults.
+    for (Py_ssize_t i = non_default_count; i < pos_count; ++i) {
+        py_param_t param;
+        param.name = PyTuple_GetItem(arg_names, i);
+        param.value = PyTuple_GetItem(defaults, i - non_default_count);
+        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
+        parameters[param_i++] = param;
+    }
+
+    if (co_flags & CO_VARARGS) {
+        py_param_t param;
+        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count);
+        param.value = NULL;
+        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.kind = VAR_POSITIONAL;
+        parameters[param_i++] = param;
+    }
+
+    // Keyword - only parameters.
+    for (Py_ssize_t i = pos_count; i < pos_count + keyword_only_count; ++i) {
+        py_param_t param;
+        param.name = PyTuple_GetItem(arg_names, i);
+        param.value = PyDict_GetItem(kwdefaults, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.kind = KEYWORD_ONLY;
+        parameters[param_i++] = param;
+    }
+
+    if (co_flags & CO_VARKEYWORDS) {
+        py_param_t param;
+        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count + (co_flags && CO_VARARGS));
+        param.value = NULL;
+        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.kind = VAR_KEYWORD;
+        parameters[param_i++] = param;
+    }
+
+    free(wrap.u_params);
+    wrap.u_params = parameters;
+    wrap.params_cnt = total_params;
+    return 0;
+}
+
+static void* wrapper(ujrpc_call_t* call) { //
+    // TODO Add error checking for `ujrpc_param_named...`
+    PyObject* args = PyTuple_New(wrap.params_cnt);
+
+    for (size_t i = 0; i < wrap.params_cnt; ++i) {
+        PyObject* type = wrap.u_params[i].type;
+        py_param_kind_t kind = wrap.u_params[i].kind;
+        bool may_have_name = (kind & POSITIONAL_OR_KEYWORD) | (kind & KEYWORD_ONLY) | (kind & VAR_KEYWORD);
+        bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
+        bool got_named = false;
+        Py_ssize_t name_len = -1;
+        ujrpc_str_t name = "";
+        if (may_have_name)
+            name =
+                PyUnicode_AsUTF8AndSize(wrap.u_params[i].name, &name_len); // TODO do this once in `deduce parameters`;
+
+        if (PyType_IsSubtype(type, &PyBool_Type)) {
+            bool res;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_bool(call, name, name_len, &res);
+            if (may_have_pos && !got_named)
+                ujrpc_param_positional_bool(call, i, &res);
+            PyTuple_SetItem(args, i, res ? Py_True : Py_False);
+        } else if (PyType_IsSubtype(type, &PyLong_Type)) {
+            Py_ssize_t res;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_i64(call, name, name_len, &res);
+            if (may_have_pos && !got_named)
+                ujrpc_param_positional_i64(call, i, &res);
+            PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
+        } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
+            double res;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_f64(call, name, name_len, &res);
+            if (may_have_pos && !got_named)
+                ujrpc_param_positional_f64(call, i, &res);
+            PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
+        } else if (PyType_IsSubtype(type, &PyBytes_Type)) {
+            // Pass
+        } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
+            ujrpc_str_t res;
+            size_t len;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
+            if (may_have_pos && !got_named)
+                ujrpc_param_positional_str(call, i, res, &len);
+            PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
+        }
+    }
+
+    PyObject* response = PyObject_CallObject(wrap.callable, args);
+    char* parsed_response = (char*)malloc(max_response_length * sizeof(char));
+    size_t len = 0;
+    int res = to_string(response, parsed_response, &len);
+    ujrpc_call_reply_content(call, parsed_response, len);
+}
 
 static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     // Take a function object, introspect its arguments,
@@ -32,26 +209,45 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     // Python objects and passes to the original function.
     // The result of that function call must then be returned via
     // the `ujrpc_call_send_content` call.
+    PyObject* procedure;
+    if (!PyArg_ParseTuple(args, "O", &procedure) || !PyCallable_Check(procedure)) {
+        PyErr_SetString(PyExc_TypeError, "Need a callable object!");
+        return NULL;
+    }
+    if (deduce_parameters(procedure) != 0)
+        return NULL;
+    wrap.callable = procedure;
+    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(procedure, "__name__")), wrapper);
+    return Py_None;
 }
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
     Py_ssize_t max_cycles;
-    Py_ssize_t max_seconds;
-    if (!PyArg_ParseTuple(args, "nn", &max_seconds, &max_cycles)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting a optional....");
+    double max_seconds;
+    if (!PyArg_ParseTuple(args, "nd", &max_cycles, &max_seconds)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
         return NULL;
     }
 
-    ujrpc_take_call(self->server);
+    time_t start, end;
+    time(&start);
+    while (max_cycles > 0 && max_seconds > 0) {
+        ujrpc_take_call(self->server, self->thread_cnt);
+        --max_cycles;
+        time(&end);
+        max_seconds -= difftime(end, start);
+        start = end;
+    }
+    return Py_None;
 }
 
 static Py_ssize_t server_callbacks_count(py_server_t* self, PyObject* _) { return self->count_added; }
-static PyObject* server_port(py_server_t* self, PyObject* _) { return self->config.port; }
-static PyObject* server_max_connections(py_server_t* self, PyObject* _) { return 0; }
+static PyObject* server_port(py_server_t* self, PyObject* _) { return PyLong_FromLong(self->config.port); }
+static PyObject* server_queue_depth(py_server_t* self, PyObject* _) { return 0; }
 static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) { return 0; }
 
 static PyMethodDef server_methods[] = {
-    {"add", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"add_procedure", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
     {"run", (PyCFunction)&server_run, METH_VARARGS,
      PyDoc_STR("Runs the server for N calls or T seconds, before returning")},
     {NULL},
@@ -59,7 +255,7 @@ static PyMethodDef server_methods[] = {
 
 static PyGetSetDef server_computed_properties[] = {
     {"port", (getter)&server_port, NULL, PyDoc_STR("On which port the server listens")},
-    {"max_connections", (getter)&server_max_connections, NULL, PyDoc_STR("Max number of concurrent users")},
+    {"queue_depth", (getter)&server_queue_depth, NULL, PyDoc_STR("Max number of concurrent users")},
     {"max_lifetime", (getter)&server_max_lifetime, NULL, PyDoc_STR("Max lifetime of connections in microseconds")},
     {NULL},
 };
@@ -81,20 +277,19 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-
-    static char const* keywords_list[] = {"port", "max_connections", "max_lifetime", NULL};
-    Py_ssize_t port = 0, max_connections = 0, max_lifetime = UINT64_MAX;
+    static char const* keywords_list[] = {"port", "queue_depth", "max_callbacks", "batch_capacity"};
+    Py_ssize_t port = 0, queue_depth = 0, max_callbacks = UINT64_MAX, batch_capacity = UINT64_MAX;
     char const* dtype = NULL;
     char const* metric = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywords, "nn|nss", (char**)keywords_list, //
-                                     &port, &max_connections, &max_lifetime, &dtype, &metric))
+                                     &port, &queue_depth, &max_callbacks, &batch_capacity, &dtype, &metric))
         return -1;
 
-    ujrpc_config_t params;
-    params.port = (uint16_t)(port);
-    // params.connections_capacity = (uint16_t)(max_connections);
-    // params.lifetime_microsec_limit = (uint16_t)(max_lifetime);
+    self->config.port = port;
+    self->config.queue_depth = queue_depth;
+    self->config.max_callbacks = max_callbacks;
+    self->thread_cnt = 1;
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
