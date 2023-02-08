@@ -5,6 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(GDB) Attach Python",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "/usr/bin/python3",
+            "processId": "${command:pickProcess}",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Python C++ Debug Current File",
+            "type": "pythoncpp",
+            "request": "launch",
+            "pythonConfig": "default",
+            "cppAttachName": "(GDB) Attach Python",
+        },
+        {
             "name": "GoLang: Current File",
             "type": "go",
             "request": "launch",
