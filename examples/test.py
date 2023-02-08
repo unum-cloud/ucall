@@ -61,7 +61,7 @@ class ClientGeneric:
         self.url = f'http://{uri}:{port}/'
 
     def __call__(self, jsonrpc: object) -> object:
-        return requests.post(self.url, json=json.dumps(jsonrpc)).json()
+        return requests.post(self.url, json=jsonrpc).json()
 
 
 def test_normal():
