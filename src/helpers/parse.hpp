@@ -139,7 +139,7 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
     size_t path_len;
     int minor_version;
     phr_header headers[header_cnt];
-    size_t num_headers;
+    size_t num_headers = header_cnt;
 
     int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
                                 headers, &num_headers, 0);
@@ -152,11 +152,11 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
         for (std::size_t i = 0; i < header_cnt; ++i) {
             if (headers[i].name_len == 0)
                 continue;
-            if (headers[i].name == std::string_view("Keep-Alive"))
+            if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Keep-Alive"))
                 req.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == std::string_view("Content-Type"))
+            else if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Content-Type"))
                 req.content_type = std::string_view(headers[i].value, headers[i].value_len);
-            else if (headers[i].name == std::string_view("Content-Length"))
+            else if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Content-Length"))
                 req.content_length = std::string_view(headers[i].value, headers[i].value_len);
         }
     }
@@ -165,7 +165,7 @@ inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::s
         auto pos = body.find("\r\n\r\n");
         if (pos == std::string_view::npos)
             return default_error_t{-32700, "Invalid JSON was received by the server."};
-        req.body = body.substr(pos);
+        req.body = body.substr(pos + 4);
     } else
         req.body = body;
 
