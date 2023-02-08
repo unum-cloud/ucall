@@ -7,7 +7,6 @@ set(CMAKE_CXX_EXTENSIONS NO)
 option(UJRPC_BUILD_BENCHMARKS "Builds all available backend for the summation server to run benchmarks" ON)
 option(UJRPC_BUILD_EXAMPLES "Builds examples for Redis-like server and PyTorch deployment")
 
-
 # Make Release by default
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -87,6 +86,7 @@ if(LINUX)
     ExternalProject_Add(
         liburing-ep
         GIT_REPOSITORY https://github.com/axboe/liburing
+        GIT_TAG liburing-2.3
         PREFIX ${CMAKE_BINARY_DIR}/_deps/
         SOURCE_DIR ${URING_DIR}
         CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
