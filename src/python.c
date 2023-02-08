@@ -144,12 +144,12 @@ static int deduce_parameters(PyObject* callable) {
     return 0;
 }
 
-static void* wrapper(ujrpc_call_t* call) { //
+static void wrapper(ujrpc_call_t call) { //
     // TODO Add error checking for `ujrpc_param_named...`
     PyObject* args = PyTuple_New(wrap.params_cnt);
 
     for (size_t i = 0; i < wrap.params_cnt; ++i) {
-        PyObject* type = wrap.u_params[i].type;
+        PyTypeObject* type = wrap.u_params[i].type;
         py_param_kind_t kind = wrap.u_params[i].kind;
         bool may_have_name = (kind & POSITIONAL_OR_KEYWORD) | (kind & KEYWORD_ONLY) | (kind & VAR_KEYWORD);
         bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
@@ -189,7 +189,7 @@ static void* wrapper(ujrpc_call_t* call) { //
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
             if (may_have_pos && !got_named)
-                ujrpc_param_positional_str(call, i, res, &len);
+                ujrpc_param_positional_str(call, i, &res, &len);
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         }
     }
