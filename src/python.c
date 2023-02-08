@@ -195,10 +195,10 @@ static void* wrapper(ujrpc_call_t* call) { //
     }
 
     PyObject* response = PyObject_CallObject(wrap.callable, args);
-    char* parsed_response = (char*)malloc(max_response_length * sizeof(char));
+    char parsed_response[max_response_length];
     size_t len = 0;
-    int res = to_string(response, parsed_response, &len);
-    ujrpc_call_reply_content(call, parsed_response, len);
+    int res = to_string(response, &parsed_response[0], &len);
+    ujrpc_call_reply_content(call, &parsed_response[0], len);
 }
 
 static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
