@@ -1,9 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <Python.h>
 
 static const char int_to_hex_k[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -27,7 +23,7 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
     else if (PyUnicode_Check(obj)) {
         Py_ssize_t size;
         const char* char_ptr = PyUnicode_AsUTF8AndSize(obj, &size);
-        char unc[size + 2];
+        char* unc = (char*)malloc((size + 2) * sizeof(char));
         unc[0] = '"';
         size_t pos = 1;
         for (size_t i = 0; i != size; ++i) {
@@ -92,47 +88,82 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
         unc[pos] = '"';
         memmove(data, &unc[0], size + 2);
         *len = size + 2;
+        free(unc);
     } else if (PySequence_Check(obj)) {
         char* begin = data;
-        *len = 0;
-        begin[(*len)++] = '[';
+        *(begin++) = '[';
         if (!PySequence_Length(obj)) {
-            begin[(*len)++] = ']';
+            *(begin++) = ']';
         } else {
             for (Py_ssize_t i = 0; i < PySequence_Length(obj); i++) {
                 size_t n_len = 0;
-                to_string(PySequence_GetItem(obj, i), &begin[*len], &n_len);
-                *len += n_len;
-                begin[(*len)++] = ',';
+                to_string(PySequence_GetItem(obj, i), begin, &n_len);
+                begin += n_len;
+                *(begin++) = ',';
             }
-            begin[*len - 1] = ']';
+            *(begin - 1) = ']';
         }
+        *len = begin - data;
     } else if (PyDict_Check(obj)) {
         char* begin = data;
-        *len = 0;
-        begin[(*len)++] = '{';
+        *(begin++) = '{';
         if (!PyDict_Size(obj)) {
-            begin[(*len)++] = '}';
+            *(begin++) = '}';
         } else {
             PyObject *key, *value;
             Py_ssize_t pos = 0;
             while (PyDict_Next(obj, &pos, &key, &value)) {
                 size_t n_len = 0;
-                to_string(key, &begin[*len], &n_len);
-                *len += n_len;
-                begin[(*len)++] = ':';
+                to_string(key, begin, &n_len);
+                begin += n_len;
+                (*begin++) = ':';
                 n_len = 0;
                 to_string(value, &begin[*len], &n_len);
-                *len += n_len;
-                begin[(*len)++] = ',';
+                begin += n_len;
+                (*begin++) = ',';
             }
-            begin[*len - 1] = '}';
+            *(begin - 1) = '}';
         }
+        *len = begin - data;
     } else
         return -1;
     return 0;
 }
 
-#ifdef __cplusplus
-} /* end extern "C" */
-#endif
+static int calculate_size_as_str(PyObject* obj) {
+    if (obj == Py_None)
+        return 4;
+    else if (PyBool_Check(obj))
+        return obj == Py_False ? 5 : 4;
+    else if (PyLong_Check(obj))
+        return snprintf(NULL, 0, "%li", PyLong_AsLong(obj));
+    else if (PyFloat_Check(obj))
+        return snprintf(NULL, 0, "%f", PyFloat_AsDouble(obj));
+    else if (PyBytes_Check(obj))
+        return snprintf(NULL, 0, "\"%s\"", PyBytes_AsString(obj));
+    else if (PyUnicode_Check(obj)) {
+        return PyUnicode_GetSize(obj) + 2;
+    } else if (PySequence_Check(obj)) {
+        size_t size = 2;
+        if (PySequence_Length(obj)) {
+            for (Py_ssize_t i = 0; i < PySequence_Length(obj); i++)
+                size += calculate_size_as_str(PySequence_GetItem(obj, i)) + 1;
+            --size;
+        }
+        return size;
+    } else if (PyDict_Check(obj)) {
+        size_t size = 2;
+        if (PyDict_Size(obj)) {
+            PyObject *key, *value;
+            Py_ssize_t pos = 0;
+            while (PyDict_Next(obj, &pos, &key, &value)) {
+                size += calculate_size_as_str(key) + 1;
+                size += calculate_size_as_str(value) + 1;
+            }
+            --size;
+        }
+        return size;
+    } else
+        return -1;
+    return 0;
+}
