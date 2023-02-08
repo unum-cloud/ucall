@@ -557,7 +557,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     struct iovec iovecs[iovecs_for_error_k] {};
     fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len),
                     true);
-    connection.append_outputs<iovecs_for_error_k>(iovecs);
+    if (!connection.append_outputs<iovecs_for_error_k>(iovecs))
+        return ujrpc_call_reply_error_out_of_memory(call);
 }
 
 void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {
@@ -681,10 +682,12 @@ bool connection_t::append_outputs(struct iovec const* iovecs) noexcept {
         if (!output.dynamic.reserve(output.dynamic.size() + output.embedded_used + added_length))
             return false;
         if (!was_in_embedded)
-            output.dynamic.append_n(output.embedded, output.embedded_used);
+            if (!output.dynamic.append_n(output.embedded, output.embedded_used))
+                return false;
         output.embedded_used = 0;
         for (std::size_t i = 0; i != iovecs_count_ak; ++i)
-            output.dynamic.append_n((char const*)iovecs[i].iov_base, iovecs[i].iov_len);
+            if (!output.dynamic.append_n((char const*)iovecs[i].iov_base, iovecs[i].iov_len))
+                return false;
         return true;
     }
 }
@@ -1085,6 +1088,9 @@ void automata_t::operator()() noexcept {
     case stage_t::log_stats_k:
         engine.log_and_reset_stats();
         return engine.submit_stats_heartbeat();
+
+    case stage_t::unknown_k:
+        return;
     }
 }
 

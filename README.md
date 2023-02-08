@@ -128,7 +128,9 @@ You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
 
 ```sh
 sudo apt-get install cmake g++ build-essential
-cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release ujrpc_example_sum_posix && ./build_release/ujrpc_example_sum_posix &
+cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
+./build_release/build/bin/ujrpc_example_sum_posix &
+./build_release/build/bin/ujrpc_example_sum_uring &
 python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
