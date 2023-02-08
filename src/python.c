@@ -12,11 +12,12 @@
  * https://pythonextensionpatterns.readthedocs.io/en/latest/refcount.html
  * https://docs.python.org/3/extending/newtypes_tutorial.html#adding-data-and-methods-to-the-basic-example
  */
-#define PY_SSIZE_T_CLEAN
-#include "helpers/py_parse.hpp"
-#include <Python.h>
 #include <time.h>
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
+#include "helpers/py_parse.hpp"
 #include "ujrpc/ujrpc.h"
 
 const size_t max_response_length = 1024;
