@@ -154,7 +154,7 @@ go run ./examples/sum/ujrpc_client.go
 
 Or push it even further dispatching dozens of processes with GNU `parallel` utility:
 
-```
+```sh
 sudo apt install parallel
 parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 ```
@@ -171,7 +171,7 @@ kill %%
 
 ## Why JSON-RPC?
 
-- Transport independant: UDP, TCP, bring what you want.
+- Transport independent: UDP, TCP, bring what you want.
 - Application layer is optional: use HTTP or not.
 - Unlike REST APIs, there is just one way to pass arguments.
 

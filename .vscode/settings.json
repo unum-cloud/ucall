@@ -99,7 +99,9 @@
     },
     "cSpell.words": [
         "endregion",
+        "fastapi",
         "simdjson",
-        "ujrpc"
+        "ujrpc",
+        "uvicorn"
     ]
 }
