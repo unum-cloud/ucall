@@ -4,6 +4,7 @@
 #include <charconv> // `std::to_chars`
 #include <cstdio>   // `std::fprintf`
 #include <thread>
+#include <unistd.h> // `STDOUT_FILENO`
 #include <vector>
 
 #include "ujrpc/ujrpc.h"
@@ -41,6 +42,9 @@ int main(int argc, char** argv) {
     config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 512;
+    config.logs_file_descriptor = STDOUT_FILENO;
+    config.logs_format = "human";
+
     ujrpc_init(&config, &server);
     if (!server) {
         std::printf("Failed to initialize server!\n");

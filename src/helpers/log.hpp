@@ -20,6 +20,9 @@ inline number_and_suffix_t printable(std::size_t n) noexcept {
 }
 
 struct stats_t {
+
+    static constexpr std::size_t default_frequency_secs_k{5};
+
     std::atomic<std::size_t> added_connections{};
     std::atomic<std::size_t> closed_connections{};
     std::atomic<std::size_t> bytes_received{};

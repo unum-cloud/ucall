@@ -13,14 +13,19 @@
 #include <unistd.h>
 
 #include <charconv> // `std::to_chars`
+#include <chrono>   // `std::chrono`
 
 #include "ujrpc/ujrpc.h"
 
+#include "helpers/log.hpp"
 #include "helpers/parse.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
 
 using namespace unum::ujrpc;
+
+using time_clock_t = std::chrono::steady_clock;
+using time_point_t = std::chrono::time_point<time_clock_t>;
 
 struct engine_t {
     descriptor_t socket{};
@@ -41,6 +46,11 @@ struct engine_t {
         std::size_t iovecs_count{};
         std::size_t copies_count{};
     } batch_response{};
+
+    stats_t stats{};
+    std::int32_t logs_file_descriptor{};
+    std::string_view logs_format{};
+    time_point_t log_last_time{};
 };
 
 sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
@@ -56,6 +66,14 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
     return scratch.point_to_param(position);
 }
 
+void send_message(engine_t& engine, struct msghdr& message) noexcept {
+    auto bytes_sent = sendmsg(engine.connection, &message, 0);
+    if (bytes_sent < 0)
+        return;
+    engine.stats.bytes_sent += bytes_sent;
+    engine.stats.packets_sent++;
+}
+
 void send_reply(engine_t& engine) noexcept {
     if (!engine.batch_response.iovecs_count)
         return;
@@ -63,7 +81,7 @@ void send_reply(engine_t& engine) noexcept {
     struct msghdr message {};
     message.msg_iov = engine.batch_response.iovecs.data();
     message.msg_iovlen = engine.batch_response.iovecs_count;
-    sendmsg(engine.connection, &message, 0);
+    send_message(engine, message);
 }
 
 void forward_call(engine_t& engine) noexcept {
@@ -94,7 +112,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
     // until answers to all requests are accumulated and we can submit them
     // simultaneously.
     // Linux supports `MSG_MORE` flag for submissions, which could have helped,
-    // but it is less effictive than assembling a copy here.
+    // but it is less effective than assembling a copy here.
     if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array().value_unsafe();
         scratch.is_batch = false;
@@ -148,6 +166,20 @@ void forward_packet(engine_t& engine) noexcept {
 void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     scratch_space_t& scratch = engine.scratch;
+
+    // Log stats, if enough time has passed since last call.
+    if (engine.logs_file_descriptor > 0) {
+        auto now = time_clock_t::now();
+        auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(now - engine.log_last_time).count();
+        if (dt > stats_t::default_frequency_secs_k * 1000ul) {
+            auto len = engine.logs_format == "json" //
+                           ? engine.stats.log_json(engine.packet_buffer, ram_page_size_k)
+                           : engine.stats.log_human_readable(engine.packet_buffer, ram_page_size_k, dt / 1000ul);
+            pwrite(engine.logs_file_descriptor, engine.packet_buffer, len, 0);
+            engine.log_last_time = now;
+        }
+    }
+
     // If no pending connections are present on the queue, and the
     // socket is not marked as nonblocking, accept() blocks the caller
     // until a connection is present. If the socket is marked
@@ -162,6 +194,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
+    engine.stats.added_connections++;
+    engine.stats.closed_connections++;
     auto buffer_ptr = &engine.packet_buffer[0];
     auto bytes_expected = recv(engine.connection, buffer_ptr, ram_page_size_k, MSG_PEEK | MSG_TRUNC);
     if (bytes_expected <= 0) {
@@ -175,6 +209,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         auto bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
+        engine.stats.bytes_received += bytes_received;
+        engine.stats.packets_received++;
         forward_packet(engine);
     } else {
         sjd::parser parser;
@@ -188,6 +224,8 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         auto bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
+        engine.stats.bytes_received += bytes_received;
+        engine.stats.packets_received++;
         forward_packet(engine);
         std::free(buffer_ptr);
     }
@@ -270,6 +308,9 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->scratch.parser = std::move(parser);
     server_ptr->batch_response.copies = std::move(embedded_copies);
     server_ptr->batch_response.iovecs = std::move(embedded_iovecs);
+    server_ptr->logs_file_descriptor = config.logs_file_descriptor;
+    server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
+    server_ptr->log_last_time = time_clock_t::now();
     *server_out = (ujrpc_server_t)server_ptr;
     return;
 
@@ -280,7 +321,6 @@ cleanup:
     if (server_ptr)
         std::free(server_ptr);
     *server_out = nullptr;
-    std::printf("%s\n", strerror(received_errno));
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
@@ -312,15 +352,14 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     if (!body_len)
         body_len = std::strlen(body);
 
-    // In case of a sinle request - immediately push into the socket.
+    // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_content_k] {};
         fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_content_k;
-        if (sendmsg(engine.connection, &message, 0) < 0)
-            return ujrpc_call_reply_error_unknown(call);
+        send_message(engine, message);
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.
@@ -351,7 +390,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     if (res.ec != std::error_code())
         return ujrpc_call_reply_error_unknown(call);
 
-    // In case of a sinle request - immediately push into the socket.
+    // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch) {
         struct msghdr message {};
         struct iovec iovecs[iovecs_for_error_k] {};
@@ -360,8 +399,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
                         std::string_view(note, note_len));
         message.msg_iov = iovecs;
         message.msg_iovlen = iovecs_for_error_k;
-        if (sendmsg(engine.connection, &message, 0) < 0)
-            return ujrpc_call_reply_error_unknown(call);
+        send_message(engine, message);
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.

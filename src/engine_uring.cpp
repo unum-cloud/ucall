@@ -81,7 +81,6 @@ static constexpr std::size_t max_embedded_length_k{ram_page_size_k - sj::SIMDJSO
 static constexpr std::size_t sleep_growth_factor_k{4};
 static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
 static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
-static constexpr std::size_t logs_heartbeat_s_k{5};
 static constexpr descriptor_t invalid_descriptor_k{-1};
 
 struct completed_event_t;
@@ -491,7 +490,7 @@ void ujrpc_free(ujrpc_server_t server) {
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t thread_idx) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    if (!thread_idx)
+    if (!thread_idx && engine.logs_file_descriptor > 0)
         engine.submit_stats_heartbeat();
     while (true) {
         ujrpc_take_call(server, thread_idx);
@@ -852,7 +851,7 @@ void engine_t::submit_stats_heartbeat() noexcept {
     struct io_uring_sqe* uring_sqe{};
     connection_t& connection = stats_pseudo_connection;
     connection.stage = stage_t::log_stats_k;
-    connection.next_wakeup.tv_sec = logs_heartbeat_s_k;
+    connection.next_wakeup.tv_sec = stats_t::default_frequency_secs_k;
     submission_mutex.lock();
 
     uring_sqe = io_uring_get_sqe(&uring);
@@ -866,7 +865,7 @@ void engine_t::log_and_reset_stats() noexcept {
     static char printed_message_k[ram_page_size_k]{};
     auto len = logs_format == "json" //
                    ? stats.log_json(printed_message_k, ram_page_size_k)
-                   : stats.log_human_readable(printed_message_k, ram_page_size_k, logs_heartbeat_s_k);
+                   : stats.log_human_readable(printed_message_k, ram_page_size_k, stats_t::default_frequency_secs_k);
     pwrite(logs_file_descriptor, printed_message_k, len, 0);
 }
 
