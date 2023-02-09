@@ -136,6 +136,7 @@ def test_non_uniform_batch():
 if __name__ == '__main__':
     pytest.main()
 
+    test_shuffled_tcp()
     test_normal()
     test_notification()
     test_method_missing()

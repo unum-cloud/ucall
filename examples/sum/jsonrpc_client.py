@@ -5,6 +5,7 @@ import requests
 import random
 import socket
 import json
+import string
 from typing import Optional, List
 
 
@@ -15,9 +16,10 @@ from typing import Optional, List
 #     'jsonrpc': '2.0',
 #     'id': identity,
 # })
-REQUEST_PATTERN = '{"jsonrpc":"2.0","method":"sum","params":{"a":%i,"b":%i},"id":%i}'
+REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i}}'
+REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i,"text":"%s"}}'
 
-# The ID of the current running proccess, used as a default
+# The ID of the current running process, used as a default
 # identifier for requests originating from here.
 PROCESS_ID = os.getpid()
 
@@ -58,12 +60,14 @@ class ClientHTTP:
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
         self.url = f'http://{uri}:{port}/'
+        self.payload = ''.join(random.choices(
+            string.ascii_uppercase, k=80))
 
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
 
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        jsonrpc = REQUEST_PATTERN % (a, b, self.identity)
+        jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         expected = a + b
         response = requests.post(self.url, json=jsonrpc).json()
         received = response['result']
@@ -83,6 +87,8 @@ class ClientTCP:
         self.uri = uri
         self.port = port
         self.sock = None
+        self.payload = ''.join(random.choices(
+            string.ascii_uppercase, k=80))
 
     def __call__(self, **kwargs) -> int:
         self.send(**kwargs)
@@ -92,7 +98,7 @@ class ClientTCP:
 
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        jsonrpc = REQUEST_PATTERN % (a, b, self.identity)
+        jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         self.expected = a + b
         self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
             self.sock) else self.sock
@@ -117,11 +123,13 @@ class ClientHTTPBatches:
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
         self.url = f'http://{uri}:{port}/'
+        self.payload = ''.join(random.choices(
+            string.ascii_uppercase, k=80))
 
     def __call__(self, a: List[int], b: List[int]) -> int:
         expected = [ai + bi for ai, bi in zip(a, b)]
         jsonrpc = [
-            REQUEST_PATTERN % (ai, bi, self.identity)
+            REQUEST_BIG_PATTERN % (self.identity, ai, bi, self.payload)
             for ai, bi in zip(a, b)]
         jsonrpc = '[%s]' % ','.join(jsonrpc)
         response = requests.post(self.url, json=jsonrpc).json()
