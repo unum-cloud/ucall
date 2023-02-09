@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import grpc_schema_pb2 as grpc__schema__pb2
+from . import grpc_schema_pb2 as grpc__schema__pb2
 
 
 class gRPCStub(object):
