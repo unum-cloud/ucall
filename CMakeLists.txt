@@ -59,6 +59,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(benchmark)
 include_directories(${benchmark_SOURCE_DIR}/include)
 
+# CLI
+FetchContent_Declare(
+    cxxopts
+    GIT_REPOSITORY https://github.com/jarro2783/cxxopts
+    GIT_TAG v3.0.0
+)
+FetchContent_MakeAvailable(cxxopts)
+include_directories(${cxxopts_SOURCE_DIR}/include)
+
 # On MacOS you may need to locate headers here:
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 set(PICOHTTP_DIR ${CMAKE_BINARY_DIR}/_deps/picohttpparser-ep)
@@ -112,13 +121,15 @@ add_library(ujrpc_server_posix src/engine_posix.cpp)
 target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
 
 add_executable(ujrpc_example_sum_posix examples/sum/ujrpc_server.cpp)
-target_link_libraries(ujrpc_example_sum_posix ujrpc_server_posix)
+target_link_libraries(ujrpc_example_sum_posix ujrpc_server_posix cxxopts)
+target_compile_options(ujrpc_example_sum_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
     target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS} ${URING_LIBS})
     add_executable(ujrpc_example_sum_uring examples/sum/ujrpc_server.cpp)
-    target_link_libraries(ujrpc_example_sum_uring ujrpc_server_uring)
+    target_link_libraries(ujrpc_example_sum_uring ujrpc_server_uring cxxopts)
+    target_compile_options(ujrpc_example_sum_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 else()
     message("Linux kernel version should be greater than 5.19 to use io_uring features")
 endif()

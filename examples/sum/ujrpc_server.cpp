@@ -7,6 +7,8 @@
 #include <unistd.h> // `STDOUT_FILENO`
 #include <vector>
 
+#include <cxxopts.hpp>
+
 #include "ujrpc/ujrpc.h"
 
 static void sum(ujrpc_call_t call) {
@@ -34,15 +36,30 @@ static void bot_or_not(ujrpc_call_t call) {
 }
 
 int main(int argc, char** argv) {
+
+    cxxopts::Options options("Summation Server", "If device can't sum integers, just send them over with JSON-RPC :)");
+    options.add_options()                                                                                             //
+        ("h,help", "Print usage")                                                                                     //
+        ("nic", "Networking Interface Internal IP to use", cxxopts::value<std::string>()->default_value("127.0.0.1")) //
+        ("p,port", "On which port to server JSON-RPC", cxxopts::value<int>()->default_value("8545"))                  //
+        ("j,threads", "How many threads to run", cxxopts::value<int>()->default_value("1"))                           //
+        ("s,silent", "Silence statistics output", cxxopts::value<bool>())                                             //
+        ;
+    auto result = options.parse(argc, argv);
+    if (result.count("help")) {
+        std::cout << options.help() << std::endl;
+        exit(0);
+    }
+
     ujrpc_server_t server{};
     ujrpc_config_t config{};
-    // config.interface = "192.168.5.9"; // For InfiniBand
-    config.port = 8545;
-    config.max_threads = 4;
+    config.interface = options.count("nic") ? result["port"].as<std::string>().c_str() : nullptr;
+    config.port = result["port"].as<int>();
+    config.max_threads = result["threads"].as<int>();
     config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 512;
-    config.logs_file_descriptor = STDOUT_FILENO;
+    config.logs_file_descriptor = result.count("silent") ? -1 : STDOUT_FILENO;
     config.logs_format = "human";
 
     ujrpc_init(&config, &server);
