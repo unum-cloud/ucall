@@ -15,4 +15,4 @@ RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 USER vscode
 WORKDIR /home/vscode
 
-RUN pip install pytest cmake wheel gdb-tools requests
+RUN pip install pytest cmake wheel gdb-tools requests tqdm fire
