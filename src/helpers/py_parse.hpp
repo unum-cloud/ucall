@@ -23,32 +23,38 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
     else if (PyUnicode_Check(obj)) {
         Py_ssize_t size;
         const char* char_ptr = PyUnicode_AsUTF8AndSize(obj, &size);
-        char* unc = (char*)malloc((size + 2) * sizeof(char));
-        unc[0] = '"';
-        size_t pos = 1;
+        char* begin = data;
+        *(begin++) = '"';
         for (size_t i = 0; i != size; ++i) {
             uint8_t c = char_ptr[i];
             switch (c) {
             case 34:
-                pos += sprintf(&unc[pos], "\\\"");
+                memcpy(begin, "\\\"", 2);
+                begin += 2;
                 break;
             case 92:
-                pos += sprintf(&unc[pos], "\\\\");
+                memcpy(begin, "\\\\", 2);
+                begin += 2;
                 break;
             case 8:
-                pos += sprintf(&unc[pos], "\\b");
+                memcpy(begin, "\\b", 2);
+                begin += 2;
                 break;
             case 9:
-                pos += sprintf(&unc[pos], "\\t");
+                memcpy(begin, "\\t", 2);
+                begin += 2;
                 break;
             case 10:
-                pos += sprintf(&unc[pos], "\\n");
+                memcpy(begin, "\\n", 2);
+                begin += 2;
                 break;
             case 12:
-                pos += sprintf(&unc[pos], "\\f");
+                memcpy(begin, "\\f", 2);
+                begin += 2;
                 break;
             case 13:
-                pos += sprintf(&unc[pos], "\\r");
+                memcpy(begin, "\\r", 2);
+                begin += 2;
                 break;
             case 0:
             case 1:
@@ -77,18 +83,17 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
             case 29:
             case 30:
             case 31: {
-                pos += sprintf(&unc[pos], "\\u0000");
-                char_to_hex(c, &unc[pos - 2]);
+                memcpy(begin, "\\u0000", 6);
+                begin += 6;
+                char_to_hex(c, begin - 2);
                 break;
             }
             default:
-                unc[pos++] = char_ptr[i];
+                *(begin++) = char_ptr[i];
             }
         }
-        unc[pos] = '"';
-        memmove(data, &unc[0], size + 2);
-        *len = size + 2;
-        free(unc);
+        *(begin++) = '"';
+        *len = begin - data;
     } else if (PySequence_Check(obj)) {
         char* begin = data;
         *(begin++) = '[';
