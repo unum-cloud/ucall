@@ -82,6 +82,7 @@ class ClientTCP:
         self.expected = -1
         self.uri = uri
         self.port = port
+        self.sock = None
 
     def __call__(self, **kwargs) -> int:
         self.send(**kwargs)
