@@ -63,6 +63,7 @@
 
 #include "ujrpc/ujrpc.h"
 
+#include "helpers/log.hpp"
 #include "helpers/parse.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
@@ -80,7 +81,7 @@ static constexpr std::size_t max_embedded_length_k{ram_page_size_k - sj::SIMDJSO
 static constexpr std::size_t sleep_growth_factor_k{4};
 static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
 static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
-static constexpr std::size_t stats_heartbeat_s_k{5};
+static constexpr std::size_t logs_heartbeat_s_k{5};
 static constexpr descriptor_t invalid_descriptor_k{-1};
 
 struct completed_event_t;
@@ -274,13 +275,10 @@ struct engine_t {
     mutex_t completion_mutex{};
     mutex_t connections_mutex{};
 
-    std::atomic<std::size_t> stats_new_connections{};
-    std::atomic<std::size_t> stats_closed_connections{};
-    std::atomic<std::size_t> stats_bytes_received{};
-    std::atomic<std::size_t> stats_bytes_sent{};
-    std::atomic<std::size_t> stats_packets_received{};
-    std::atomic<std::size_t> stats_packets_sent{};
+    stats_t stats{};
     connection_t stats_pseudo_connection{};
+    std::int32_t logs_file_descriptor{};
+    std::string_view logs_format{};
 
     /// @brief An array of function callbacks. Can be in dozens.
     array_gt<named_callback_t> callbacks{};
@@ -459,6 +457,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
     server_ptr->uring = uring;
+    server_ptr->logs_file_descriptor = config.logs_file_descriptor;
+    server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     *server_out = (ujrpc_server_t)server_ptr;
     return;
 
@@ -852,7 +852,7 @@ void engine_t::submit_stats_heartbeat() noexcept {
     struct io_uring_sqe* uring_sqe{};
     connection_t& connection = stats_pseudo_connection;
     connection.stage = stage_t::log_stats_k;
-    connection.next_wakeup.tv_sec = stats_heartbeat_s_k;
+    connection.next_wakeup.tv_sec = logs_heartbeat_s_k;
     submission_mutex.lock();
 
     uring_sqe = io_uring_get_sqe(&uring);
@@ -864,31 +864,10 @@ void engine_t::submit_stats_heartbeat() noexcept {
 
 void engine_t::log_and_reset_stats() noexcept {
     static char printed_message_k[ram_page_size_k]{};
-    auto printable_normalized = [](std::atomic<std::size_t>& i) noexcept {
-        return printable(double(i.exchange(0, std::memory_order_relaxed)) / stats_heartbeat_s_k);
-    };
-    auto new_connections = printable_normalized(stats_new_connections);
-    auto closed_connections = printable_normalized(stats_closed_connections);
-    auto bytes_received = printable_normalized(stats_bytes_received);
-    auto bytes_sent = printable_normalized(stats_bytes_sent);
-    auto packets_received = printable_normalized(stats_packets_received);
-    auto packets_sent = printable_normalized(stats_packets_sent);
-    auto len = std::snprintf( //
-        printed_message_k, ram_page_size_k,
-        "connections: +%.1f %c/s, "
-        "-%.1f %c/s, "
-        "RX: %.1f %c msgs/s, "
-        "%.1f %cb/s, "
-        "TX: %.1f %c msgs/s, "
-        "%.1f %cb/s.\n",
-        new_connections.number, new_connections.suffix,       //
-        closed_connections.number, closed_connections.suffix, //
-        packets_received.number, packets_received.suffix,     //
-        bytes_received.number, bytes_received.suffix,         //
-        packets_sent.number, packets_sent.suffix,             //
-        bytes_sent.number, bytes_sent.suffix                  //
-    );
-    std::fwrite(printed_message_k, sizeof(char), len, stdout);
+    auto len = logs_format == "json" //
+                   ? stats.log_json(printed_message_k, ram_page_size_k)
+                   : stats.log_human_readable(printed_message_k, ram_page_size_k, logs_heartbeat_s_k);
+    pwrite(logs_file_descriptor, printed_message_k, len, 0);
 }
 
 void engine_t::release_connection(connection_t& connection) noexcept {
@@ -898,7 +877,7 @@ void engine_t::release_connection(connection_t& connection) noexcept {
     connections.release(&connection);
     connections_mutex.unlock();
     active_connections -= is_active;
-    stats_closed_connections.fetch_add(is_active, std::memory_order_relaxed);
+    stats.closed_connections.fetch_add(is_active, std::memory_order_relaxed);
 }
 
 void automata_t::close_gracefully() noexcept {
@@ -996,7 +975,7 @@ void automata_t::operator()() noexcept {
         // Check if accepting the new connection request worked out.
         engine.reserved_connections--;
         engine.active_connections++;
-        engine.stats_new_connections.fetch_add(1, std::memory_order_relaxed);
+        engine.stats.added_connections.fetch_add(1, std::memory_order_relaxed);
         connection.descriptor = descriptor_t{completed_result};
         return receive_next();
 
@@ -1028,8 +1007,8 @@ void automata_t::operator()() noexcept {
         }
 
         // Absorb the arrived data.
-        engine.stats_bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
-        engine.stats_packets_received.fetch_add(1, std::memory_order_relaxed);
+        engine.stats.bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
+        engine.stats.packets_received.fetch_add(1, std::memory_order_relaxed);
         if (!connection.absorb_input(completed_result)) {
             ujrpc_call_reply_error_out_of_memory(this);
             return send_next();
@@ -1070,8 +1049,8 @@ void automata_t::operator()() noexcept {
         if (should_release())
             return close_gracefully();
 
-        engine.stats_bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
-        engine.stats_packets_sent.fetch_add(1, std::memory_order_relaxed);
+        engine.stats.bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
+        engine.stats.packets_sent.fetch_add(1, std::memory_order_relaxed);
         connection.mark_submitted_outputs(completed_result);
         if (!connection.has_remaining_outputs()) {
             connection.exchanges++;

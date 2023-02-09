@@ -30,6 +30,15 @@ typedef struct ujrpc_config_t {
     uint16_t max_callbacks;
     uint16_t max_threads;
 
+    /// @brief Common choices, aside from a TCP socket are:
+    /// > STDOUT_FILENO: console output.
+    /// > STDERR_FILENO: errors.
+    int32_t logs_file_descriptor;
+    /// @brief Can be:
+    /// > "human" will print human-readable unit-normalized lines.
+    /// > "json" will output newline-delimited JSONs documents.
+    char const* logs_format;
+
     uint16_t max_batch_size;
     uint32_t max_concurrent_connections;
     uint32_t max_lifetime_micro_seconds;

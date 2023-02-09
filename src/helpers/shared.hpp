@@ -208,21 +208,6 @@ inline timestamp_t cpu_cycle() noexcept {
     return result;
 }
 
-struct number_and_suffix_t {
-    float number{};
-    char suffix{};
-};
-
-inline number_and_suffix_t printable(std::size_t n) noexcept {
-    if (n > 1'000'000'000)
-        return {n / 1'000'000'000.0f, 'G'};
-    if (n > 1'000'000)
-        return {n / 1'000'000.0f, 'M'};
-    if (n > 1'000)
-        return {n / 1'000.0f, 'K'};
-    return {n + 0.0f, ' '};
-}
-
 std::size_t string_length(char const* c_str, std::size_t optional_length) noexcept {
     return c_str && !optional_length ? std::strlen(c_str) : optional_length;
 }
