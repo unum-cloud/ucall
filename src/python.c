@@ -17,7 +17,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include "helpers/py_parse.hpp"
+#include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
 typedef struct {
