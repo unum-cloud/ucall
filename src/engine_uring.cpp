@@ -214,6 +214,13 @@ struct alignas(align_k) connection_t {
                                     : std::string_view{input.embedded, input.embedded_used};
     }
 
+    void pop_back() noexcept {
+        if (output.dynamic.size())
+            output.dynamic.pop_back();
+        else
+            output.embedded_used--;
+    }
+
     char& output_back() noexcept {
         return output.dynamic.size() ? output.dynamic[output.dynamic.size() - 1]
                                      : output.embedded[output.embedded_used - 1];
@@ -752,7 +759,7 @@ void automata_t::raise_call_or_calls() noexcept {
 
         // Drop the last comma, if present.
         if (connection.has_outputs())
-            connection.output_back() = '\0';
+            connection.pop_back();
     }
 }
 
@@ -866,7 +873,7 @@ void engine_t::log_and_reset_stats() noexcept {
     auto len = logs_format == "json" //
                    ? stats.log_json(printed_message_k, ram_page_size_k)
                    : stats.log_human_readable(printed_message_k, ram_page_size_k, stats_t::default_frequency_secs_k);
-    pwrite(logs_file_descriptor, printed_message_k, len, 0);
+    write(logs_file_descriptor, printed_message_k, len);
 }
 
 void engine_t::release_connection(connection_t& connection) noexcept {

@@ -134,6 +134,7 @@ template <typename element_at> class array_gt {
     [[nodiscard]] element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
 
     void push_back_reserved(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
+    void pop_back(std::size_t n = 1) noexcept { count_ -= n; }
     [[nodiscard]] bool append_n(element_at const* elements, std::size_t n) noexcept {
         if (!reserve(size() + n))
             return false;
