@@ -22,7 +22,8 @@
                 "xaver.clang-format",
                 "mhutchie.git-graph",
                 "mutantdino.resourcemonitor",
-                "eamodio.gitlens"
+                "eamodio.gitlens",
+                "ms-python.autopep8"
             ]
         }
     },
