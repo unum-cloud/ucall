@@ -873,7 +873,7 @@ void engine_t::log_and_reset_stats() noexcept {
     auto len = logs_format == "json" //
                    ? stats.log_json(printed_message_k, ram_page_size_k)
                    : stats.log_human_readable(printed_message_k, ram_page_size_k, stats_t::default_frequency_secs_k);
-    write(logs_file_descriptor, printed_message_k, len);
+    len = write(logs_file_descriptor, printed_message_k, len);
 }
 
 void engine_t::release_connection(connection_t& connection) noexcept {

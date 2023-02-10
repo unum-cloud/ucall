@@ -98,6 +98,7 @@
         "source_location": "cpp"
     },
     "cSpell.words": [
+        "cxxopts",
         "endregion",
         "fastapi",
         "iovecs",

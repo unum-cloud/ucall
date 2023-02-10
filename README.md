@@ -137,6 +137,12 @@ python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
 kill %%
 ```
 
+Want to customize server settings?
+
+```sh
+./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
+```
+
 Want to dispatch more clients and aggregate statistics?
 
 ```sh

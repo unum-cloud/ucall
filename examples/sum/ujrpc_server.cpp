@@ -23,18 +23,6 @@ static void sum(ujrpc_call_t call) {
     ujrpc_call_reply_content(call, &c_str[0], print.ptr - &c_str[0]);
 }
 
-static void bot_or_not(ujrpc_call_t call) {
-    char const* text_ptr{};
-    size_t text_len{};
-    bool got_text = ujrpc_param_named_str(call, "text", 4, &text_ptr, &text_len);
-    if (!got_text)
-        return ujrpc_call_reply_error(call, 1, "A tweet has to have a text field!", 0);
-
-    bool is_bot = true; // TODO
-    char const* result = is_bot ? "1" : "0";
-    ujrpc_call_reply_content(call, result, 1);
-}
-
 int main(int argc, char** argv) {
 
     cxxopts::Options options("Summation Server", "If device can't sum integers, just send them over with JSON-RPC :)");
@@ -43,7 +31,7 @@ int main(int argc, char** argv) {
         ("nic", "Networking Interface Internal IP to use", cxxopts::value<std::string>()->default_value("127.0.0.1")) //
         ("p,port", "On which port to server JSON-RPC", cxxopts::value<int>()->default_value("8545"))                  //
         ("j,threads", "How many threads to run", cxxopts::value<int>()->default_value("1"))                           //
-        ("s,silent", "Silence statistics output", cxxopts::value<bool>())                                             //
+        ("s,silent", "Silence statistics output", cxxopts::value<bool>()->default_value("false"))                     //
         ;
     auto result = options.parse(argc, argv);
     if (result.count("help")) {
@@ -53,24 +41,29 @@ int main(int argc, char** argv) {
 
     ujrpc_server_t server{};
     ujrpc_config_t config{};
-    config.interface = options.count("nic") ? result["port"].as<std::string>().c_str() : nullptr;
+    config.interface = result["nic"].as<std::string>().c_str();
     config.port = result["port"].as<int>();
     config.max_threads = result["threads"].as<int>();
     config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
     config.max_lifetime_exchanges = 512;
-    config.logs_file_descriptor = result.count("silent") ? -1 : STDOUT_FILENO;
+    config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : STDOUT_FILENO;
     config.logs_format = "human";
 
     ujrpc_init(&config, &server);
     if (!server) {
-        std::printf("Failed to initialize server!\n");
+        std::printf("Failed to start server: %s:%i\n", config.interface, config.port);
         return -1;
     }
 
-    std::printf("Initialized server!\n");
+    std::printf("Initialized server: %s:%i\n", config.interface, config.port);
+    std::printf("- %zu threads\n", static_cast<std::size_t>(config.max_threads));
+    std::printf("- %zu max concurrent connections\n", static_cast<std::size_t>(config.max_concurrent_connections));
+    if (result["silent"].as<bool>())
+        std::printf("- silent\n");
+
+    // Add all the callbacks we need
     ujrpc_add_procedure(server, "sum", &sum);
-    ujrpc_add_procedure(server, "bot_or_not", &bot_or_not);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;

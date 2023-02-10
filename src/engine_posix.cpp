@@ -175,7 +175,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
             auto len = engine.logs_format == "json" //
                            ? engine.stats.log_json(engine.packet_buffer, ram_page_size_k)
                            : engine.stats.log_human_readable(engine.packet_buffer, ram_page_size_k, dt / 1000ul);
-            write(engine.logs_file_descriptor, engine.packet_buffer, len);
+            len = write(engine.logs_file_descriptor, engine.packet_buffer, len);
             engine.log_last_time = now;
         }
     }
