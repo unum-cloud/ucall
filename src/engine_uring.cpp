@@ -474,8 +474,7 @@ cleanup:
         io_uring_queue_exit(&uring);
     if (socket_descriptor >= 0)
         close(socket_descriptor);
-    if (server_ptr)
-        std::free(server_ptr);
+    std::free(server_ptr);
     *server_out = nullptr;
 }
 
@@ -519,11 +518,11 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     for (std::size_t i = 0; i != completed_count; ++i) {
         completed_event_t& completed = completed_events[i];
         automata_t automata{
-            .engine = engine,
-            .scratch = engine.spaces[thread_idx],
-            .connection = *completed.connection_ptr,
-            .completed_stage = completed.stage,
-            .completed_result = completed.result,
+            engine, //
+            engine.spaces[thread_idx],
+            *completed.connection_ptr,
+            completed.stage,
+            completed.result,
         };
 
         // If everything is fine, let automata work in its normal regime.

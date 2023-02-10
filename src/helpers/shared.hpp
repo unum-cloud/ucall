@@ -69,6 +69,7 @@ template <typename element_at> class buffer_gt {
         if constexpr (!std::is_trivially_destructible<element_at>())
             std::destroy_n(elements_, capacity_);
         std::free(elements_);
+        elements_ = nullptr;
     }
     [[nodiscard]] element_at const* data() const noexcept { return elements_; }
     [[nodiscard]] element_at* data() noexcept { return elements_; }
@@ -181,6 +182,7 @@ template <typename element_at> class pool_gt {
         if constexpr (!std::is_trivially_destructible<element_at>())
             std::destroy_n(elements_, capacity_);
         std::free(elements_);
+        elements_ = nullptr;
     }
     [[nodiscard]] element_at* alloc() noexcept {
         return free_count_ ? elements_ + free_offsets_[--free_count_] : nullptr;

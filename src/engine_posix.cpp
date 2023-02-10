@@ -144,7 +144,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
 
         // Deallocate copies of received responses:
         for (std::size_t response_idx = 0; response_idx != engine.batch_response.copies_count; ++response_idx)
-            std::free(engine.batch_response.copies[response_idx]);
+            std::free(std::exchange(engine.batch_response.copies[response_idx], nullptr));
     } else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value_unsafe();
@@ -228,6 +228,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         engine.stats.packets_received++;
         forward_packet(engine);
         std::free(buffer_ptr);
+        buffer_ptr = nullptr;
     }
 
     close(engine.connection);
@@ -318,8 +319,7 @@ cleanup:
     received_errno = errno;
     if (socket_descriptor >= 0)
         close(socket_descriptor);
-    if (server_ptr)
-        std::free(server_ptr);
+    std::free(server_ptr);
     *server_out = nullptr;
 }
 
