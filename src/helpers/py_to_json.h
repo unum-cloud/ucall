@@ -148,7 +148,7 @@ static int calculate_size_as_str(PyObject* obj) {
         return snprintf(NULL, 0, "\"%s\"", PyBytes_AsString(obj));
     else if (PyUnicode_Check(obj)) {
         Py_ssize_t byte_size = 0;
-        PyUnicode_AsUTF8AndSize(obj, byte_size);
+        PyUnicode_AsUTF8AndSize(obj, &byte_size);
         return byte_size + 2;
     } else if (PySequence_Check(obj)) {
         size_t size = 2;
