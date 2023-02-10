@@ -3,8 +3,8 @@ import random
 from typing import Optional
 
 import grpc
-from . import grpc_schema_pb2 as pb2
-from . import grpc_schema_pb2_grpc as pb2_grpc
+import grpc_schema_pb2 as pb2
+import grpc_schema_pb2_grpc as pb2_grpc
 
 
 class gRPCClient:
