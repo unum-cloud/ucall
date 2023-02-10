@@ -1,6 +1,6 @@
 <h1 align="center">Uninterrupted JSON RPC</h1>
 <h3 align="center">
-Understandable Remote Procedure Calls<br/>
+Remote Procedure Calls<br/>
 100x Faster than FastAPI<br/>
 </h3>
 <br/>
@@ -76,32 +76,40 @@ We are inviting others to contribute bindings to other languages as well.
 ## Benchmarks
 
 All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider io_uring support for networking operations.
-For the `c7g.metal` the numbers are following:
 
-| Setup                   |   🔁   | min latency w 1 client | max bandwidth w 32 clients |
-| :---------------------- | :---: | ---------------------: | -------------------------: |
-| Fast API over REST      |   ❌   |               1'203 μs |                  3'184 rps |
-| Fast API over WebSocket |   ✅   |                  86 μs |               11'356 rps ¹ |
-| gRPC                    |   ✅   |                 164 μs |                  9'849 rps |
-|                         |       |                        |                            |
-| UJRPC with POSIX        |   ❌   |                  62 μs |                 79'000 rps |
-| UJRPC with io_uring     |   ✅   |                  22 μs |                231'000 rps |
+## Single Large Node
+
+We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.
+
+| Setup                     |   🔁   | min latency w 1 client | max bandwidth w 32 clients |
+| :------------------------ | :---: | ---------------------: | -------------------------: |
+| Fast API over REST        |   ❌   |               1'203 μs |                  3'184 rps |
+| Fast API over WebSocket   |   ✅   |                  86 μs |               11'356 rps ¹ |
+| gRPC                      |   ✅   |                 164 μs |                  9'849 rps |
+|                           |       |                        |                            |
+| UJRPC with POSIX (Python) |   ❌   |                   ? μs |                      ? rps |
+| UJRPC with POSIX (C)      |   ❌   |                  62 μs |                 79'000 rps |
+| UJRPC with io_uring (C)   |   ✅   |                  22 μs |                231'000 rps |
 
 The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
 The second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
 
 > 1: FastAPI couldn't process concurrent requests with WebSockets.
 
-Lets start a cluster of small clients and attack some free-tier AWS services, measuring the number of operations they can handle.
+### Free Tier Performance
 
-| Setup                   |   🔁   | t2.micro | t4g.small |
-| :---------------------- | :---: | -------: | --------: |
-| Fast API over REST      |   ❌   |          |           |
-| Fast API over WebSocket |   ✅   |          |           |
-| gRPC                    |   ✅   |          |           |
-|                         |       |          |           |
-| UJRPC with POSIX        |   ❌   |          |           |
-| UJRPC with io_uring     |   ✅   |          |           |
+The general logic is that you can't squeeze high performance from Free-Tier machines.
+Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
+Here is the bandwidth they can sustain.
+
+| Setup                   |   🔁   | `t2.micro` | `t4g.small` |
+| :---------------------- | :---: | ---------: | ----------: |
+| Fast API over REST      |   ❌   |            |             |
+| Fast API over WebSocket |   ✅   |            |             |
+| gRPC                    |   ✅   |            |             |
+|                         |       |            |             |
+| UJRPC with POSIX        |   ❌   |            |             |
+| UJRPC with io_uring     |   ✅   |            |             |
 
 ### Reproducing Results
 
@@ -145,12 +153,12 @@ Want to customize server settings?
 ./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
 ```
 
-Want to dispatch more clients and aggregate statistics?
+Want to dispatch more clients and aggregate more accurate statistics?
 
 ```sh
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 32
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 32
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 32
+python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 32 --seconds 100
+python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 32 --seconds 100
+python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 32 --seconds 100
 ```
 
 A lot has been said about the speed of Python code ~~or the lack of~~.

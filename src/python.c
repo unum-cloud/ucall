@@ -218,12 +218,17 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
         return NULL;
     wrap.callable = procedure;
     ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(procedure, "__name__")), wrapper);
+
+    // TODO: Return handle to the function object, so this function remains usable with a decorator.
     return Py_None;
 }
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
     Py_ssize_t max_cycles;
     double max_seconds;
+    // TODO: Make those arguments optional.
+    // If none are provided, it is wiser to use the `ujrpc_take_calls`,
+    // as it has a more efficient busy-waiting loop implementation.
     if (!PyArg_ParseTuple(args, "nd", &max_cycles, &max_seconds)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
         return NULL;
