@@ -1,3 +1,4 @@
+import sys, os
 import time
 from multiprocessing import Process, Value
 from dataclasses import dataclass
@@ -128,6 +129,8 @@ def bench_parallel(
 
 
 def main(class_name: str, *, threads: int = 1, requests: int = 100_000, seconds: float = 10, progress: bool = False):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(f'{script_dir}/sum')
     class_ = locate(class_name)
     stats = bench_parallel(
         callable=class_(),

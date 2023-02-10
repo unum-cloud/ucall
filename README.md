@@ -169,7 +169,7 @@ parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 
 ```sh
 pip install grpcio grpcio-tools
-python ./sum/grpc_server.py &
+python ./examples/sum/grpc_server.py &
 python examples/bench.py "sum.grpc_client.gRPCClient" --progress
 python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
 kill %%
