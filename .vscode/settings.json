@@ -95,7 +95,8 @@
         "queue": "cpp",
         "stack": "cpp",
         "typeindex": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "span": "cpp"
     },
     "cSpell.words": [
         "cxxopts",

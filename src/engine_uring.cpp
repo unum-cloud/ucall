@@ -834,11 +834,12 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     io_uring_prep_accept_direct(uring_sqe, socket, &connection.client_address, &connection.client_address_len, 0,
                                 IORING_FILE_INDEX_ALLOC);
     io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
 
-    uring_sqe = io_uring_get_sqe(&uring);
-    io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
-    io_uring_sqe_set_data(uring_sqe, NULL);
+    // Accepting new connections can be time-less.
+    // io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
+    // uring_sqe = io_uring_get_sqe(&uring);
+    // io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
+    // io_uring_sqe_set_data(uring_sqe, NULL);
 
     uring_result = io_uring_submit(&uring);
     submission_mutex.unlock();
@@ -946,7 +947,7 @@ void automata_t::receive_next() noexcept {
     io_uring_prep_read_fixed(uring_sqe, int(connection.descriptor), (void*)connection.next_input_begin(),
                              connection.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
     io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, 0 | IOSQE_IO_LINK);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
 
     // More than other operations this depends on the information coming from the client.
     // We can't afford to keep connections alive indefinitely, so we need to set a timeout
