@@ -76,18 +76,21 @@ We are inviting others to contribute bindings to other languages as well.
 ## Benchmarks
 
 All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider io_uring support for networking operations.
+For the `c7g.metal` the numbers are following:
 
-| Setup                   |   🔁   | 1 client on m6i.metal | 32 clients on m6i.metal |
-| :---------------------- | :---: | --------------------: | ----------------------: |
-| Fast API over REST      |   ❌   |    1'002 rps @ 998 μs |    3'553 rps @ 8'988 μs |
-| Fast API over WebSocket |   ✅   |    12'312 rps @ 81 μs |                         |
-| gRPC                    |   ✅   |                       |                         |
-|                         |       |                       |                         |
-| UJRPC over TCP, reset   |   ❌   |                 90 μs |                         |
-| UJRPC over TCP, reuse   |   ✅   |                 25 μs |                         |
+| Setup                   |   🔁   | min latency w 1 client | max bandwidth w 32 clients |
+| :---------------------- | :---: | ---------------------: | -------------------------: |
+| Fast API over REST      |   ❌   |               1'203 μs |                  3'184 rps |
+| Fast API over WebSocket |   ✅   |                  86 μs |               11'356 rps ¹ |
+| gRPC                    |   ✅   |                 164 μs |                  9'849 rps |
+|                         |       |                        |                            |
+| UJRPC with POSIX        |   ❌   |                  62 μs |                 79'000 rps |
+| UJRPC with io_uring     |   ✅   |                  22 μs |                231'000 rps |
 
-> In every cell we report the average number of Requests Per Second, as well as the average request latency as measured on the client side.
-> μ stands for micro, μs subsequently means microseconds.
+The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
+The second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
+
+> 1: FastAPI couldn't process concurrent requests with WebSockets.
 
 Lets start a cluster of small clients and attack some free-tier AWS services, measuring the number of operations they can handle.
 
@@ -97,9 +100,8 @@ Lets start a cluster of small clients and attack some free-tier AWS services, me
 | Fast API over WebSocket |   ✅   |          |           |
 | gRPC                    |   ✅   |          |           |
 |                         |       |          |           |
-| UJRPC over TCP, reset   |   ❌   |          |           |
-| UJRPC over TCP, reuse   |   ✅   |          |           |
-
+| UJRPC with POSIX        |   ❌   |          |           |
+| UJRPC with io_uring     |   ✅   |          |           |
 
 ### Reproducing Results
 
