@@ -130,7 +130,7 @@ static int deduce_parameters(PyObject* callable) {
 
     if (co_flags & CO_VARKEYWORDS) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count + (co_flags && CO_VARARGS));
+        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count + (co_flags & CO_VARARGS));
         param.value = NULL;
         param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
         param.kind = VAR_KEYWORD;
@@ -293,6 +293,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
+    return 0;
 }
 
 // Order: https://docs.python.org/3/c-api/typeobj.html#quick-reference
