@@ -20,14 +20,6 @@
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
-typedef struct {
-    PyObject_HEAD;
-    ujrpc_config_t config;
-    ujrpc_server_t server;
-    size_t count_added;
-    size_t thread_cnt;
-} py_server_t;
-
 typedef enum {
     POSITIONAL_ONLY,       //
     POSITIONAL_OR_KEYWORD, //
@@ -49,9 +41,17 @@ typedef struct {
     PyObject* callable;
 } py_wrapper_t;
 
-static py_wrapper_t wrap;
+typedef struct {
+    PyObject_HEAD;
+    ujrpc_config_t config;
+    ujrpc_server_t server;
+    size_t count_threads;
+    py_wrapper_t* wrappers;
+    size_t wrapper_capacity;
+    size_t count_added;
+} py_server_t;
 
-static int deduce_parameters(PyObject* callable) {
+static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     // TODO Add safety checks
     PyObject* func_code = PyObject_GetAttrString(callable, "__code__");
 
@@ -137,19 +137,20 @@ static int deduce_parameters(PyObject* callable) {
         parameters[param_i++] = param;
     }
 
-    free(wrap.u_params);
-    wrap.u_params = parameters;
-    wrap.params_cnt = total_params;
+    wrap->u_params = parameters;
+    wrap->params_cnt = total_params;
+    wrap->callable = callable;
     return 0;
 }
 
-static void wrapper(ujrpc_call_t call) { //
+static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
     // TODO Add error checking for `ujrpc_param_named...`
-    PyObject* args = PyTuple_New(wrap.params_cnt);
+    py_wrapper_t* wrap = (py_wrapper_t*)(user_data);
+    PyObject* args = PyTuple_New(wrap->params_cnt);
 
-    for (size_t i = 0; i < wrap.params_cnt; ++i) {
-        PyTypeObject* type = wrap.u_params[i].type;
-        py_param_kind_t kind = wrap.u_params[i].kind;
+    for (size_t i = 0; i < wrap->params_cnt; ++i) {
+        PyTypeObject* type = wrap->u_params[i].type;
+        py_param_kind_t kind = wrap->u_params[i].kind;
         bool may_have_name = (kind & POSITIONAL_OR_KEYWORD) | (kind & KEYWORD_ONLY) | (kind & VAR_KEYWORD);
         bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
         bool got_named = false;
@@ -157,7 +158,7 @@ static void wrapper(ujrpc_call_t call) { //
         ujrpc_str_t name = "";
         if (may_have_name)
             name =
-                PyUnicode_AsUTF8AndSize(wrap.u_params[i].name, &name_len); // TODO do this once in `deduce parameters`;
+                PyUnicode_AsUTF8AndSize(wrap->u_params[i].name, &name_len); // TODO do this once in `deduce parameters`;
 
         if (PyType_IsSubtype(type, &PyBool_Type)) {
             bool res;
@@ -193,7 +194,7 @@ static void wrapper(ujrpc_call_t call) { //
         }
     }
 
-    PyObject* response = PyObject_CallObject(wrap.callable, args);
+    PyObject* response = PyObject_CallObject(wrap->callable, args);
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     size_t len = 0;
@@ -214,10 +215,20 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
         PyErr_SetString(PyExc_TypeError, "Need a callable object!");
         return NULL;
     }
-    if (deduce_parameters(procedure) != 0)
+
+    py_wrapper_t wrap;
+    if (prepare_wrapper(procedure, &wrap) != 0)
         return NULL;
-    wrap.callable = procedure;
-    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(procedure, "__name__")), wrapper);
+
+    if (self->count_added >= self->wrapper_capacity) {
+        self->wrapper_capacity *= 2;
+        self->wrappers = (py_wrapper_t*)realloc(self->wrappers, self->wrapper_capacity);
+    }
+
+    self->wrappers[self->count_added] = wrap;
+
+    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(procedure, "__name__")), wrapper,
+                        &self->wrappers[self->count_added]);
 
     // TODO: Return handle to the function object, so this function remains usable with a decorator.
     return Py_None;
@@ -237,7 +248,7 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
     time_t start, end;
     time(&start);
     while (max_cycles > 0 && max_seconds > 0) {
-        ujrpc_take_call(self->server, self->thread_cnt);
+        ujrpc_take_call(self->server, self->count_threads);
         --max_cycles;
         time(&end);
         max_seconds -= difftime(end, start);
@@ -272,6 +283,7 @@ static PyMappingMethods server_mapping_methods = {
 };
 
 static void server_dealloc(py_server_t* self) {
+    free(self->wrappers);
     ujrpc_free(self->server);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -294,7 +306,9 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->config.port = port;
     self->config.queue_depth = queue_depth;
     self->config.max_callbacks = max_callbacks;
-    self->thread_cnt = 1;
+    self->count_threads = 1;
+    self->wrapper_capacity = 16;
+    self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);

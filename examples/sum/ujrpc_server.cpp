@@ -11,7 +11,7 @@
 
 #include "ujrpc/ujrpc.h"
 
-static void sum(ujrpc_call_t call) {
+static void sum(ujrpc_call_t call, ujrpc_data_t) {
     int64_t a{}, b{};
     char c_str[256]{};
     bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
         std::printf("- silent\n");
 
     // Add all the callbacks we need
-    ujrpc_add_procedure(server, "sum", &sum);
+    ujrpc_add_procedure(server, "sum", &sum, nullptr);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;
