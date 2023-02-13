@@ -203,7 +203,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    size_t bytes_expected = -1;
+    int bytes_expected = -1;
     std::string_view content_len = std::get<parsed_request_t>(json_or_error).content_length;
     auto res = std::from_chars(content_len.begin(), content_len.end(), bytes_expected);
 
