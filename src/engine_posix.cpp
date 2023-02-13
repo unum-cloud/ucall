@@ -197,8 +197,17 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
     auto buffer_ptr = &engine.packet_buffer[0];
-    auto bytes_expected = recv(engine.connection, buffer_ptr, ram_page_size_k, MSG_PEEK | MSG_TRUNC);
-    if (bytes_expected <= 0) {
+    size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_size_k, MSG_PEEK);
+
+    auto json_or_error = strip_http_headers(std::string_view(buffer_ptr, bytes_received));
+    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+
+    size_t bytes_expected = -1;
+    std::string_view content_len = std::get<parsed_request_t>(json_or_error).content_length;
+    auto res = std::from_chars(content_len.begin(), content_len.end(), bytes_expected);
+
+    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0) {
         close(engine.connection);
         return;
     }
@@ -206,7 +215,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
-        auto bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
+        bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -221,7 +230,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
-        auto bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
+        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
