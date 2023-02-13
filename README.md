@@ -102,14 +102,13 @@ The general logic is that you can't squeeze high performance from Free-Tier mach
 Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
 Here is the bandwidth they can sustain.
 
-| Setup                   |   🔁   | `t2.micro` | `t4g.small` |
-| :---------------------- | :---: | ---------: | ----------: |
-| Fast API over REST      |   ❌   |            |             |
-| Fast API over WebSocket |   ✅   |            |             |
-| gRPC                    |   ✅   |            |             |
-|                         |       |            |             |
-| UJRPC with POSIX        |   ❌   |            |             |
-| UJRPC with io_uring     |   ✅   |            |             |
+| Setup                   |   🔁   | `t2.micro` | `t4g.small`   | `t2.micro` (32 clients) |`t4g.small` (32 clients) |
+| :---------------------- | :---:  | ---------: | ----------:   | ----------:              | ----------: 
+| Fast API over REST      |   ✅   |  328  rs    |    424 rs    |                          |
+| Fast API over WebSocket |   ✅   |  1504 rs    |   3051 rs    |                          |
+| gRPC                    |   ✅   |  1169 rs    |   1974 rs    |                          |
+| UJRPC with POSIX        |   ✅   |  1082 rs     | 2438 rs     |             3399 rs       |        39877 rs 
+| UJRPC with io_uring     |   ❌   |     ? rs     |  5864 rs    |              ? rs         |        88455 rs    
 
 ### Reproducing Results
 
