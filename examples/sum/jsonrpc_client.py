@@ -88,7 +88,7 @@ class ClientTCP:
         self.port = port
         self.sock = None
         self.payload = ''.join(random.choices(
-            string.ascii_uppercase, k=80))
+            string.ascii_uppercase, k=8000))
 
     def __call__(self, **kwargs) -> int:
         self.send(**kwargs)
@@ -110,6 +110,7 @@ class ClientTCP:
         self.sock.settimeout(None)
 
         response = parse_response(response_bytes)
+        assert 'error' not in response, response['error']
         received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
