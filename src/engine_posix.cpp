@@ -90,8 +90,8 @@ void forward_call(engine_t& engine) noexcept {
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    auto callback = std::get<ujrpc_callback_t>(callback_or_error);
-    return callback(&engine);
+    named_callback_t call_data = std::get<named_callback_t>(callback_or_error);
+    return call_data.callback(&engine, call_data.callback_data);
 }
 
 /**
@@ -332,10 +332,11 @@ cleanup:
     *server_out = nullptr;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback) {
+void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
+                         ujrpc_data_t callback_data) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back_reserved({name, callback});
+        engine.callbacks.push_back_reserved({name, callback, callback_data});
 }
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t) {

@@ -61,7 +61,7 @@ template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) 
  * @brief Validates the contents of the JSON call DOM, and finds a matching callback.
  */
 template <typename named_callbacks_at>
-inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callbacks_at const& callbacks,
+inline std::variant<named_callback_t, default_error_t> find_callback(named_callbacks_at const& callbacks,
                                                                      scratch_space_t& scratch) noexcept {
     sjd::element const& doc = scratch.tree;
     if (!doc.is_object())
@@ -108,7 +108,7 @@ inline std::variant<ujrpc_callback_t, default_error_t> find_callback(named_callb
     if (callback_it == callbacks_end)
         return default_error_t{-32601, "Method not found."};
 
-    return callback_it->callback;
+    return *callback_it;
 }
 
 struct parsed_request_t {
