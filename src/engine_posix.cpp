@@ -202,11 +202,11 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     auto json_or_error = strip_http_headers(std::string_view(buffer_ptr, bytes_received));
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
     int bytes_expected = -1;
-    std::string_view content_len = std::get<parsed_request_t>(json_or_error).content_length;
-    auto res = std::from_chars(content_len.begin(), content_len.end(), bytes_expected);
-
+    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+    bytes_expected += (request.body.begin() - buffer_ptr);
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0) {
         close(engine.connection);
         return;
