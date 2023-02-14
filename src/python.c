@@ -258,8 +258,10 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
         PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
         return NULL;
     }
-
-    if (max_cycles == -1) {
+    if (max_cycles == -1 && max_seconds == -1) {
+        while (true)
+            ujrpc_take_call(self->server, self->count_threads);
+    } else if (max_cycles == -1) {
         time_t start, end;
         time(&start);
         while (max_seconds > 0) {
