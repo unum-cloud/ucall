@@ -23,7 +23,6 @@ class CMakeBuild(build_ext):
         if not extension_dir.endswith(os.path.sep):
             extension_dir += os.path.sep
 
-        print("################ ", extension_dir)
         cmake_args = [
             f'-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extension_dir}',
             f'-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={extension_dir}',
