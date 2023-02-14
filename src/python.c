@@ -20,6 +20,13 @@
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
+#define get_attr_safe(name, obj, attr)                                                                                 \
+    PyObject* name = PyObject_GetAttrString(obj, attr);                                                                \
+    if (name == NULL) {                                                                                                \
+        PyErr_SetString(PyExc_TypeError, "Failed to extract attribute: " attr);                                        \
+        return -1;                                                                                                     \
+    }
+
 typedef enum {
     POSITIONAL_ONLY,       //
     POSITIONAL_OR_KEYWORD, //
@@ -29,7 +36,8 @@ typedef enum {
 } py_param_kind_t;
 
 typedef struct {
-    PyObject* name;       // UTF8 String
+    const char* name;     // Name or NULL
+    Py_ssize_t name_len;  // Name Length
     PyObject* value;      // Any or NULL
     PyTypeObject* type;   // Type or NULL
     py_param_kind_t kind; // Kind
@@ -52,21 +60,24 @@ typedef struct {
 } py_server_t;
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
-    // TODO Add safety checks
-    PyObject* func_code = PyObject_GetAttrString(callable, "__code__");
+    get_attr_safe(func_code, callable, "__code__");
+    get_attr_safe(arg_names, func_code, "co_varnames");
+    get_attr_safe(co_flags, func_code, "co_flags");
+    get_attr_safe(co_argcount, func_code, "co_argcount");
+    get_attr_safe(co_posonlyargcount, func_code, "co_posonlyargcount");
+    get_attr_safe(co_kwonlyargcount, func_code, "co_kwonlyargcount");
+    get_attr_safe(varnames, func_code, "co_varnames");
 
-    PyObject* arg_names = PyObject_GetAttrString(func_code, "co_varnames"); // Tuple
-
-    long co_flags = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_flags"));
-    long pos_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_argcount"));
-    long posonly_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_posonlyargcount"));
-    long keyword_only_count = PyLong_AsLong(PyObject_GetAttrString(func_code, "co_kwonlyargcount"));
+    long flags = PyLong_AsLong(co_flags);
+    long pos_count = PyLong_AsLong(co_argcount);
+    long posonly_count = PyLong_AsLong(co_posonlyargcount);
+    long keyword_only_count = PyLong_AsLong(co_kwonlyargcount);
     long pos_default_count = 0;
 
     PyObject* annotations = PyFunction_GetAnnotations(callable); // Dict
 
-    PyObject* defaults = PyObject_GetAttrString(callable, "__defaults__");     // Tuple
-    PyObject* kwdefaults = PyObject_GetAttrString(callable, "__kwdefaults__"); // Dict
+    get_attr_safe(defaults, callable, "__defaults__");
+    get_attr_safe(kwdefaults, callable, "__kwdefaults__");
 
     if (PyTuple_CheckExact(defaults))
         pos_default_count = PyTuple_Size(defaults);
@@ -84,7 +95,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     //     return -1;
     // }
 
-    long total_params = pos_count + (co_flags & CO_VARARGS) + keyword_only_count + (co_flags & CO_VARKEYWORDS);
+    long total_params = pos_count + (flags & CO_VARARGS) + keyword_only_count + (flags & CO_VARKEYWORDS);
     py_param_t* parameters = (py_param_t*)malloc(total_params * sizeof(py_param_t));
 
     size_t param_i = 0;
@@ -92,9 +103,9 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     // Non-keyword-only parameters w/o defaults.
     for (Py_ssize_t i = 0; i < non_default_count; ++i) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, i);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
         param.value = NULL;
-        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
         parameters[param_i++] = param;
     }
@@ -102,18 +113,19 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     //... w / defaults.
     for (Py_ssize_t i = non_default_count; i < pos_count; ++i) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, i);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
         param.value = PyTuple_GetItem(defaults, i - non_default_count);
-        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
         parameters[param_i++] = param;
     }
 
-    if (co_flags & CO_VARARGS) {
+    if (flags & CO_VARARGS) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count);
+        param.name =
+            PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, pos_count + keyword_only_count), &param.name_len);
         param.value = NULL;
-        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = VAR_POSITIONAL;
         parameters[param_i++] = param;
     }
@@ -121,30 +133,29 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     // Keyword - only parameters.
     for (Py_ssize_t i = pos_count; i < pos_count + keyword_only_count; ++i) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, i);
-        param.value = PyDict_GetItem(kwdefaults, param.name);
-        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
+        param.value = PyDict_GetItemString(kwdefaults, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = KEYWORD_ONLY;
         parameters[param_i++] = param;
     }
 
-    if (co_flags & CO_VARKEYWORDS) {
+    if (flags & CO_VARKEYWORDS) {
         py_param_t param;
-        param.name = PyTuple_GetItem(arg_names, pos_count + keyword_only_count + (co_flags & CO_VARARGS));
+        param.name = PyUnicode_AsUTF8AndSize(
+            PyTuple_GetItem(arg_names, pos_count + keyword_only_count + (flags & CO_VARARGS)), &param.name_len);
         param.value = NULL;
-        param.type = (PyTypeObject*)PyDict_GetItem(annotations, param.name);
+        param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = VAR_KEYWORD;
         parameters[param_i++] = param;
     }
 
     wrap->u_params = parameters;
     wrap->params_cnt = total_params;
-    wrap->callable = callable;
     return 0;
 }
 
 static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
-    // TODO Add error checking for `ujrpc_param_named...`
     py_wrapper_t* wrap = (py_wrapper_t*)(user_data);
     PyObject* args = PyTuple_New(wrap->params_cnt);
 
@@ -154,32 +165,35 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
         bool may_have_name = (kind & POSITIONAL_OR_KEYWORD) | (kind & KEYWORD_ONLY) | (kind & VAR_KEYWORD);
         bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
         bool got_named = false;
-        Py_ssize_t name_len = -1;
-        ujrpc_str_t name = "";
-        if (may_have_name)
-            name =
-                PyUnicode_AsUTF8AndSize(wrap->u_params[i].name, &name_len); // TODO do this once in `deduce parameters`;
+        Py_ssize_t name_len = wrap->u_params[i].name_len;
+        ujrpc_str_t name = wrap->u_params[i].name;
 
         if (PyType_IsSubtype(type, &PyBool_Type)) {
             bool res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_bool(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                ujrpc_param_positional_bool(call, i, &res);
+                if (!ujrpc_param_positional_bool(call, i, &res))
+                    ujrpc_call_reply_error_invalid_params(call);
+
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
             Py_ssize_t res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_i64(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                ujrpc_param_positional_i64(call, i, &res);
+                if (!ujrpc_param_positional_i64(call, i, &res))
+                    ujrpc_call_reply_error_invalid_params(call);
+
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
             double res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_f64(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                ujrpc_param_positional_f64(call, i, &res);
+                if (!ujrpc_param_positional_f64(call, i, &res))
+                    ujrpc_call_reply_error_invalid_params(call);
+
             PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
         } else if (PyType_IsSubtype(type, &PyBytes_Type)) {
             // Pass
@@ -189,7 +203,9 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
             if (may_have_pos && !got_named)
-                ujrpc_param_positional_str(call, i, &res, &len);
+                if (!ujrpc_param_positional_str(call, i, &res, &len))
+                    ujrpc_call_reply_error_invalid_params(call);
+
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         }
     }
@@ -210,14 +226,13 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     // Python objects and passes to the original function.
     // The result of that function call must then be returned via
     // the `ujrpc_call_send_content` call.
-    PyObject* procedure;
-    if (!PyArg_ParseTuple(args, "O", &procedure) || !PyCallable_Check(procedure)) {
+    py_wrapper_t wrap;
+    if (!PyArg_ParseTuple(args, "O", &wrap.callable) || !PyCallable_Check(wrap.callable)) {
         PyErr_SetString(PyExc_TypeError, "Need a callable object!");
         return NULL;
     }
 
-    py_wrapper_t wrap;
-    if (prepare_wrapper(procedure, &wrap) != 0)
+    if (prepare_wrapper(wrap.callable, &wrap) != 0)
         return NULL;
 
     if (self->count_added >= self->wrapper_capacity) {
@@ -227,32 +242,47 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
 
     self->wrappers[self->count_added] = wrap;
 
-    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(procedure, "__name__")), wrapper,
+    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
                         &self->wrappers[self->count_added]);
 
-    // TODO: Return handle to the function object, so this function remains usable with a decorator.
-    return Py_None;
+    Py_INCREF(wrap.callable);
+    return wrap.callable;
 }
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
-    Py_ssize_t max_cycles;
-    double max_seconds;
-    // TODO: Make those arguments optional.
+    Py_ssize_t max_cycles = -1;
+    double max_seconds = -1;
     // If none are provided, it is wiser to use the `ujrpc_take_calls`,
     // as it has a more efficient busy-waiting loop implementation.
-    if (!PyArg_ParseTuple(args, "nd", &max_cycles, &max_seconds)) {
+    if (!PyArg_ParseTuple(args, "|nd", &max_cycles, &max_seconds)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
         return NULL;
     }
 
-    time_t start, end;
-    time(&start);
-    while (max_cycles > 0 && max_seconds > 0) {
-        ujrpc_take_call(self->server, self->count_threads);
-        --max_cycles;
-        time(&end);
-        max_seconds -= difftime(end, start);
-        start = end;
+    if (max_cycles == -1) {
+        time_t start, end;
+        time(&start);
+        while (max_seconds > 0) {
+            ujrpc_take_call(self->server, self->count_threads);
+            time(&end);
+            max_seconds -= difftime(end, start);
+            start = end;
+        }
+    } else if (max_seconds == -1) {
+        while (max_cycles > 0) {
+            ujrpc_take_call(self->server, self->count_threads);
+            --max_cycles;
+        }
+    } else {
+        time_t start, end;
+        time(&start);
+        while (max_cycles > 0 && max_seconds > 0) {
+            ujrpc_take_call(self->server, self->count_threads);
+            --max_cycles;
+            time(&end);
+            max_seconds -= difftime(end, start);
+            start = end;
+        }
     }
     return Py_None;
 }
