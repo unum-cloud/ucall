@@ -72,7 +72,7 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
     if (!version.is_string() || version.get_string().value_unsafe() != "2.0")
         return default_error_t{-32600, "The request doesn't specify the 2.0 version."};
 
-    // Check if the shape of the requst is correct:
+    // Check if the shape of the request is correct:
     sj::simdjson_result<sjd::element> id = doc["id"];
     // SIMDJSON will consider a field a `double` even if it is simply convertible to it.
     bool id_invalid = (id.is_double() && !id.is_int64() && !id.is_uint64()) || id.is_object() || id.is_array();
@@ -125,31 +125,31 @@ struct parsed_request_t {
  */
 inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::string_view body) noexcept {
     // A typical HTTP-header may look like this
-    // POST /myservice HTTP/1.1
+    // POST /endpoint HTTP/1.1
     // Host: rpc.example.com
     // Content-Type: application/json
     // Content-Length: ...
     // Accept: application/json
-    parsed_request_t req;
+    constexpr size_t const max_headers_k = 32;
 
-    const size_t header_cnt = 32;
-    const char* method;
-    size_t method_len;
-    const char* path;
-    size_t path_len;
-    int minor_version;
-    phr_header headers[header_cnt];
-    size_t num_headers = header_cnt;
+    parsed_request_t req{};
+    char const* method{};
+    size_t method_len{};
+    char const* path{};
+    size_t path_len{};
+    int minor_version{};
+    phr_header headers[max_headers_k]{};
+    size_t count_headers{max_headers_k};
 
     int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
-                                headers, &num_headers, 0);
+                                headers, &count_headers, 0);
 
     if (res == -2)
         return default_error_t{-2, "Partial HTTP request"};
 
     if (res > 0) {
         req.type = std::string_view(method, method_len);
-        for (std::size_t i = 0; i < header_cnt; ++i) {
+        for (std::size_t i = 0; i < count_headers; ++i) {
             if (headers[i].name_len == 0)
                 continue;
             if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Keep-Alive"))

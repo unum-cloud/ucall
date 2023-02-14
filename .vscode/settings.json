@@ -103,8 +103,10 @@
         "endregion",
         "fastapi",
         "iovecs",
+        "numpy",
         "posix",
         "simdjson",
+        "tqdm",
         "ujrpc",
         "uvicorn"
     ]
