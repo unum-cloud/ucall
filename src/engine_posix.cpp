@@ -356,8 +356,8 @@ void ujrpc_free(ujrpc_server_t server) {
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
     if (!body_len)
         body_len = std::strlen(body);
@@ -388,8 +388,8 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
     if (!note_len)
         note_len = std::strlen(note);
