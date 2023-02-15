@@ -10,6 +10,12 @@ namespace unum::ujrpc {
 /// `iovec`-s to pass to the kernel.
 static constexpr std::size_t iovecs_for_content_k = 5;
 static constexpr std::size_t iovecs_for_error_k = 7;
+/// @brief JSON-RPC can be transmitted over HTTP, meaning that we
+/// must return headers with the Status Code, Content Type, and,
+/// most importantly, the Content Length, as well as some padding
+/// afterwards. Expected response headers are:
+/// https://stackoverflow.com/a/25586633/2766161
+static constexpr std::size_t iovecs_for_http_headers_k = 3;
 
 void fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
                        bool append_comma = false) {
