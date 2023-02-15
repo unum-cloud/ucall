@@ -296,6 +296,7 @@ static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) { return 0;
 
 static PyMethodDef server_methods[] = {
     {"add_procedure", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"route", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
     {"run", (PyCFunction)&server_run, METH_VARARGS,
      PyDoc_STR("Runs the server for N calls or T seconds, before returning")},
     {NULL},
