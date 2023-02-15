@@ -88,7 +88,7 @@ class ClientTCP:
         self.port = port
         self.sock = None
         self.payload = ''.join(random.choices(
-            string.ascii_uppercase, k=8000))
+            string.ascii_uppercase, k=80))
 
     def __call__(self, **kwargs) -> int:
         self.send(**kwargs)

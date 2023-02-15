@@ -461,8 +461,8 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
 
     body_len = string_length(body, body_len);
@@ -475,8 +475,8 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
 
     note_len = string_length(note, note_len);
@@ -619,8 +619,8 @@ void automata_t::raise_call() noexcept {
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    named_callback_t call_data = std::get<named_callback_t>(callback_or_error);
-    return call_data.callback(this, call_data.callback_data);
+    named_callback_t named_callback = std::get<named_callback_t>(callback_or_error);
+    return named_callback.callback(this, named_callback.callback_data);
 }
 
 void automata_t::raise_call_or_calls() noexcept {
@@ -631,16 +631,21 @@ void automata_t::raise_call_or_calls() noexcept {
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() == sj::CAPACITY)
         return ujrpc_call_reply_error_out_of_memory(this);
-    if (one_or_many.error() != sj::SUCCESS)
-        return ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
 
-    // The major difference between batch and single-request paths is that
-    // in the first case we need to keep a copy of the data somewhere,
-    // until answers to all requests are accumulated and we can submit them
-    // simultaneously.
-    // Linux supports `MSG_MORE` flag for submissions, which could have helped,
-    // but it is less effective than assembling a copy here.
-    if (one_or_many.is_array()) {
+    // We may need to prepend the response with HTTP headers.
+    constexpr char const* http_header_k =
+        "HTTP 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
+    constexpr std::size_t http_header_size_k = 82;
+    constexpr std::size_t http_header_length_offset_k = 31;
+    constexpr std::size_t http_header_length_capacity_k = 9;
+    if (scratch.is_http)
+        pipes.append_reserved(http_header_k, http_header_size_k);
+
+    if (one_or_many.error() != sj::SUCCESS)
+        ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
+
+    // Check if we hve received a batch request.
+    else if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array().value_unsafe();
         scratch.is_batch = true;
 
@@ -655,7 +660,9 @@ void automata_t::raise_call_or_calls() noexcept {
         // Replace the last comma with the closing bracket.
         pipes.output_pop_back();
         pipes.push_back_reserved(']');
-    } else {
+    }
+    // This is a single request
+    else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value_unsafe();
         raise_call();
@@ -664,21 +671,35 @@ void automata_t::raise_call_or_calls() noexcept {
         if (pipes.has_outputs())
             pipes.output_pop_back();
     }
+
+    // Now, as we know the length of the whole response, we can update
+    // the HTTP headers to indicate thr real "Content-Length".
+    if (scratch.is_http) {
+        auto output = pipes.output_span();
+        std::size_t body_size = output.size() - http_head_size_k;
+        // TODO: shift forward over remaining X symbols, and leave whitespace before.
+        std::to_chars_result res =
+            std::to_chars(output.begin() + http_header_length_offset_k,
+                          output.begin() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
+        if (res.ec != std::errc())
+            return ujrpc_call_reply_error_out_of_memory(this);
+    }
 }
 
 void automata_t::parse_and_raise_request() noexcept {
     auto request = connection.pipes.input_span();
-    auto json_or_error = strip_http_headers(request);
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+    auto parsed_request_or_error = split_body_headers(request);
+    if (auto error_ptr = std::get_if<default_error_t>(&parsed_request_or_error); error_ptr)
+        // TODO: This Error message may have to be wrapped into an HTTP header separately
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    auto parsed_request = std::get<parsed_request_t>(json_or_error);
+    auto parsed_request = std::get<parsed_request_t>(parsed_request_or_error);
     scratch.is_http = request.size() != parsed_request.body.size();
     scratch.dynamic_packet = parsed_request.body;
     if (scratch.dynamic_packet.size() > ram_page_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
-            ujrpc_call_reply_error_out_of_memory(this);
+            return ujrpc_call_reply_error_out_of_memory(this);
         else {
             scratch.dynamic_parser = &parser;
             return raise_call_or_calls();

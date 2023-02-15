@@ -114,6 +114,13 @@ class exchange_pipes_t {
             output_.embedded[output_.embedded_used++] = c;
     }
 
+    void append_reserved(char const* c, std::size_t n) noexcept {
+        if (output_.dynamic.size())
+            output_.dynamic.append_n(c, n);
+        else
+            std::memcpy(output_.embedded + output_.embedded_used, c, n), output_.embedded_used += n;
+    }
+
 #pragma endregion
 };
 

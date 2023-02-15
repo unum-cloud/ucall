@@ -123,7 +123,7 @@ struct parsed_request_t {
  * @brief Analyzes the contents of the packet, bifurcating pure JSON-RPC from HTTP1-based.
  * @warning This doesn't check the headers for validity or additional metadata.
  */
-inline std::variant<parsed_request_t, default_error_t> strip_http_headers(std::string_view body) noexcept {
+inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::string_view body) noexcept {
     // A typical HTTP-header may look like this
     // POST /endpoint HTTP/1.1
     // Host: rpc.example.com
