@@ -22,7 +22,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -fsanitize=address")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 # Check if we are running on Linux
@@ -81,7 +81,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
     SOURCE_DIR ${PICOHTTP_DIR}
     CONFIGURE_COMMAND echo Configuring PicoHTTPParse
-    BUILD_COMMAND cd ${PICOHTTP_DIR} && ${CMAKE_C_COMPILER} -c -fPIC picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
+    BUILD_COMMAND cd ${PICOHTTP_DIR} && ${CMAKE_C_COMPILER} -O3 -c -fPIC picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
@@ -93,6 +93,28 @@ set_property(TARGET picohttp_internal
 )
 include_directories(${PICOHTTP_DIR})
 set(PICOHTTP_LIBS picohttp_internal)
+
+set(FASTBASE64_DIR ${CMAKE_BINARY_DIR}/_deps/fastbase64-ep)
+ExternalProject_Add(
+    fastbase64-ep
+    GIT_REPOSITORY https://github.com/lemire/fastbase64
+    PREFIX ${CMAKE_BINARY_DIR}/_deps/
+    SOURCE_DIR ${FASTBASE64_DIR}
+    CONFIGURE_COMMAND echo Configuring FastBase64
+    BUILD_COMMAND cd ${FASTBASE64_DIR} && make && ar rcs libfastbase64.a fastavxbase64.o chromiumbase64.o klompavxbase64.o
+    INSTALL_COMMAND ""
+    UPDATE_COMMAND ""
+)
+add_library(fastbase64_internal STATIC IMPORTED GLOBAL)
+add_dependencies(fastbase64_internal fastbase64-ep)
+set_property(TARGET fastbase64_internal
+    PROPERTY IMPORTED_LOCATION
+    ${FASTBASE64_DIR}/libfastbase64.a
+)
+include_directories(${FASTBASE64_DIR}/include)
+set(FASTBASE64_LIBS fastbase64_internal)
+
+
 
 if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
@@ -151,5 +173,5 @@ find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 Python3_add_library(py_ujrpc src/python.c)
 target_include_directories(py_ujrpc PUBLIC src/ include/)
-target_link_libraries(py_ujrpc PRIVATE ujrpc_server_posix)
+target_link_libraries(py_ujrpc PRIVATE ujrpc_server_posix ${FASTBASE64_LIBS})
 set_target_properties(py_ujrpc PROPERTIES OUTPUT_NAME ujrpc)

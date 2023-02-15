@@ -3,7 +3,7 @@ import json
 import requests
 
 import pytest
-
+import base64
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
@@ -62,6 +62,19 @@ class ClientGeneric:
 
     def __call__(self, jsonrpc: object) -> object:
         return requests.post(self.url, json=jsonrpc).json()
+
+
+def test_transform():
+    client = ClientGeneric()
+    identity = 'This is an identity'
+    response = client({
+        'method': 'transform',
+        'params': {'age': 20, 'name': 'Eager', 'value': 3, 'identity': base64.b64encode(identity.encode()).decode()},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    new_id = base64.b64decode(response['val']['identity']).decode()
+    assert new_id == identity + f'_Eager'
 
 
 def test_normal():

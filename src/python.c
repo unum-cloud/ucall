@@ -17,6 +17,8 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include <fastavxbase64.h>
+
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
@@ -173,8 +175,10 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_bool(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_bool(call, i, &res))
+                if (!ujrpc_param_positional_bool(call, i, &res)) {
                     ujrpc_call_reply_error_invalid_params(call);
+                    return;
+                }
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
@@ -182,8 +186,10 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_i64(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_i64(call, i, &res))
+                if (!ujrpc_param_positional_i64(call, i, &res)) {
                     ujrpc_call_reply_error_invalid_params(call);
+                    return;
+                }
 
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
@@ -191,26 +197,45 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_f64(call, name, name_len, &res);
             if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_f64(call, i, &res))
+                if (!ujrpc_param_positional_f64(call, i, &res)) {
                     ujrpc_call_reply_error_invalid_params(call);
+                    return;
+                }
 
             PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
         } else if (PyType_IsSubtype(type, &PyBytes_Type)) {
-            // Pass
+            ujrpc_str_t res;
+            size_t len;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
+            if (may_have_pos && !got_named)
+                if (!ujrpc_param_positional_str(call, i, &res, &len)) {
+                    ujrpc_call_reply_error_invalid_params(call);
+                    return;
+                }
+
+            len = fast_avx2_base64_decode(res, res, len);
+            PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
             ujrpc_str_t res;
             size_t len;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
             if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_str(call, i, &res, &len))
+                if (!ujrpc_param_positional_str(call, i, &res, &len)) {
                     ujrpc_call_reply_error_invalid_params(call);
+                    return;
+                }
 
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         }
     }
 
     PyObject* response = PyObject_CallObject(wrap->callable, args);
+    if (response == NULL) {
+        ujrpc_call_reply_error_unknown(call);
+        return;
+    }
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     size_t len = 0;
@@ -245,6 +270,7 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
                         &self->wrappers[self->count_added]);
 
+    ++self->count_added;
     Py_INCREF(wrap.callable);
     return wrap.callable;
 }
