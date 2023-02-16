@@ -7,6 +7,7 @@
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
+#include <sys/ioctl.h>
 #include <sys/socket.h> // `recv`, `setsockopt`
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -197,25 +198,29 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
     auto buffer_ptr = &engine.packet_buffer[0];
-    size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_size_k, MSG_PEEK);
+    // size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_size_k, MSG_PEEK);
 
-    auto json_or_error = strip_http_headers(std::string_view(buffer_ptr, bytes_received));
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
-    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+    // auto json_or_error = strip_http_headers(std::string_view(buffer_ptr, bytes_received));
+    // if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+    //     return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+    // parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
-    int bytes_expected = -1;
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - buffer_ptr);
-    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0) {
+    size_t bytes_expected = 0;
+    if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1) {
         close(engine.connection);
         return;
     }
+    // auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+    // bytes_expected += (request.body.begin() - buffer_ptr);
+    // if (res.ec == std::errc::invalid_argument || bytes_expected <= 0) {
+    //     close(engine.connection);
+    //     return;
+    // }
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
-        bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
+        size_t bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -230,7 +235,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
-        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
+        size_t bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -420,8 +425,9 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         std::memcpy(code_and_node, code, code_len);
         std::memcpy(code_and_node + code_len, note, note_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = code_and_node;
-        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id, //
-                        std::string_view(code_and_node, code_len),                                                    //
+        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count,
+                        scratch.dynamic_id,                        //
+                        std::string_view(code_and_node, code_len), //
                         std::string_view(code_and_node + code_len, note_len), true);
         engine.batch_response.iovecs_count += iovecs_for_error_k;
     }
