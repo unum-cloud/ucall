@@ -352,18 +352,20 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static char const* keywords_list[] = {"port", "queue_depth", "max_callbacks", "batch_capacity"};
-    Py_ssize_t port = 0, queue_depth = 0, max_callbacks = UINT64_MAX, batch_capacity = UINT64_MAX;
-    char const* dtype = NULL;
-    char const* metric = NULL;
+    static char const* keywords_list[] = {"interface", "port", "queue_depth", "max_callbacks", "max_threads"};
+    self->config.interface = "0.0.0.0";
+    self->config.port = 8545;
+    self->config.queue_depth = 16;
+    self->config.max_callbacks = UINT16_MAX;
+    self->config.max_threads = 16;
+    self->config.max_concurrent_connections = 1024;
+    self->config.max_lifetime_exchanges = 512;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "nn|nss", (char**)keywords_list, //
-                                     &port, &queue_depth, &max_callbacks, &batch_capacity, &dtype, &metric))
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnn", (char**)keywords_list, //
+                                     &self->config.interface, &self->config.port, &self->config.queue_depth,
+                                     &self->config.max_callbacks, &self->config.max_threads))
         return -1;
 
-    self->config.port = port;
-    self->config.queue_depth = queue_depth;
-    self->config.max_callbacks = max_callbacks;
     self->count_threads = 1;
     self->wrapper_capacity = 16;
     self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
