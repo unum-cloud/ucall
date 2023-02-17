@@ -160,6 +160,8 @@ struct alignas(align_k) connection_t {
     /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
     std::optional<std::string_view> content_type{};
 
+    connection_t() noexcept {}
+
     bool expired() const noexcept;
     void reset() noexcept;
 
