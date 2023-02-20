@@ -47,6 +47,7 @@
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
+#include <sys/ioctl.h>
 #include <sys/mman.h>   // `mmap`
 #include <sys/socket.h> // `recv`, `setsockopt`
 #include <sys/types.h>
@@ -895,6 +896,10 @@ void automata_t::operator()() noexcept {
 
     if (is_corrupted())
         return close_gracefully();
+
+    size_t bytes_expected = 0;
+    if (ioctl(connection.descriptor, FIONREAD, &bytes_expected) != -1)
+        connection.content_length = bytes_expected;
 
     switch (connection.stage) {
 
