@@ -64,8 +64,8 @@ template <typename element_at> class buffer_gt {
         elements_ = (element_at*)std::malloc(sizeof(element_at) * n);
         if (!elements_)
             return false;
-        std::uninitialized_default_construct(elements_, elements_ + capacity_);
         capacity_ = n;
+        std::uninitialized_default_construct(elements_, elements_ + capacity_);
         return true;
     }
     ~buffer_gt() noexcept {

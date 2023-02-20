@@ -1,7 +1,7 @@
 import ujrpc
 import random
 
-server = ujrpc.Server(8545, 1)
+server = ujrpc.Server(port=8545)
 
 
 @server.route
