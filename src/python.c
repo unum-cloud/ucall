@@ -285,20 +285,19 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
         return NULL;
     }
     if (max_cycles == -1 && max_seconds == -1) {
-        while (true)
-            ujrpc_take_call(self->server, self->count_threads);
+        ujrpc_take_calls(self->server, 0);
     } else if (max_cycles == -1) {
         time_t start, end;
         time(&start);
         while (max_seconds > 0) {
-            ujrpc_take_call(self->server, self->count_threads);
+            ujrpc_take_call(self->server, 0);
             time(&end);
             max_seconds -= difftime(end, start);
             start = end;
         }
     } else if (max_seconds == -1) {
         while (max_cycles > 0) {
-            ujrpc_take_call(self->server, self->count_threads);
+            ujrpc_take_call(self->server, 0);
             --max_cycles;
         }
     } else {
@@ -352,21 +351,22 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static char const* keywords_list[] = {"interface", "port", "queue_depth", "max_callbacks", "max_threads"};
+    static char const* keywords_list[] = {"interface",     "port",        "queue_depth",
+                                          "max_callbacks", "max_threads", "count_threads"};
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
-    self->config.queue_depth = 16;
+    self->config.queue_depth = 4096;
     self->config.max_callbacks = UINT16_MAX;
     self->config.max_threads = 16;
     self->config.max_concurrent_connections = 1024;
-    self->config.max_lifetime_exchanges = 512;
+    self->config.max_lifetime_exchanges = UINT32_MAX;
+    self->count_threads = 1;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnn", (char**)keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
                                      &self->config.interface, &self->config.port, &self->config.queue_depth,
-                                     &self->config.max_callbacks, &self->config.max_threads))
+                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
         return -1;
 
-    self->count_threads = 1;
     self->wrapper_capacity = 16;
     self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
 
