@@ -71,13 +71,13 @@ struct stats_t {
             R"( {"add":%zu,"close":%zu,"recv_bytes":%zu,"sent_bytes":%zu,"recv_packs":%zu,"sent_packs":%zu} \n )";
         auto len = snprintf(         //
             buffer, buffer_capacity, //
-            format,
-            added_connections,  //
-            closed_connections, //
-            bytes_received,     //
-            bytes_sent,         //
-            packets_received,   //
-            packets_sent        //
+            format,                  //
+            added_connections,       //
+            closed_connections,      //
+            bytes_received,          //
+            bytes_sent,              //
+            packets_received,        //
+            packets_sent             //
         );
         return static_cast<std::size_t>(len);
     }

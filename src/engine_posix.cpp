@@ -156,7 +156,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
 
 void forward_packet(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
-    auto json_or_error = strip_http_headers(scratch.dynamic_packet);
+    auto json_or_error = split_body_headers(scratch.dynamic_packet);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
@@ -200,7 +200,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     auto buffer_ptr = &engine.packet_buffer[0];
     // size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_size_k, MSG_PEEK);
 
-    // auto json_or_error = strip_http_headers(std::string_view(buffer_ptr, bytes_received));
+    // auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
     // if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
     //     return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
     // parsed_request_t request = std::get<parsed_request_t>(json_or_error);
@@ -361,8 +361,8 @@ void ujrpc_free(ujrpc_server_t server) {
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
     if (!body_len)
         body_len = std::strlen(body);
@@ -393,8 +393,8 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
+    // No response is needed for "id"-less notifications.
     if (scratch.dynamic_id.empty())
-        // No response is needed for "id"-less notifications.
         return;
     if (!note_len)
         note_len = std::strlen(note);

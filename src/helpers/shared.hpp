@@ -44,13 +44,33 @@ struct named_callback_t {
     ujrpc_data_t callback_data{};
 };
 
+template <typename element_at> class span_gt {
+    element_at* begin_{};
+    element_at* end_{};
+
+  public:
+    span_gt(element_at* b, element_at* e) noexcept : begin_(b), end_(e) {}
+    span_gt(span_gt&&) = delete;
+    span_gt(span_gt const&) = delete;
+    span_gt& operator=(span_gt const&) = delete;
+
+    [[nodiscard]] element_at const* data() const noexcept { return begin_; }
+    [[nodiscard]] element_at* data() noexcept { return begin_; }
+    [[nodiscard]] element_at* begin() noexcept { return begin_; }
+    [[nodiscard]] element_at* end() noexcept { return end_; }
+    [[nodiscard]] std::size_t size() const noexcept { return end_ - begin_; }
+    [[nodiscard]] element_at& operator[](std::size_t i) noexcept { return begin_[i]; }
+    [[nodiscard]] element_at const& operator[](std::size_t i) const noexcept { return begin_[i]; }
+    operator std::basic_string_view<element_at>() const noexcept { return {data(), size()}; }
+};
+
 template <typename element_at> class buffer_gt {
     element_at* elements_{};
     std::size_t capacity_{};
     static_assert(std::is_nothrow_default_constructible<element_at>());
 
   public:
-    buffer_gt() = default;
+    buffer_gt() noexcept = default;
     buffer_gt(buffer_gt&&) = delete;
     buffer_gt(buffer_gt const&) = delete;
     buffer_gt& operator=(buffer_gt const&) = delete;
@@ -137,7 +157,7 @@ template <typename element_at> class array_gt {
     [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
     [[nodiscard]] element_at& operator[](std::size_t i) noexcept { return elements_[i]; }
 
-    void push_back_reserved(element_at&& element) noexcept { new (elements_ + count_++) element_at(element); }
+    void push_back_reserved(element_at element) noexcept { new (elements_ + count_++) element_at(std::move(element)); }
     void pop_back(std::size_t n = 1) noexcept { count_ -= n; }
     [[nodiscard]] bool append_n(element_at const* elements, std::size_t n) noexcept {
         if (!reserve(size() + n))
