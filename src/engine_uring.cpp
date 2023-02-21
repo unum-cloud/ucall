@@ -659,12 +659,14 @@ void automata_t::raise_call_or_calls() noexcept {
 
     // We may need to prepend the response with HTTP headers.
     constexpr char const* http_header_k =
-        "HTTP 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
-    constexpr std::size_t http_header_size_k = 82;
-    constexpr std::size_t http_header_length_offset_k = 31;
+        "HTTP/1.1 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
+    constexpr std::size_t http_header_size_k = 78;
+    constexpr std::size_t http_header_length_offset_k = 33;
     constexpr std::size_t http_header_length_capacity_k = 9;
     if (scratch.is_http)
         pipes.append_reserved(http_header_k, http_header_size_k);
+
+    size_t body_size = pipes.output_span().size();
 
     if (one_or_many.error() != sj::SUCCESS)
         ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
@@ -701,11 +703,13 @@ void automata_t::raise_call_or_calls() noexcept {
     // the HTTP headers to indicate thr real "Content-Length".
     if (scratch.is_http) {
         auto output = pipes.output_span();
-        std::size_t body_size = output.size() - http_head_size_k;
-        // TODO: shift forward over remaining X symbols, and leave whitespace before.
+        body_size = output.size() - body_size;
+        size_t len = snprintf(NULL, 0, "%lu", body_size);
+        size_t empty_cnt = http_header_length_capacity_k - len;
         std::to_chars_result res =
             std::to_chars(output.begin() + http_header_length_offset_k,
                           output.begin() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
+        std::memset(output.begin() + http_header_length_offset_k + len, ' ', empty_cnt);
         if (res.ec != std::errc())
             return ujrpc_call_reply_error_out_of_memory(this);
     }
@@ -876,7 +880,7 @@ void automata_t::send_next() noexcept {
         io_uring_prep_send(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
                            pipes.next_output_length(), 0);
         uring_sqe->flags |= IOSQE_FIXED_FILE;
-        // uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u; Not required?
+        uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u;
     }
     io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, 0);
@@ -926,7 +930,7 @@ void automata_t::operator()() noexcept {
         return close_gracefully();
 
     size_t bytes_expected = 0;
-    if (ioctl(connection.descriptor, FIONREAD, &bytes_expected) != -1)
+    if (ioctl(connection.descriptor, FIONREAD, &bytes_expected) != -1) // TODO is `io_uring_cmd` able to replace this.
         connection.content_length = bytes_expected;
 
     switch (connection.stage) {

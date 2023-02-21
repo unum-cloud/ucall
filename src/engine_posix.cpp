@@ -198,7 +198,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
     auto buffer_ptr = &engine.packet_buffer[0];
-    // size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_size_k, MSG_PEEK);
+    // size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
 
     // auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
     // if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)

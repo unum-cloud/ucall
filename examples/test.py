@@ -85,7 +85,7 @@ def test_normal():
         'jsonrpc': '2.0',
         'id': 100,
     })
-    assert response == 4
+    assert response['result'] == 4
 
 
 def test_notification():

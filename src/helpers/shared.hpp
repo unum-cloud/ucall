@@ -20,7 +20,7 @@ namespace unum::ujrpc {
 /// for every connection we keep a tiny embedded buffer of this capacity.
 static constexpr std::size_t ram_page_size_k = 4096;
 /// @brief  Expected max length of http headers
-static constexpr std::size_t http_head_size_k = 1024;
+static constexpr std::size_t http_head_max_size_k = 1024;
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.
