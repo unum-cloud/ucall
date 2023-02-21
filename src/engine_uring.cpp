@@ -84,6 +84,7 @@ static constexpr std::size_t sleep_growth_factor_k{4};
 static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
 static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
 static constexpr descriptor_t invalid_descriptor_k{-1};
+static bool has_send_zc = false;
 
 struct completed_event_t;
 struct connection_t;
@@ -274,6 +275,23 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 #pragma endregion Cpp Declaration
 #pragma region C Definitions
 
+bool io_check_send_zc(struct io_uring* ring) {
+    struct io_uring_probe* probe;
+    int ret = -1;
+    bool res = false;
+
+    probe = (io_uring_probe*)calloc(1, sizeof(*probe) + 256 * sizeof(struct io_uring_probe_op));
+
+    if (probe)
+        ret = io_uring_register_probe(ring, probe, 256);
+
+    if (ret == 0)
+        res = probe->ops_len > IORING_OP_SEND_ZC; // Available since 6.0.
+
+    free(probe);
+    return res;
+}
+
 void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
 
     // Simple sanity check
@@ -379,12 +397,16 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     socket_descriptor = uring_cqe->res;
     if (socket_descriptor < 0)
         goto cleanup;
+    // Not sure if this is required, after we have a kernel with `IORING_OP_SENDMSG_ZC` support, we can check.
+    // if (setsockopt(socket_descriptor, SOL_SOCKET, SO_ZEROCOPY, &socket_options, sizeof(socket_options)) == -1)
+    //     goto cleanup;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
 
     // Initialize all the members.
+    has_send_zc = io_check_send_zc(&uring);
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{socket_descriptor};
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
@@ -844,12 +866,18 @@ void automata_t::send_next() noexcept {
     pipes.release_inputs();
 
     // TODO: Test and benchmark the `send_zc option`.
-    // io_uring_prep_send_zc(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-    //                       pipes.next_output_length(), 0, 0);
     engine.submission_mutex.lock();
     uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_write_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-                              pipes.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
+    if (has_send_zc) {
+        io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
+                                    pipes.next_output_length(), 0, 0,
+                                    engine.connections.offset_of(connection) * 2u + 1u);
+    } else {
+        io_uring_prep_send(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
+                           pipes.next_output_length(), 0);
+        uring_sqe->flags |= IOSQE_FIXED_FILE;
+        // uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u; Not required?
+    }
     io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);

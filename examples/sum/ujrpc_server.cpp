@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     config.max_threads = result["threads"].as<int>();
     config.max_concurrent_connections = 1024;
     config.queue_depth = 4096 * config.max_threads;
-    config.max_lifetime_exchanges = 512;
+    config.max_lifetime_exchanges = UINT32_MAX;
     config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : STDOUT_FILENO;
     config.logs_format = "human";
 
