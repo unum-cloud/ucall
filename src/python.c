@@ -174,33 +174,30 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             bool res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_bool(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_bool(call, i, &res)) {
-                    ujrpc_call_reply_error_invalid_params(call);
-                    return;
-                }
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_bool(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
             Py_ssize_t res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_i64(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_i64(call, i, &res)) {
-                    ujrpc_call_reply_error_invalid_params(call);
-                    return;
-                }
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_i64(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
             double res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_f64(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_f64(call, i, &res)) {
-                    ujrpc_call_reply_error_invalid_params(call);
-                    return;
-                }
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_f64(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
         } else if (PyType_IsSubtype(type, &PyBytes_Type)) {
@@ -208,11 +205,10 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             size_t len;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_str(call, i, &res, &len)) {
-                    ujrpc_call_reply_error_invalid_params(call);
-                    return;
-                }
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_str(call, i, &res, &len))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             len = fast_avx2_base64_decode(res, res, len);
             PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
@@ -221,21 +217,19 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             size_t len;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_str(call, i, &res, &len)) {
-                    ujrpc_call_reply_error_invalid_params(call);
-                    return;
-                }
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_str(call, i, &res, &len))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         }
     }
 
     PyObject* response = PyObject_CallObject(wrap->callable, args);
-    if (response == NULL) {
-        ujrpc_call_reply_error_unknown(call);
-        return;
-    }
+    if (response == NULL)
+        return ujrpc_call_reply_error_unknown(call);
+
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     size_t len = 0;
