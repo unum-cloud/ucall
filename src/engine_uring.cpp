@@ -84,7 +84,6 @@ static constexpr std::size_t sleep_growth_factor_k{4};
 static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
 static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
 static constexpr descriptor_t invalid_descriptor_k{-1};
-static bool has_send_zc = false;
 
 struct completed_event_t;
 struct connection_t;
@@ -198,6 +197,8 @@ struct memory_map_t {
 };
 
 struct engine_t {
+    static bool const has_send_zc_k;
+
     descriptor_t socket{};
     struct io_uring uring {};
 
@@ -232,6 +233,19 @@ struct engine_t {
 
     template <std::size_t max_count_ak> std::size_t pop_completed(completed_event_t*) noexcept;
 };
+
+bool io_check_send_zc() {
+    io_uring_probe* probe = io_uring_get_probe();
+
+    bool res = false;
+    if (probe)
+        res = io_uring_opcode_supported(probe, IORING_OP_SEND_ZC); // Available since 6.0.
+
+    io_uring_free_probe(probe);
+    return res;
+}
+
+bool const engine_t::has_send_zc_k = io_check_send_zc();
 
 struct automata_t {
 
@@ -274,23 +288,6 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 
 #pragma endregion Cpp Declaration
 #pragma region C Definitions
-
-bool io_check_send_zc(struct io_uring* ring) {
-    struct io_uring_probe* probe;
-    int ret = -1;
-    bool res = false;
-
-    probe = (io_uring_probe*)calloc(1, sizeof(*probe) + 256 * sizeof(struct io_uring_probe_op));
-
-    if (probe)
-        ret = io_uring_register_probe(ring, probe, 256);
-
-    if (ret == 0)
-        res = probe->ops_len > IORING_OP_SEND_ZC; // Available since 6.0.
-
-    free(probe);
-    return res;
-}
 
 void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
 
@@ -406,7 +403,6 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         goto cleanup;
 
     // Initialize all the members.
-    has_send_zc = io_check_send_zc(&uring);
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{socket_descriptor};
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
@@ -872,7 +868,7 @@ void automata_t::send_next() noexcept {
     // TODO: Test and benchmark the `send_zc option`.
     engine.submission_mutex.lock();
     uring_sqe = io_uring_get_sqe(&engine.uring);
-    if (has_send_zc) {
+    if (engine.has_send_zc_k) {
         io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
                                     pipes.next_output_length(), 0, 0,
                                     engine.connections.offset_of(connection) * 2u + 1u);
