@@ -59,22 +59,28 @@ class ClientHTTP:
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
+        self.response = None
+        self.expected = 0
         self.url = f'http://{uri}:{port}/'
         self.payload = ''.join(random.choices(
             string.ascii_uppercase, k=80))
 
-    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+    def send(self, a: Optional[int] = None, b: Optional[int] = None) -> int:
 
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
-        expected = a + b
-        response = requests.post(self.url, json=jsonrpc).json()
+        json_str = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
+        jsonrpc = json.loads(json_str)
+        self.expected = a + b
+        self.response = requests.post(self.url, json=jsonrpc)
+
+    def recv(self):
+        response = self.response.json()
         received = response['result']
 
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong sum'
         return received
 
 
@@ -123,19 +129,24 @@ class ClientHTTPBatches:
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
+        self.response = None
+        self.expected = None
         self.url = f'http://{uri}:{port}/'
         self.payload = ''.join(random.choices(
             string.ascii_uppercase, k=80))
 
-    def __call__(self, a: List[int], b: List[int]) -> int:
-        expected = [ai + bi for ai, bi in zip(a, b)]
-        jsonrpc = [
+    def send(self, a: List[int], b: List[int]) -> int:
+        self.expected = [ai + bi for ai, bi in zip(a, b)]
+        json_str = [
             REQUEST_BIG_PATTERN % (self.identity, ai, bi, self.payload)
             for ai, bi in zip(a, b)]
-        jsonrpc = '[%s]' % ','.join(jsonrpc)
-        response = requests.post(self.url, json=jsonrpc).json()
+        jsonrpc = '[%s]' % ','.join(json_str)
+        self.response = requests.post(self.url, json=jsonrpc.encode())
+
+    def recv(self):
+        response = self.response.json()
         received = [ri['result'] for ri in response]
 
         assert response['jsonrpc']
-        assert expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong sum'
         return received
