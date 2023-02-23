@@ -624,12 +624,29 @@ bool automata_t::should_release() const noexcept {
 }
 
 bool automata_t::received_full_request() const noexcept {
-    if (connection.content_length)
-        if (connection.pipes.input_span().size() < *connection.content_length)
-            return false;
 
-    // TODO: If we don't have explicit information about the expected length,
-    // we may attempt parsing it to check if the received chunk is a valid document.
+    auto span = connection.pipes.input_span();
+    if (!connection.content_length) {
+        size_t bytes_expected = 0;
+
+        auto json_or_error = split_body_headers(std::string_view(span.data(), span.size()));
+        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+            return true;
+        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+
+        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+        bytes_expected += (request.body.begin() - span.data());
+
+        if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+            // Maybe not a HTTP request
+            ioctl(connection.descriptor, FIONREAD, &bytes_expected);
+
+        connection.content_length = bytes_expected;
+    }
+
+    if (span.size() < *connection.content_length)
+        return false;
+
     return true;
 }
 
@@ -924,10 +941,6 @@ void automata_t::operator()() noexcept {
 
     if (is_corrupted())
         return close_gracefully();
-
-    size_t bytes_expected = 0;
-    if (ioctl(connection.descriptor, FIONREAD, &bytes_expected) != -1) // TODO is `io_uring_cmd` able to replace this.
-        connection.content_length = bytes_expected;
 
     switch (connection.stage) {
 
