@@ -688,8 +688,10 @@ void automata_t::raise_call_or_calls() noexcept {
         scratch.tree = one_or_many.value_unsafe();
         raise_call();
 
-        // Drop the last comma, if present.
-        if (pipes.has_outputs() && !scratch.dynamic_id.empty())
+        if (scratch.dynamic_id.empty()) {
+            pipes.push_back_reserved('{');
+            pipes.push_back_reserved('}');
+        } else if (pipes.has_outputs()) // Drop the last comma, if present.
             pipes.output_pop_back();
     }
 
