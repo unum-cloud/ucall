@@ -17,7 +17,7 @@ static void sum(ujrpc_call_t call, ujrpc_data_t) {
     bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
     bool got_b = ujrpc_param_named_i64(call, "b", 0, &b);
     if (!got_a || !got_b)
-        return ujrpc_call_reply_error(call, 1, "Missing integer argument a and/or b", 0);
+        return ujrpc_call_reply_error_invalid_params(call);
 
     std::to_chars_result print = std::to_chars(&c_str[0], &c_str[0] + sizeof(c_str), a + b, 10);
     ujrpc_call_reply_content(call, &c_str[0], print.ptr - &c_str[0]);
