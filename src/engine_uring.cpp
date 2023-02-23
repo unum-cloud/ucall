@@ -197,10 +197,9 @@ struct memory_map_t {
 };
 
 struct engine_t {
-    static bool const has_send_zc_k;
-
     descriptor_t socket{};
     struct io_uring uring {};
+    bool has_send_zc{};
 
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};
@@ -234,18 +233,16 @@ struct engine_t {
     template <std::size_t max_count_ak> std::size_t pop_completed(completed_event_t*) noexcept;
 };
 
-bool io_check_send_zc() {
+bool io_check_send_zc() noexcept {
     io_uring_probe* probe = io_uring_get_probe();
+    if (!probe)
+        return false;
 
-    bool res = false;
-    if (probe)
-        res = io_uring_opcode_supported(probe, IORING_OP_SEND_ZC); // Available since 6.0.
-
+    // Available since 6.0.
+    bool res = io_uring_opcode_supported(probe, IORING_OP_SEND_ZC);
     io_uring_free_probe(probe);
     return res;
 }
-
-bool const engine_t::has_send_zc_k = io_check_send_zc();
 
 struct automata_t {
 
@@ -411,6 +408,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
     server_ptr->uring = uring;
+    server_ptr->has_send_zc = io_check_send_zc();
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     *server_out = (ujrpc_server_t)server_ptr;
@@ -868,7 +866,7 @@ void automata_t::send_next() noexcept {
     // TODO: Test and benchmark the `send_zc option`.
     engine.submission_mutex.lock();
     uring_sqe = io_uring_get_sqe(&engine.uring);
-    if (engine.has_send_zc_k) {
+    if (engine.has_send_zc) {
         io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
                                     pipes.next_output_length(), 0, 0,
                                     engine.connections.offset_of(connection) * 2u + 1u);
