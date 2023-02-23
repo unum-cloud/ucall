@@ -689,7 +689,7 @@ void automata_t::raise_call_or_calls() noexcept {
         raise_call();
 
         // Drop the last comma, if present.
-        if (pipes.has_outputs())
+        if (pipes.has_outputs() && !scratch.dynamic_id.empty())
             pipes.output_pop_back();
     }
 
