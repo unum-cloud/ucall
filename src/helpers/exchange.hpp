@@ -137,10 +137,11 @@ bool exchange_pipes_t::append_outputs(struct iovec const* iovecs) noexcept {
     } else {
         if (!output_.dynamic.reserve(output_.dynamic.size() + output_.embedded_used + added_length))
             return false;
-        if (!was_in_embedded)
+        if (was_in_embedded) {
             if (!output_.dynamic.append_n(output_.embedded, output_.embedded_used))
                 return false;
-        output_.embedded_used = 0;
+            output_.embedded_used = 0;
+        }
         for (std::size_t i = 0; i != iovecs_count_ak; ++i)
             if (!output_.dynamic.append_n((char const*)iovecs[i].iov_base, iovecs[i].iov_len))
                 return false;

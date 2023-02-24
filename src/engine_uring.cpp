@@ -1012,6 +1012,7 @@ void automata_t::operator()() noexcept {
                 else
                     return receive_next();
             } else {
+                connection.pipes.prepare_more_outputs();
                 return send_next();
             }
         }
@@ -1041,8 +1042,10 @@ void automata_t::operator()() noexcept {
                 return close_gracefully();
             else
                 return receive_next();
-        } else
+        } else {
+            connection.pipes.prepare_more_outputs();
             return send_next();
+        }
 
     case stage_t::waiting_to_close_k:
         return engine.release_connection(connection);
