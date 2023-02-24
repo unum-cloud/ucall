@@ -638,8 +638,8 @@ bool automata_t::received_full_request() const noexcept {
         bytes_expected += (request.body.begin() - span.data());
 
         if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-            // Maybe not a HTTP request
-            ioctl(connection.descriptor, FIONREAD, &bytes_expected);
+            // TODO Maybe not a HTTP request, What to do?
+            return true;
 
         connection.content_length = bytes_expected;
     }

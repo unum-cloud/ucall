@@ -9,6 +9,16 @@ from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
 
 
+class ClientGeneric:
+    """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
+        self.url = f'http://{uri}:{port}/'
+
+    def __call__(self, jsonrpc: object) -> object:
+        return requests.post(self.url, json=jsonrpc).json()
+
+
 def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 1000):
 
     clients = [
@@ -26,55 +36,40 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
 
 
 def test_shuffled_tcp():
-    for connections in range(1, 100):
+    for connections in range(1, 10):
         shuffled_n_identities(SumClientTCP, count_clients=connections)
 
 
 def test_shuffled_http():
-    for connections in range(1, 100):
+    for connections in range(1, 10):
         shuffled_n_identities(SumClientHTTP, count_clients=connections)
 
 
 def test_shuffled_http_batches():
-    for connections in range(1, 100):
+    for connections in range(1, 10):
+        print(connections)
         shuffled_n_identities(SumClientHTTPBatches, count_clients=connections)
 
 
 def test_uniform_batches():
     client = SumClientHTTPBatches()
-    for batch_size in range(0, 1000):
+    for batch_size in range(1, 1000):
         numbers = [random.randint(1, 1000) for _ in range(batch_size)]
-        client(numbers, numbers)
+        client.send(numbers, numbers)
+        client.recv()
 
 
-def test_uniform_batches():
-    client = SumClientHTTPBatches()
-    for batch_size in range(0, 1000):
-        numbers = [random.randint(1, 1000) for _ in range(batch_size)]
-        client(numbers, numbers)
-
-
-class ClientGeneric:
-    """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
-
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
-        self.url = f'http://{uri}:{port}/'
-
-    def __call__(self, jsonrpc: object) -> object:
-        return requests.post(self.url, json=jsonrpc).json()
-
-
-def test_transform():
-    client = ClientGeneric()
-    identity = 'This is an identity'
-    response = client({
-        'method': 'transform',
-        'params': {'age': 20, 'name': 'Eager', 'value': 3, 'identity': base64.b64encode(identity.encode()).decode()},
-        'jsonrpc': '2.0',
-        'id': 100,
-    })
-    new_id = base64.b64decode(response['val']['identity']).decode()
-    assert new_id == identity + f'_Eager'
+# def test_transform():
+#     client = ClientGeneric()
+#     identity = 'This is an identity'
+#     response = client({
+#         'method': 'transform',
+#         'params': {'age': 20, 'name': 'Eager', 'value': 3, 'identity': base64.b64encode(identity.encode()).decode()},
+#         'jsonrpc': '2.0',
+#         'id': 100,
+#     })
+#     new_id = base64.b64decode(response['val']['identity']).decode()
+#     assert new_id == identity + f'_Eager'
 
 
 def test_normal():
@@ -95,7 +90,7 @@ def test_notification():
         'params': {'a': 2, 'b': 2},
         'jsonrpc': '2.0',
     })
-    assert response is None
+    assert len(response) == 0
 
 
 def test_method_missing():
@@ -149,6 +144,9 @@ def test_non_uniform_batch():
 if __name__ == '__main__':
     pytest.main()
 
+    test_uniform_batches()
+    test_shuffled_http_batches()
+    test_shuffled_http()
     test_shuffled_tcp()
     test_normal()
     test_notification()

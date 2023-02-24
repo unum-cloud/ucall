@@ -135,18 +135,22 @@ class ClientHTTPBatches:
         self.payload = ''.join(random.choices(
             string.ascii_uppercase, k=80))
 
-    def send(self, a: List[int], b: List[int]) -> int:
+    def send(self, a: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))],
+             b: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))]) -> int:
+
         self.expected = [ai + bi for ai, bi in zip(a, b)]
         json_str = [
             REQUEST_BIG_PATTERN % (self.identity, ai, bi, self.payload)
             for ai, bi in zip(a, b)]
-        jsonrpc = '[%s]' % ','.join(json_str)
-        self.response = requests.post(self.url, json=jsonrpc.encode())
+        jsonrpc = json.loads('[%s]' % ','.join(json_str))
+        self.response = requests.post(self.url, json=jsonrpc)
 
     def recv(self):
         response = self.response.json()
-        received = [ri['result'] for ri in response]
+        received = []
+        for ri in response:
+            received.append(ri['result'])
+            assert ri['jsonrpc']
 
-        assert response['jsonrpc']
         assert self.expected == received, 'Wrong sum'
         return received
