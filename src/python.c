@@ -17,6 +17,8 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include <fastavxbase64.h>
+
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
@@ -172,45 +174,62 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
             bool res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_bool(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_bool(call, i, &res))
-                    ujrpc_call_reply_error_invalid_params(call);
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_bool(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
             Py_ssize_t res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_i64(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_i64(call, i, &res))
-                    ujrpc_call_reply_error_invalid_params(call);
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_i64(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
             double res;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_f64(call, name, name_len, &res);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_f64(call, i, &res))
-                    ujrpc_call_reply_error_invalid_params(call);
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_f64(call, i, &res))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
         } else if (PyType_IsSubtype(type, &PyBytes_Type)) {
-            // Pass
+            ujrpc_str_t res;
+            size_t len;
+            if (may_have_name && name_len > 0)
+                got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_str(call, i, &res, &len))
+                return ujrpc_call_reply_error_invalid_params(call);
+
+            len = fast_avx2_base64_decode(res, res, len);
+            PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
             ujrpc_str_t res;
             size_t len;
             if (may_have_name && name_len > 0)
                 got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
-            if (may_have_pos && !got_named)
-                if (!ujrpc_param_positional_str(call, i, &res, &len))
-                    ujrpc_call_reply_error_invalid_params(call);
+
+            if ((may_have_pos && !got_named) && //
+                !ujrpc_param_positional_str(call, i, &res, &len))
+                return ujrpc_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         }
     }
 
     PyObject* response = PyObject_CallObject(wrap->callable, args);
+    if (response == NULL)
+        return ujrpc_call_reply_error_unknown(call);
+
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     size_t len = 0;
@@ -245,6 +264,7 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
                         &self->wrappers[self->count_added]);
 
+    ++self->count_added;
     Py_INCREF(wrap.callable);
     return wrap.callable;
 }
@@ -259,20 +279,19 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
         return NULL;
     }
     if (max_cycles == -1 && max_seconds == -1) {
-        while (true)
-            ujrpc_take_call(self->server, self->count_threads);
+        ujrpc_take_calls(self->server, 0);
     } else if (max_cycles == -1) {
         time_t start, end;
         time(&start);
         while (max_seconds > 0) {
-            ujrpc_take_call(self->server, self->count_threads);
+            ujrpc_take_call(self->server, 0);
             time(&end);
             max_seconds -= difftime(end, start);
             start = end;
         }
     } else if (max_seconds == -1) {
         while (max_cycles > 0) {
-            ujrpc_take_call(self->server, self->count_threads);
+            ujrpc_take_call(self->server, 0);
             --max_cycles;
         }
     } else {
@@ -295,7 +314,7 @@ static PyObject* server_queue_depth(py_server_t* self, PyObject* _) { return 0; 
 static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) { return 0; }
 
 static PyMethodDef server_methods[] = {
-    {"add_procedure", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"route", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
     {"run", (PyCFunction)&server_run, METH_VARARGS,
      PyDoc_STR("Runs the server for N calls or T seconds, before returning")},
     {NULL},
@@ -326,19 +345,22 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static char const* keywords_list[] = {"port", "queue_depth", "max_callbacks", "batch_capacity"};
-    Py_ssize_t port = 0, queue_depth = 0, max_callbacks = UINT64_MAX, batch_capacity = UINT64_MAX;
-    char const* dtype = NULL;
-    char const* metric = NULL;
+    static char const* keywords_list[] = {"interface",     "port",        "queue_depth",
+                                          "max_callbacks", "max_threads", "count_threads"};
+    self->config.interface = "0.0.0.0";
+    self->config.port = 8545;
+    self->config.queue_depth = 4096;
+    self->config.max_callbacks = UINT16_MAX;
+    self->config.max_threads = 16;
+    self->config.max_concurrent_connections = 1024;
+    self->config.max_lifetime_exchanges = UINT32_MAX;
+    self->count_threads = 1;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "nn|nss", (char**)keywords_list, //
-                                     &port, &queue_depth, &max_callbacks, &batch_capacity, &dtype, &metric))
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
+                                     &self->config.interface, &self->config.port, &self->config.queue_depth,
+                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
         return -1;
 
-    self->config.port = port;
-    self->config.queue_depth = queue_depth;
-    self->config.max_callbacks = max_callbacks;
-    self->count_threads = 1;
     self->wrapper_capacity = 16;
     self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
 

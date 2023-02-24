@@ -47,6 +47,7 @@
 #include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
 #include <stdlib.h>     // `std::aligned_malloc`
+#include <sys/ioctl.h>
 #include <sys/mman.h>   // `mmap`
 #include <sys/socket.h> // `recv`, `setsockopt`
 #include <sys/types.h>
@@ -149,6 +150,8 @@ struct connection_t {
     /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
     std::optional<std::string_view> content_type{};
 
+    connection_t() noexcept {}
+
     bool expired() const noexcept;
     void reset() noexcept;
 };
@@ -196,6 +199,7 @@ struct memory_map_t {
 struct engine_t {
     descriptor_t socket{};
     struct io_uring uring {};
+    bool has_send_zc{};
 
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};
@@ -228,6 +232,17 @@ struct engine_t {
 
     template <std::size_t max_count_ak> std::size_t pop_completed(completed_event_t*) noexcept;
 };
+
+bool io_check_send_zc() noexcept {
+    io_uring_probe* probe = io_uring_get_probe();
+    if (!probe)
+        return false;
+
+    // Available since 6.0.
+    bool res = io_uring_opcode_supported(probe, IORING_OP_SEND_ZC);
+    io_uring_free_probe(probe);
+    return res;
+}
 
 struct automata_t {
 
@@ -376,6 +391,9 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     socket_descriptor = uring_cqe->res;
     if (socket_descriptor < 0)
         goto cleanup;
+    // Not sure if this is required, after we have a kernel with `IORING_OP_SENDMSG_ZC` support, we can check.
+    // if (setsockopt(socket_descriptor, SOL_SOCKET, SO_ZEROCOPY, &socket_options, sizeof(socket_options)) == -1)
+    //     goto cleanup;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
@@ -390,6 +408,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
     server_ptr->uring = uring;
+    server_ptr->has_send_zc = io_check_send_zc();
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     *server_out = (ujrpc_server_t)server_ptr;
@@ -405,10 +424,10 @@ cleanup:
     *server_out = nullptr;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback, ujrpc_data_t user_date) {
+void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback, ujrpc_data_t user_data) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back_reserved({name, callback});
+        engine.callbacks.push_back_reserved({name, callback, user_data});
 }
 
 void ujrpc_free(ujrpc_server_t server) {
@@ -605,12 +624,29 @@ bool automata_t::should_release() const noexcept {
 }
 
 bool automata_t::received_full_request() const noexcept {
-    if (connection.content_length)
-        if (connection.pipes.input_span().size() < *connection.content_length)
-            return false;
 
-    // TODO: If we don't have explicit information about the expected length,
-    // we may attempt parsing it to check if the received chunk is a valid document.
+    auto span = connection.pipes.input_span();
+    if (!connection.content_length) {
+        size_t bytes_expected = 0;
+
+        auto json_or_error = split_body_headers(std::string_view(span.data(), span.size()));
+        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+            return true;
+        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+
+        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+        bytes_expected += (request.body.begin() - span.data());
+
+        if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+            // TODO Maybe not a HTTP request, What to do?
+            return true;
+
+        connection.content_length = bytes_expected;
+    }
+
+    if (span.size() < *connection.content_length)
+        return false;
+
     return true;
 }
 
@@ -634,12 +670,14 @@ void automata_t::raise_call_or_calls() noexcept {
 
     // We may need to prepend the response with HTTP headers.
     constexpr char const* http_header_k =
-        "HTTP 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
-    constexpr std::size_t http_header_size_k = 82;
-    constexpr std::size_t http_header_length_offset_k = 31;
+        "HTTP/1.1 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
+    constexpr std::size_t http_header_size_k = 78;
+    constexpr std::size_t http_header_length_offset_k = 33;
     constexpr std::size_t http_header_length_capacity_k = 9;
     if (scratch.is_http)
         pipes.append_reserved(http_header_k, http_header_size_k);
+
+    size_t body_size = pipes.output_span().size();
 
     if (one_or_many.error() != sj::SUCCESS)
         ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
@@ -667,8 +705,10 @@ void automata_t::raise_call_or_calls() noexcept {
         scratch.tree = one_or_many.value_unsafe();
         raise_call();
 
-        // Drop the last comma, if present.
-        if (pipes.has_outputs())
+        if (scratch.dynamic_id.empty()) {
+            pipes.push_back_reserved('{');
+            pipes.push_back_reserved('}');
+        } else if (pipes.has_outputs()) // Drop the last comma, if present.
             pipes.output_pop_back();
     }
 
@@ -676,11 +716,13 @@ void automata_t::raise_call_or_calls() noexcept {
     // the HTTP headers to indicate thr real "Content-Length".
     if (scratch.is_http) {
         auto output = pipes.output_span();
-        std::size_t body_size = output.size() - http_head_size_k;
-        // TODO: shift forward over remaining X symbols, and leave whitespace before.
+        body_size = output.size() - body_size;
+        size_t len = snprintf(NULL, 0, "%lu", body_size);
+        size_t empty_cnt = http_header_length_capacity_k - len;
         std::to_chars_result res =
             std::to_chars(output.begin() + http_header_length_offset_k,
                           output.begin() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
+        std::memset(output.begin() + http_header_length_offset_k + len, ' ', empty_cnt);
         if (res.ec != std::errc())
             return ujrpc_call_reply_error_out_of_memory(this);
     }
@@ -841,12 +883,18 @@ void automata_t::send_next() noexcept {
     pipes.release_inputs();
 
     // TODO: Test and benchmark the `send_zc option`.
-    // io_uring_prep_send_zc(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-    //                       pipes.next_output_length(), 0, 0);
     engine.submission_mutex.lock();
     uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_write_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-                              pipes.next_output_length(), 0, engine.connections.offset_of(connection) * 2u + 1u);
+    if (engine.has_send_zc) {
+        io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
+                                    pipes.next_output_length(), 0, 0,
+                                    engine.connections.offset_of(connection) * 2u + 1u);
+    } else {
+        io_uring_prep_send(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
+                           pipes.next_output_length(), 0);
+        uring_sqe->flags |= IOSQE_FIXED_FILE;
+        uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u;
+    }
     io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);
@@ -964,6 +1012,7 @@ void automata_t::operator()() noexcept {
                 else
                     return receive_next();
             } else {
+                connection.pipes.prepare_more_outputs();
                 return send_next();
             }
         }
@@ -993,8 +1042,10 @@ void automata_t::operator()() noexcept {
                 return close_gracefully();
             else
                 return receive_next();
-        } else
+        } else {
+            connection.pipes.prepare_more_outputs();
             return send_next();
+        }
 
     case stage_t::waiting_to_close_k:
         return engine.release_connection(connection);
