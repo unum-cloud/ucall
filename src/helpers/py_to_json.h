@@ -3,7 +3,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <fastavxbase64.h>
+#include <turbob64.h>
 
 static const char int_to_hex_k[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
@@ -25,7 +25,7 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
         const char* src = PyBytes_AsString(obj);
         char* begin = data;
         *(begin++) = '"';
-        begin += fast_avx2_base64_encode(begin, src, strlen(src));
+        begin += tb64enc(src, strlen(src), begin);
         *(begin++) = '"';
         *len = begin - data;
     } else if (PyUnicode_Check(obj)) {
@@ -152,8 +152,8 @@ static int calculate_size_as_str(PyObject* obj) {
         return snprintf(NULL, 0, "%li", PyLong_AsLong(obj));
     else if (PyFloat_Check(obj))
         return snprintf(NULL, 0, "%f", PyFloat_AsDouble(obj));
-    else if (PyBytes_Check(obj)) // `chromium_base64_encode_len` returns one redaundant, we add one more for qutes
-        return chromium_base64_encode_len(strlen(PyBytes_AsString(obj))) + 1;
+    else if (PyBytes_Check(obj))
+        return tb64enclen(strlen(PyBytes_AsString(obj))) + 2;
     else if (PyUnicode_Check(obj)) {
         Py_ssize_t byte_size = 0;
         PyUnicode_AsUTF8AndSize(obj, &byte_size);

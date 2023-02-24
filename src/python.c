@@ -17,7 +17,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <fastavxbase64.h>
+#include <turbob64.h>
 
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
@@ -210,7 +210,7 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
                 !ujrpc_param_positional_str(call, i, &res, &len))
                 return ujrpc_call_reply_error_invalid_params(call);
 
-            len = fast_avx2_base64_decode(res, res, len);
+            len = tb64dec(res, len, res);
             PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
             ujrpc_str_t res;
