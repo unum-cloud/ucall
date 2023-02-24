@@ -94,25 +94,25 @@ set_property(TARGET picohttp_internal
 include_directories(${PICOHTTP_DIR})
 set(PICOHTTP_LIBS picohttp_internal)
 
-set(FASTBASE64_DIR ${CMAKE_BINARY_DIR}/_deps/fastbase64-ep)
+set(TB64_DIR ${CMAKE_BINARY_DIR}/_deps/tb64-ep)
 ExternalProject_Add(
-    fastbase64-ep
-    GIT_REPOSITORY https://github.com/lemire/fastbase64
+    tb64-ep
+    GIT_REPOSITORY https://github.com/powturbo/Turbo-Base64
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
-    SOURCE_DIR ${FASTBASE64_DIR}
+    SOURCE_DIR ${TB64_DIR}
     CONFIGURE_COMMAND echo Configuring FastBase64
-    BUILD_COMMAND cd ${FASTBASE64_DIR} && make && ar rcs libfastbase64.a fastavxbase64.o chromiumbase64.o klompavxbase64.o
+    BUILD_COMMAND bash -c "cd ${TB64_DIR} && STATIC=1 FPIC=-fPIC make  && ar rcs libtb64.a *.o"
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
-add_library(fastbase64_internal STATIC IMPORTED GLOBAL)
-add_dependencies(fastbase64_internal fastbase64-ep)
-set_property(TARGET fastbase64_internal
+add_library(tb64_internal STATIC IMPORTED GLOBAL)
+add_dependencies(tb64_internal tb64-ep)
+set_property(TARGET tb64_internal
     PROPERTY IMPORTED_LOCATION
-    ${FASTBASE64_DIR}/libfastbase64.a
+    ${TB64_DIR}/libtb64.a
 )
-include_directories(${FASTBASE64_DIR}/include)
-set(FASTBASE64_LIBS fastbase64_internal)
+include_directories(${TB64_DIR})
+set(TB64_LIBS tb64_internal)
 
 
 
@@ -173,5 +173,5 @@ find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 Python3_add_library(py_ujrpc src/python.c)
 target_include_directories(py_ujrpc PUBLIC src/ include/)
-target_link_libraries(py_ujrpc PRIVATE ujrpc_server_posix ${FASTBASE64_LIBS})
+target_link_libraries(py_ujrpc PRIVATE ujrpc_server_uring ${TB64_LIBS})
 set_target_properties(py_ujrpc PROPERTIES OUTPUT_NAME ujrpc)
