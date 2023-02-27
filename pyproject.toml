@@ -12,12 +12,7 @@ filterwarnings = ["error"]
 [tool.cibuildwheel]
 build-verbosity = 0
 before-all = [
-    "yum install -y bzip2-devel libffi-devel zlib-devel wget python3-devel perl-IPC-Cmd perl-Test-Simple",
-#    "cd /usr/src && wget https://www.openssl.org/source/openssl-3.0.7.tar.gz",
-#    "tar -zxf openssl-3.0.7.tar.gz && rm openssl-3.0.7.tar.gz && cd /usr/src/openssl-3.0.7",
-#    "./config && make -j16 && make install",
-#    "ln -s /usr/local/lib64/libssl.so.3 /usr/lib64/libssl.so.3",
-#    "ln -s /usr/local/lib64/libcrypto.so.3 /usr/lib64/libcrypto.so.3"
+    "yum install -y glibc-devel wget python3-devel",
 ]
 
 before-build = [
@@ -25,7 +20,7 @@ before-build = [
     "mkdir -p build/ujrpc",
 ]
 
-skip = ["*musllinux*", "*i686*", "pp*", "cp36-*", "cp311-*"]
+skip = ["*musllinux*", "*i686*", "pp*", "cp36-*"]
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --lib-sdir . -w {dest_dir} {wheel}"

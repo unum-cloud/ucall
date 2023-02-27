@@ -101,7 +101,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
     SOURCE_DIR ${TB64_DIR}
     CONFIGURE_COMMAND echo Configuring FastBase64
-    BUILD_COMMAND bash -c "cd ${TB64_DIR} && STATIC=1 FPIC=-fPIC make  && ar rcs libtb64.a *.o"
+    BUILD_COMMAND bash -c "cd ${TB64_DIR} && FPIC=-fPIC make  && ar rcs libtb64.a *.o"
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
@@ -173,5 +173,5 @@ find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 Python3_add_library(py_ujrpc src/python.c)
 target_include_directories(py_ujrpc PUBLIC src/ include/)
-target_link_libraries(py_ujrpc PRIVATE ujrpc_server_uring ${TB64_LIBS})
+target_link_libraries(py_ujrpc PRIVATE ujrpc_server_posix ${TB64_LIBS})
 set_target_properties(py_ujrpc PROPERTIES OUTPUT_NAME ujrpc)
