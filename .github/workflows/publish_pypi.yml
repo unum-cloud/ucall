@@ -1,0 +1,29 @@
+name: Pyblish Python Wheels
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+
+  build:
+    runs-on: ubuntu-22.10
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: pypa/cibuildwheel@v2.11.3
+        with:
+          output-dir: dist
+
+      - name: publish to test-pypi
+        uses: pypa/gh-action-pypi-publish@v1.6.4
+        with:
+          user: __token__
+          password: ${{ secrets.TWINE_API }}
+          verbose: true
+          print_hash: true
