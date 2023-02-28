@@ -38,12 +38,15 @@ In that time, light could have traveled 300 km through optics to the neighboring
 
 To make networking faster, one needs just 2 components:
 
-1. efficient serialization format,
-2. an I/O layer without interrupts (hence the name).
+1. an I/O layer without interrupts (hence the name), based on `io_uring`.
+2. efficient hardware-accelerated parsers and serializers:
+   1. [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.
+   2. [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.
+   3. [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.
 
-Today, libraries like `simdjson` can parse JSON documents faster than gRPC will unpack binary `ProtoBuf`.
-Moreover, with `io_uring`, we can avoid system calls and interrupts on the hot path and still use the TCP/IP stack for maximum compatibility.
-By now, you believe that one can be faster than gRPC, but would that sacrifice usability?
+With `io_uring`, we can avoid system calls and interrupts on the hot path and still use the TCP/IP stack for maximum compatibility.
+Every dependency has SIMD hardware acceleration, and at this point, it shouldn't be hard to imagine that one can be faster than gRPC.
+But would that speed sacrifice usability?
 We don't think so.
 
 ```python
@@ -73,6 +76,10 @@ def sum_arrays(a: np.array, b: np.array):
 
 We are inviting others to contribute bindings to other languages as well.
 
+[simdjson]: https://github.com/simdjson/simdjson
+[base64]: https://github.com/powturbo/Turbo-Base64
+[picohttpparser]: https://github.com/h2o/picohttpparser
+
 ## Benchmarks
 
 All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider io_uring support for networking operations.
@@ -86,7 +93,7 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 | Fast API over REST      |   ❌   |    Py    |           1'203 μs |               3'184 rps |
 | Fast API over WebSocket |   ✅   |    Py    |              86 μs |            11'356 rps ¹ |
 | gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
-|                         |       |    Py    |                    |                         |
+|                         |       |          |                    |                         |
 | UJRPC with POSIX        |   ❌   |    Py    |               ? μs |                   ? rps |
 | UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
 | UJRPC with io_uring     |   ✅   |    C     |              22 μs |             231'000 rps |
@@ -200,6 +207,7 @@ kill %%
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
 - [ ] HTTP**S** Support
+- [ ] WebSockets
 - [ ] Complementing JSON with Amazon Ion
 - [ ] Custom UDP-based JSON-RPC like protocol
 - [ ] AF_XDP on Linux
