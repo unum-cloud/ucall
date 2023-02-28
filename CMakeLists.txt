@@ -97,11 +97,11 @@ set(PICOHTTP_LIBS picohttp_internal)
 set(TB64_DIR ${CMAKE_BINARY_DIR}/_deps/tb64-ep)
 ExternalProject_Add(
     tb64-ep
-    GIT_REPOSITORY https://github.com/powturbo/Turbo-Base64
+    GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64/
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
     SOURCE_DIR ${TB64_DIR}
     CONFIGURE_COMMAND echo Configuring FastBase64
-    BUILD_COMMAND bash -c "cd ${TB64_DIR} && FPIC=-fPIC make  && ar rcs libtb64.a *.o"
+    BUILD_COMMAND cd ${TB64_DIR} && FPIC=-fPIC make libtb64.a
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
