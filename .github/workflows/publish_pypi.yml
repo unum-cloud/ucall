@@ -9,9 +9,8 @@ env:
 
 jobs:
 
-  build:
+  build_x86:
     runs-on: ubuntu-22.10
-    needs: build
 
     steps:
       - uses: actions/checkout@v3
@@ -27,3 +26,23 @@ jobs:
           password: ${{ secrets.TWINE_API }}
           verbose: true
           print_hash: true
+          .
+  
+  build_aarch64:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: uraimo/run-on-arch-action@v2
+      - uses: pypa/cibuildwheel@v2.11.3
+        with:
+          arch: aarch64
+          output-dir: dist
+
+      - name: publish to test-pypi
+        uses: pypa/gh-action-pypi-publish@v1.6.4
+        with:
+          user: __token__
+          password: ${{ secrets.TWINE_API }}
+          verbose: true
+          print_hash: true  
