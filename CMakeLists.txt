@@ -145,6 +145,7 @@ include_directories(include/ src/)
 
 add_library(ujrpc_server_posix src/engine_posix.cpp)
 target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
+set(PYTHON_BACKEND ujrpc_server_posix)
 
 add_executable(ujrpc_example_sum_posix examples/sum/ujrpc_server.cpp)
 target_link_libraries(ujrpc_example_sum_posix ujrpc_server_posix cxxopts)
@@ -152,6 +153,7 @@ target_compile_options(ujrpc_example_sum_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON
 
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
+    set(PYTHON_BACKEND ujrpc_server_uring)
     target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS} ${URING_LIBS})
     add_executable(ujrpc_example_sum_uring examples/sum/ujrpc_server.cpp)
     target_link_libraries(ujrpc_example_sum_uring ujrpc_server_uring cxxopts)
@@ -173,5 +175,5 @@ find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 Python3_add_library(py_ujrpc src/python.c)
 target_include_directories(py_ujrpc PUBLIC src/ include/)
-target_link_libraries(py_ujrpc PRIVATE ujrpc_server_posix ${TB64_LIBS})
+target_link_libraries(py_ujrpc PRIVATE ${PYTHON_BACKEND} ${TB64_LIBS})
 set_target_properties(py_ujrpc PROPERTIES OUTPUT_NAME ujrpc)
