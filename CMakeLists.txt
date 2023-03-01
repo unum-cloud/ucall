@@ -30,6 +30,11 @@ if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(CMAKE_OSX_SYSROOT "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+endif()
+
+
 # Pull the version of Linux kernel, to check if io_uring is available
 if(LINUX)
     execute_process(COMMAND uname -r OUTPUT_VARIABLE UNAME_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
