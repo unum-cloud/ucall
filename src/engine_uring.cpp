@@ -2,7 +2,7 @@
  * @brief JSON-RPC implementation for TCP/IP stack with `io_uring`.
  *
  * Supports:
- * > Millions of concurrent stateful connections.
+ * > Thousands of concurrent stateful connections.
  * > Hundreds of physical execution threads.
  * > Both HTTP and HTTP-less raw JSON-RPC calls.
  *
@@ -28,10 +28,9 @@
  * Many of the requests would get an additional `IOSQE_FIXED_FILE` flag, and the
  * setup call would receive `IORING_SETUP_SQPOLL`. Aside from those, we also
  * need to prioritize following efficient interfaces:
- * - `io_uring_prep_accept_direct` to alloc from reusable files list.
+ * - `io_uring_prep_accept_direct` to alloc from reusable files list > 5.19..
  * - `io_uring_prep_read_fixed` to read into registered buffers.
  * - `io_uring_register_buffers`.
- * - `io_uring_prep_accept_direct` > 5.19.
  * - `io_uring_register_files_sparse` > 5.19, or `io_uring_register_files` before that.
  * - `IORING_SETUP_COOP_TASKRUN` > 5.19.
  * - `IORING_SETUP_SINGLE_ISSUER` > 6.0.
