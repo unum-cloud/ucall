@@ -345,9 +345,8 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static const char const* keywords_list[6] = {
-        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads",
-    };
+    static const char const* keywords_list[7] = {"interface",   "port",          "queue_depth", "max_callbacks",
+                                                 "max_threads", "count_threads", NULL};
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
     self->config.queue_depth = 4096;
