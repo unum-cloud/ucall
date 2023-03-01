@@ -8,6 +8,14 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = ["error"]
 
+[tool.cibuildwheel.linux]
+archs = ["auto", "aarch64"]
+before-all = [
+    "yum install -y glibc-devel wget python3-devel",
+]
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "universal2", "arm64"]
 
 [tool.cibuildwheel]
 build-verbosity = 0
@@ -16,12 +24,9 @@ before-build = [
     "mkdir -p build/ujrpc",
 ]
 
-skip = ["*i686*", "pp*", "cp36-*"]
+skip = ["*musllinux*", "*i686*", "pp*", "cp36-*"]
 
 [tool.cibuildwheel.linux]
-before-all = [
-    "yum install -y glibc-devel wget python3-devel",
-]
 repair-wheel-command = "auditwheel repair --lib-sdir . -w {dest_dir} {wheel}"
 
 
