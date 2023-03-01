@@ -31,7 +31,9 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(CMAKE_OSX_SYSROOT "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+    set(CMAKE_OSX_SYSROOT CACHE STRING "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11" CACHE STRING "Minimum OS X deployment version")
+    set(CMAKE_OSX_ARCHITECTURES "x86_64" "universal2" "arm64" CACHE STRING "Minimum OS X deployment version")
 endif()
 
 
