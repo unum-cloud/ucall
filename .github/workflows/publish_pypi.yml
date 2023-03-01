@@ -9,8 +9,12 @@ env:
 
 jobs:
 
-  build_x86:
-    runs-on: ubuntu-22.10
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.10, ubuntu-20.04, macOS-11]
 
     steps:
       - uses: actions/checkout@v3
@@ -26,22 +30,3 @@ jobs:
           password: ${{ secrets.TWINE_API }}
           verbose: true
           print_hash: true
-  
-  build_aarch64:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: uraimo/run-on-arch-action@v2
-      - uses: pypa/cibuildwheel@v2.11.3
-        with:
-          arch: aarch64
-          output-dir: dist
-
-      - name: publish to test-pypi
-        uses: pypa/gh-action-pypi-publish@v1.6.4
-        with:
-          user: __token__
-          password: ${{ secrets.TWINE_API }}
-          verbose: true
-          print_hash: true  

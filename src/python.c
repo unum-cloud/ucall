@@ -22,9 +22,9 @@
 #include "helpers/py_to_json.h"
 #include "ujrpc/ujrpc.h"
 
-#define get_attr_safe(name, obj, attr)                                                                                 \
+#define get_attr_safe_m(name, obj, attr)                                                                               \
     PyObject* name = PyObject_GetAttrString(obj, attr);                                                                \
-    if (name == NULL) {                                                                                                \
+    if (!name) {                                                                                                       \
         PyErr_SetString(PyExc_TypeError, "Failed to extract attribute: " attr);                                        \
         return -1;                                                                                                     \
     }
@@ -62,13 +62,13 @@ typedef struct {
 } py_server_t;
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
-    get_attr_safe(func_code, callable, "__code__");
-    get_attr_safe(arg_names, func_code, "co_varnames");
-    get_attr_safe(co_flags, func_code, "co_flags");
-    get_attr_safe(co_argcount, func_code, "co_argcount");
-    get_attr_safe(co_posonlyargcount, func_code, "co_posonlyargcount");
-    get_attr_safe(co_kwonlyargcount, func_code, "co_kwonlyargcount");
-    get_attr_safe(varnames, func_code, "co_varnames");
+    get_attr_safe_m(func_code, callable, "__code__");
+    get_attr_safe_m(arg_names, func_code, "co_varnames");
+    get_attr_safe_m(co_flags, func_code, "co_flags");
+    get_attr_safe_m(co_argcount, func_code, "co_argcount");
+    get_attr_safe_m(co_posonlyargcount, func_code, "co_posonlyargcount");
+    get_attr_safe_m(co_kwonlyargcount, func_code, "co_kwonlyargcount");
+    get_attr_safe_m(varnames, func_code, "co_varnames");
 
     long flags = PyLong_AsLong(co_flags);
     long pos_count = PyLong_AsLong(co_argcount);
@@ -78,8 +78,8 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
 
     PyObject* annotations = PyFunction_GetAnnotations(callable); // Dict
 
-    get_attr_safe(defaults, callable, "__defaults__");
-    get_attr_safe(kwdefaults, callable, "__kwdefaults__");
+    get_attr_safe_m(defaults, callable, "__defaults__");
+    get_attr_safe_m(kwdefaults, callable, "__kwdefaults__");
 
     if (PyTuple_CheckExact(defaults))
         pos_default_count = PyTuple_Size(defaults);
@@ -345,8 +345,9 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static char const* keywords_list[] = {"interface",     "port",        "queue_depth",
-                                          "max_callbacks", "max_threads", "count_threads"};
+    static const char const* keywords_list[6]{
+        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads",
+    };
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
     self->config.queue_depth = 4096;
