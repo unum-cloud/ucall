@@ -15,7 +15,13 @@ static constexpr std::size_t iovecs_for_error_k = 7;
 /// most importantly, the Content Length, as well as some padding
 /// afterwards. Expected response headers are:
 /// https://stackoverflow.com/a/25586633/2766161
-static constexpr std::size_t iovecs_for_http_headers_k = 3;
+static constexpr std::size_t iovecs_for_http_response_k = 4;
+
+static constexpr char const* http_header_k =
+    "HTTP/1.1 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
+static constexpr std::size_t http_header_size_k = 78;
+static constexpr std::size_t http_header_length_offset_k = 33;
+static constexpr std::size_t http_header_length_capacity_k = 9;
 
 void fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
                        bool append_comma = false) {

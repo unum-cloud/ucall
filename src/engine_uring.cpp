@@ -669,11 +669,6 @@ void automata_t::raise_call_or_calls() noexcept {
         return ujrpc_call_reply_error_out_of_memory(this);
 
     // We may need to prepend the response with HTTP headers.
-    constexpr char const* http_header_k =
-        "HTTP/1.1 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
-    constexpr std::size_t http_header_size_k = 78;
-    constexpr std::size_t http_header_length_offset_k = 33;
-    constexpr std::size_t http_header_length_capacity_k = 9;
     if (scratch.is_http)
         pipes.append_reserved(http_header_k, http_header_size_k);
 
