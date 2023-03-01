@@ -33,21 +33,7 @@ def sum(a: int, b: int):
 
 It takes over a millisecond to handle such a call on the same machine.
 In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
-
----
-
-To make networking faster, one needs just 2 components:
-
-1. an I/O layer without interrupts (hence the name), based on `io_uring`.
-2. efficient hardware-accelerated parsers and serializers:
-   1. [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.
-   2. [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.
-   3. [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.
-
-With `io_uring`, we can avoid system calls and interrupts on the hot path and still use the TCP/IP stack for maximum compatibility.
-Every dependency has SIMD hardware acceleration, and at this point, it shouldn't be hard to imagine that one can be faster than gRPC.
-But would that speed sacrifice usability?
-We don't think so.
+Let's look at UJRPC example.
 
 ```python
 from ujrpc import Server
@@ -59,22 +45,27 @@ def sum(a: int, b: int):
     return a + b
 ```
 
-This tiny solution already works for C, C++, and Python.
-It is even easier to use than FastAPI but is 100x faster.
-Moreover, it supports tensor-like types common in Machine Learning and useful for batch processing:
+Not much difference on the outside, but there is magic happening behind the scenes.
+Here is what we do to make networking faster:
 
-```python
-import numpy as np
-from ujrpc import Server
+- I/O layer without interrupts (hence the name), like `io_uring`.
+  - `io_uring_prep_read_fixed` to read into registered buffers on 5.1+.
+  - `io_uring_prep_accept_direct` for reusable descriptors on 5.19+.
+  - `io_uring_register_files_sparse` on 5.19+.
+  - `IORING_SETUP_COOP_TASKRUN` optional feature on 5.19+.
+  - `IORING_SETUP_SINGLE_ISSUER` optional feature on 6.0+.
+- Efficient SIMD-accelerated parsers and serializers:
+   - [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.
+   - [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.
+   - [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.
 
-serve = Server()
+With `io_uring`, we can avoid system calls to reduce the latency on the hot path and still use the TCP/IP stack for maximum compatibility.
+With SIMD we add hardware acceleration to increase the bandwidth parsing large messages.
+At this point, it shouldn't be hard to imagine that one can be faster than gRPC.
+Let's estimate the gap.
 
-@serve
-def sum_arrays(a: np.array, b: np.array):
-    return a + b
-```
-
-We are inviting others to contribute bindings to other languages as well.
+> This tiny solution already works for C, C++, and Python.
+> We are inviting others to contribute bindings to other languages as well.
 
 [simdjson]: https://github.com/simdjson/simdjson
 [base64]: https://github.com/powturbo/Turbo-Base64
@@ -82,7 +73,7 @@ We are inviting others to contribute bindings to other languages as well.
 
 ## Benchmarks
 
-All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider io_uring support for networking operations.
+All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.
 
 ## Single Large Node
 
@@ -93,6 +84,7 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 | Fast API over REST      |   ❌   |    Py    |           1'203 μs |               3'184 rps |
 | Fast API over WebSocket |   ✅   |    Py    |              86 μs |            11'356 rps ¹ |
 | gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
+| gRPC                    |   ✅   |    C     |               ? μs |                   ? rps |
 |                         |       |          |                    |                         |
 | UJRPC with POSIX        |   ❌   |    Py    |               ? μs |                   ? rps |
 | UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
@@ -101,7 +93,7 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
 The second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
 
-> 1: FastAPI couldn't process concurrent requests with WebSockets.
+> ¹ FastAPI couldn't process concurrent requests with WebSockets.
 
 ### Free Tier Throughput
 
