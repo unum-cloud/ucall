@@ -2,7 +2,7 @@ name: Pyblish Python Wheels
 
 on:
   push:
-    branches: ["main"]
+    branches: ["dev"]
 
 env:
   BUILD_TYPE: Release
@@ -26,7 +26,6 @@ jobs:
           password: ${{ secrets.TWINE_API }}
           verbose: true
           print_hash: true
-          .
   
   build_aarch64:
     runs-on: ubuntu-22.04
