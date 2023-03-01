@@ -345,7 +345,7 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static const char const* keywords_list[6]{
+    static const char const* keywords_list[6] = {
         "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads",
     };
     self->config.interface = "0.0.0.0";
@@ -357,7 +357,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->config.max_lifetime_exchanges = UINT32_MAX;
     self->count_threads = 1;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", keywords_list, //
                                      &self->config.interface, &self->config.port, &self->config.queue_depth,
                                      &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
         return -1;
