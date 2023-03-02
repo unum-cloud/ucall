@@ -75,7 +75,7 @@ Let's estimate the gap.
 
 All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.
 
-## Single Large Node
+### Single Large Node
 
 We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.
 
@@ -111,9 +111,47 @@ Here is the bandwidth they can sustain.
 | UJRPC with POSIX        |   ❌   |    C     |   32    |  3'399 rps |  39'877 rps |
 | UJRPC with io_uring     |   ✅   |    C     |   32    |     ?  rps |  88'455 rps |
 
-### Reproducing Results
+## Installation
 
-#### FastAPI
+```sh
+pip install uform
+```
+
+A CMake user?
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    ujrpc
+    GIT_REPOSITORY https://github.com/unum-cloud/ujrpc
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(ujrpc)
+include_directories(${ujrpc_SOURCE_DIR})
+```
+
+## Roadmap
+
+- [x] Batch Requests
+- [x] JSON-RPC over raw TCP sockets
+- [x] JSON-RPC over TCP with HTTP
+- [x] Concurrent sessions
+- [ ] HTTP**S** Support
+- [ ] Batch-capable Endpoints
+- [ ] WebSockets
+- [ ] Complementing JSON with Amazon Ion
+- [ ] Custom UDP-based JSON-RPC like protocol
+- [ ] AF_XDP on Linux
+
+## Why JSON-RPC?
+
+- Transport independent: UDP, TCP, bring what you want.
+- Application layer is optional: use HTTP or not.
+- Unlike REST APIs, there is just one way to pass arguments.
+
+## Reproducing Benchmarks
+
+### FastAPI
 
 ```sh
 pip install uvicorn fastapi websocket-client requests tqdm fire
@@ -131,7 +169,7 @@ python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
 python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
 ```
 
-#### UJRPC
+### UJRPC
 
 UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
 You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
@@ -175,7 +213,7 @@ sudo apt install parallel
 parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 ```
 
-#### gRPC Results
+### gRPC Results
 
 ```sh
 pip install grpcio grpcio-tools
@@ -184,22 +222,3 @@ python examples/bench.py "sum.grpc_client.gRPCClient" --progress
 python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
 kill %%
 ```
-
-## Why JSON-RPC?
-
-- Transport independent: UDP, TCP, bring what you want.
-- Application layer is optional: use HTTP or not.
-- Unlike REST APIs, there is just one way to pass arguments.
-
-## Roadmap
-
-- [x] Batch Requests
-- [x] JSON-RPC over raw TCP sockets
-- [x] JSON-RPC over TCP with HTTP
-- [x] Concurrent sessions
-- [ ] HTTP**S** Support
-- [ ] Batch-capable Endpoints
-- [ ] WebSockets
-- [ ] Complementing JSON with Amazon Ion
-- [ ] Custom UDP-based JSON-RPC like protocol
-- [ ] AF_XDP on Linux
