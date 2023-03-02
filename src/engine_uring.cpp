@@ -674,7 +674,7 @@ void automata_t::raise_call_or_calls() noexcept {
     size_t body_size = pipes.output_span().size();
 
     if (one_or_many.error() != sj::SUCCESS)
-        ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
+        return ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
 
     // Check if we hve received a batch request.
     else if (one_or_many.is_array()) {
