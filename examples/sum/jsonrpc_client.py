@@ -6,6 +6,7 @@ import random
 import socket
 import json
 import string
+import base64
 from typing import Optional, List
 
 
@@ -165,6 +166,44 @@ class ClientTCPHTTP:
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
         assert self.expected == received, 'Wrong sum'
+        return received
+
+
+class ClientTCPHTTPBase64:
+    """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.uri = uri
+        self.port = port
+        self.sock = None
+        self.payload = base64.b64encode(random.randbytes(42)).decode()
+
+    def __call__(self, **kwargs) -> int:
+        self.send(**kwargs)
+        return self.recv()
+
+    def send(self):
+        jsonrpc = '{"jsonrpc":"2.0","id":%i,"method":"count_of","params":{"data":"%s"}}' % (
+            self.identity, self.payload)
+        headers = HTTP_HEADERS % (len(jsonrpc))
+        self.expected = self.payload
+        self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
+            self.sock) else self.sock
+        self.sock.send((headers + jsonrpc).encode())
+
+    def recv(self) -> int:
+        # self.sock.settimeout(0.01)
+        response_bytes = self.sock.recv(4096).decode()
+        self.sock.settimeout(None)
+        response = json.loads(
+            response_bytes[response_bytes.index("\r\n\r\n"):])
+        assert 'error' not in response, response['error']
+        received = response['result']
+        assert response['jsonrpc']
+        assert response.get('id', None) == self.identity
+        assert self.expected == received, 'Wrong count'
         return received
 
 
