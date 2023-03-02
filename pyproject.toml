@@ -18,12 +18,11 @@ before-build = [
 skip = ["*musllinux*", "*i686*", "pp*", "cp36-*"]
 
 [tool.cibuildwheel.linux]
-archs = ["auto", "aarch64"]
+archs = ["x86_64", "aarch64"]
 before-all = [
     "yum install -y glibc-devel wget python3-devel"
 ]
 repair-wheel-command = "auditwheel repair --lib-sdir . -w {dest_dir} {wheel}"
-
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "universal2", "arm64"]

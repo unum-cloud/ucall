@@ -127,7 +127,7 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(ujrpc)
-include_directories(${ujrpc_SOURCE_DIR})
+include_directories(${ujrpc_SOURCE_DIR}/include)
 ```
 
 ## Roadmap

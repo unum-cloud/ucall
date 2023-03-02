@@ -2,7 +2,8 @@ import os
 import sys
 import re
 from os.path import dirname
-import multiprocessing, subprocess
+import multiprocessing
+import subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
@@ -61,7 +62,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name='ujrpc',
-    version='0.1.0',
+    version='0.0.3',
     license='Apache-2.0',
     classifiers=[
         'Development Status :: 4 - Beta',
