@@ -65,6 +65,10 @@ class ClientHTTP:
         self.payload = ''.join(random.choices(
             string.ascii_uppercase, k=80))
 
+    def __call__(self, **kwargs) -> int:
+        self.send(**kwargs)
+        return self.recv()
+
     def send(self, a: Optional[int] = None, b: Optional[int] = None) -> int:
 
         a = random.randint(1, 1000) if a is None else a

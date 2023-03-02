@@ -1,4 +1,5 @@
-import sys, os
+import sys
+import os
 import time
 from multiprocessing import Process, Value
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ class Stats:
 
     @property
     def success_rate(self) -> float:
-        return self.requests_correct * 1.0 / (self.requests + 1)
+        return self.requests_correct * 1.0 / (self.requests)
 
     def __repr__(self) -> str:
         bandwidth = self.requests / \
