@@ -10,6 +10,11 @@ def sum(a: int, b: int):
 
 
 @server.route
+def count_of(data: bytes):
+    return data
+
+
+@server.route
 def transform(age: float, name: str, value: int, identity: bytes):
     if age < 15:
         return False

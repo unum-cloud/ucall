@@ -22,10 +22,12 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
     else if (PyFloat_Check(obj))
         *len = sprintf(data, "%f", PyFloat_AsDouble(obj));
     else if (PyBytes_Check(obj)) {
-        const char* src = PyBytes_AsString(obj);
+        char* src = NULL;
+        size_t src_len = 0;
+        PyBytes_AsStringAndSize(obj, &src, &src_len);
         char* begin = data;
         *(begin++) = '"';
-        begin += tb64enc(src, strlen(src), begin);
+        begin += tb64enc(src, src_len, begin);
         *(begin++) = '"';
         *len = begin - data;
     } else if (PyUnicode_Check(obj)) {
@@ -152,9 +154,12 @@ static int calculate_size_as_str(PyObject* obj) {
         return snprintf(NULL, 0, "%li", PyLong_AsLong(obj));
     else if (PyFloat_Check(obj))
         return snprintf(NULL, 0, "%f", PyFloat_AsDouble(obj));
-    else if (PyBytes_Check(obj))
-        return tb64enclen(strlen(PyBytes_AsString(obj))) + 2;
-    else if (PyUnicode_Check(obj)) {
+    else if (PyBytes_Check(obj)) {
+        size_t len = 0;
+        char* data_ptr = NULL;
+        PyBytes_AsStringAndSize(obj, &data_ptr, &len);
+        return tb64enclen(len) + 2;
+    } else if (PyUnicode_Check(obj)) {
         Py_ssize_t byte_size = 0;
         PyUnicode_AsUTF8AndSize(obj, &byte_size);
         return byte_size + 2;

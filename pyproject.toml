@@ -8,24 +8,22 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = ["error"]
 
-
 [tool.cibuildwheel]
 build-verbosity = 0
-before-all = [
-    "yum install -y bzip2-devel libffi-devel zlib-devel wget python3-devel perl-IPC-Cmd perl-Test-Simple",
-#    "cd /usr/src && wget https://www.openssl.org/source/openssl-3.0.7.tar.gz",
-#    "tar -zxf openssl-3.0.7.tar.gz && rm openssl-3.0.7.tar.gz && cd /usr/src/openssl-3.0.7",
-#    "./config && make -j16 && make install",
-#    "ln -s /usr/local/lib64/libssl.so.3 /usr/lib64/libssl.so.3",
-#    "ln -s /usr/local/lib64/libcrypto.so.3 /usr/lib64/libcrypto.so.3"
-]
-
 before-build = [
     "rm -rf {project}/CMakeCache.txt {project}/build {project}/build_debug {project}/CMakeFiles.txt {project}/_deps",
-    "mkdir -p build/ujrpc",
+    "mkdir -p build/ujrpc"
 ]
 
-skip = ["*musllinux*", "*i686*", "pp*", "cp36-*", "cp311-*"]
+skip = ["*musllinux*", "*i686*", "pp*", "cp36-*"]
 
 [tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+before-all = [
+    "yum install -y glibc-devel wget python3-devel"
+]
 repair-wheel-command = "auditwheel repair --lib-sdir . -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "universal2", "arm64"]
+repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"

@@ -75,7 +75,7 @@ Let's estimate the gap.
 
 All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.
 
-## Single Large Node
+### Single Large Node
 
 We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.
 
@@ -84,10 +84,9 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 | Fast API over REST      |   ❌   |    Py    |           1'203 μs |               3'184 rps |
 | Fast API over WebSocket |   ✅   |    Py    |              86 μs |            11'356 rps ¹ |
 | gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
-| gRPC                    |   ✅   |    C     |               ? μs |                   ? rps |
 |                         |       |          |                    |                         |
-| UJRPC with POSIX        |   ❌   |    Py    |               ? μs |                   ? rps |
 | UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
+| UJRPC with io_uring     |   ✅   |    Py    |              23 μs |              43'008 rps |
 | UJRPC with io_uring     |   ✅   |    C     |              22 μs |             231'000 rps |
 
 The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
@@ -101,20 +100,58 @@ The general logic is that you can't squeeze high performance from Free-Tier mach
 Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
 Here is the bandwidth they can sustain.
 
-| Setup                   |   🔁   | Clients | `t2.micro` | `t4g.small` |
-| :---------------------- | :---: | :-----: | ---------: | ----------: |
-| Fast API over REST      |   ❌   |    1    |    328 rps |     424 rps |
-| Fast API over WebSocket |   ✅   |    1    |  1'504 rps |   3'051 rps |
-| gRPC                    |   ✅   |    1    |  1'169 rps |   1'974 rps |
-|                         |       |         |            |             |
-| UJRPC with POSIX        |   ❌   |    1    |  1'082 rps |   2'438 rps |
-| UJRPC with io_uring     |   ✅   |    1    |      ? rps |   5'864 rps |
-| UJRPC with POSIX        |   ❌   |   32    |  3'399 rps |  39'877 rps |
-| UJRPC with io_uring     |   ✅   |   32    |     ?  rps |  88'455 rps |
+| Setup                   |   🔁   | Language | Clients | `t2.micro` | `t4g.small` |
+| :---------------------- | :---: | :------: | :-----: | ---------: | ----------: |
+| Fast API over REST      |   ❌   |    Py    |    1    |    328 rps |     424 rps |
+| Fast API over WebSocket |   ✅   |    Py    |    1    |  1'504 rps |   3'051 rps |
+| gRPC                    |   ✅   |    Py    |    1    |  1'169 rps |   1'974 rps |
+|                         |       |          |         |            |             |
+| UJRPC with POSIX        |   ❌   |    C     |    1    |  1'082 rps |   2'438 rps |
+| UJRPC with io_uring     |   ✅   |    C     |    1    |      ? rps |   5'864 rps |
+| UJRPC with POSIX        |   ❌   |    C     |   32    |  3'399 rps |  39'877 rps |
+| UJRPC with io_uring     |   ✅   |    C     |   32    |     ?  rps |  88'455 rps |
 
-### Reproducing Results
+## Installation
 
-#### FastAPI
+```sh
+pip install uform
+```
+
+A CMake user?
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    ujrpc
+    GIT_REPOSITORY https://github.com/unum-cloud/ujrpc
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(ujrpc)
+include_directories(${ujrpc_SOURCE_DIR}/include)
+```
+
+## Roadmap
+
+- [x] Batch Requests
+- [x] JSON-RPC over raw TCP sockets
+- [x] JSON-RPC over TCP with HTTP
+- [x] Concurrent sessions
+- [ ] HTTP**S** Support
+- [ ] Batch-capable Endpoints
+- [ ] WebSockets
+- [ ] Complementing JSON with Amazon Ion
+- [ ] Custom UDP-based JSON-RPC like protocol
+- [ ] AF_XDP on Linux
+
+## Why JSON-RPC?
+
+- Transport independent: UDP, TCP, bring what you want.
+- Application layer is optional: use HTTP or not.
+- Unlike REST APIs, there is just one way to pass arguments.
+
+## Reproducing Benchmarks
+
+### FastAPI
 
 ```sh
 pip install uvicorn fastapi websocket-client requests tqdm fire
@@ -132,7 +169,7 @@ python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
 python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
 ```
 
-#### UJRPC
+### UJRPC
 
 UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
 You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
@@ -176,7 +213,7 @@ sudo apt install parallel
 parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
 ```
 
-#### gRPC Results
+### gRPC Results
 
 ```sh
 pip install grpcio grpcio-tools
@@ -185,21 +222,3 @@ python examples/bench.py "sum.grpc_client.gRPCClient" --progress
 python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
 kill %%
 ```
-
-## Why JSON-RPC?
-
-- Transport independent: UDP, TCP, bring what you want.
-- Application layer is optional: use HTTP or not.
-- Unlike REST APIs, there is just one way to pass arguments.
-
-## Roadmap
-
-- [x] Batch requests
-- [x] JSON-RPC over raw TCP sockets
-- [x] JSON-RPC over TCP with HTTP
-- [x] Concurrent sessions
-- [ ] HTTP**S** Support
-- [ ] WebSockets
-- [ ] Complementing JSON with Amazon Ion
-- [ ] Custom UDP-based JSON-RPC like protocol
-- [ ] AF_XDP on Linux
