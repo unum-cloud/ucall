@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
-option(UJRPC_BUILD_BENCHMARKS "Builds all available backend for the summation server to run benchmarks" ON)
+option(UJRPC_BUILD_BENCHMARKS "Builds all available backend for the summation server to run benchmarks" OFF)
 option(UJRPC_BUILD_EXAMPLES "Builds examples for Redis-like server and PyTorch deployment")
 
 # Make Release by default
@@ -56,20 +56,22 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(simdjson)
 include_directories(${simdjson_SOURCE_DIR}/include)
 
-set(BENCHMARK_ENABLE_TESTING OFF)
-set(BENCHMARK_ENABLE_INSTALL OFF)
-set(BENCHMARK_ENABLE_DOXYGEN OFF)
-set(BENCHMARK_INSTALL_DOCS OFF)
-set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON)
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
-set(BENCHMARK_USE_BUNDLED_GTEST ON)
-FetchContent_Declare(
-    benchmark
-    GIT_REPOSITORY https://github.com/google/benchmark.git
-    GIT_TAG v1.7.0
-)
-FetchContent_MakeAvailable(benchmark)
-include_directories(${benchmark_SOURCE_DIR}/include)
+if (${UJRPC_BUILD_BENCHMARKS})
+  set(BENCHMARK_ENABLE_TESTING OFF)
+  set(BENCHMARK_ENABLE_INSTALL OFF)
+  set(BENCHMARK_ENABLE_DOXYGEN OFF)
+  set(BENCHMARK_INSTALL_DOCS OFF)
+  set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON)
+  set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
+  set(BENCHMARK_USE_BUNDLED_GTEST ON)
+  FetchContent_Declare(
+      benchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      GIT_TAG v1.7.0
+  )
+  FetchContent_MakeAvailable(benchmark)
+  include_directories(${benchmark_SOURCE_DIR}/include)
+endif()
 
 # CLI
 FetchContent_Declare(
