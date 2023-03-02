@@ -18,6 +18,7 @@ from typing import Optional, List
 # })
 REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i}}'
 REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i,"text":"%s"}}'
+HTTP_HEADERS = 'POST / HTTP/1.1\r\nHost: 127.0.0.1:8540\r\nUser-Agent: python-requests/2.27.1\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
 # The ID of the current running process, used as a default
 # identifier for requests originating from here.
@@ -115,11 +116,50 @@ class ClientTCP:
         self.sock.send(jsonrpc.encode())
 
     def recv(self) -> int:
-        self.sock.settimeout(0.01)
-        response_bytes = self.sock.recv(4096)
+        # self.sock.settimeout(0.01)
+        response_bytes = self.sock.recv(4096).decode()
         self.sock.settimeout(None)
+        response = json.loads(response_bytes)
+        assert 'error' not in response, response['error']
+        received = response['result']
+        assert response['jsonrpc']
+        assert response.get('id', None) == self.identity
+        assert self.expected == received, 'Wrong sum'
+        return received
 
-        response = parse_response(response_bytes)
+
+class ClientTCPHTTP:
+    """JSON-RPC Client that operates directly over TCP/IPv4 stack, with HTTP"""
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.uri = uri
+        self.port = port
+        self.sock = None
+        self.payload = ''.join(random.choices(
+            string.ascii_uppercase, k=80))
+
+    def __call__(self, **kwargs) -> int:
+        self.send(**kwargs)
+        return self.recv()
+
+    def send(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+        a = random.randint(1, 1000) if a is None else a
+        b = random.randint(1, 1000) if b is None else b
+        jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
+        headers = HTTP_HEADERS % (len(jsonrpc))
+        self.expected = a + b
+        self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
+            self.sock) else self.sock
+        self.sock.send((headers + jsonrpc).encode())
+
+    def recv(self) -> int:
+        # self.sock.settimeout(0.01)
+        response_bytes = self.sock.recv(4096).decode()
+        self.sock.settimeout(None)
+        response = json.loads(
+            response_bytes[response_bytes.index("\r\n\r\n"):])
         assert 'error' not in response, response['error']
         received = response['result']
         assert response['jsonrpc']
