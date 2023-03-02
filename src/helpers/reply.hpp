@@ -15,16 +15,16 @@ static constexpr std::size_t iovecs_for_error_k = 7;
 /// most importantly, the Content Length, as well as some padding
 /// afterwards. Expected response headers are:
 /// https://stackoverflow.com/a/25586633/2766161
-static constexpr std::size_t iovecs_for_http_response_k = 4;
+static constexpr std::size_t iovecs_for_http_response_k = 1;
 
 static constexpr char const* http_header_k =
-    "HTTP/1.1 200 OK\r\nContent-Length: XXXXXXXXX\r\nContent-Type: application/json\r\n\r\n";
+    "HTTP/1.1 200 OK\r\nContent-Length:          \r\nContent-Type: application/json\r\n\r\n";
 static constexpr std::size_t http_header_size_k = 78;
 static constexpr std::size_t http_header_length_offset_k = 33;
 static constexpr std::size_t http_header_length_capacity_k = 9;
 
-void fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
-                       bool append_comma = false) {
+size_t fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
+                         bool append_comma = false) {
 
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
@@ -42,6 +42,16 @@ void fill_with_content(struct iovec* buffers, std::string_view request_id, std::
     char const* protocol_suffix = R"(},)";
     buffers[4].iov_base = (char*)protocol_suffix;
     buffers[4].iov_len = 1 + append_comma;
+    return buffers[0].iov_len + buffers[1].iov_len + buffers[2].iov_len + buffers[3].iov_len + buffers[4].iov_len;
+}
+
+bool set_http_content_length(char* headers, size_t content_len) {
+    auto res = std::to_chars(headers + http_header_length_offset_k,
+                             headers + http_header_length_offset_k + http_header_length_capacity_k, content_len);
+
+    if (res.ec != std::errc())
+        return false;
+    return true;
 }
 
 void fill_with_error(struct iovec* buffers, std::string_view request_id, std::string_view error_code,

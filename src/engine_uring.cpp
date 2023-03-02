@@ -625,23 +625,23 @@ bool automata_t::should_release() const noexcept {
 bool automata_t::received_full_request() const noexcept {
 
     auto span = connection.pipes.input_span();
-    if (!connection.content_length) {
-        size_t bytes_expected = 0;
+    // if (!connection.content_length) {
+    size_t bytes_expected = 0;
 
-        auto json_or_error = split_body_headers(std::string_view(span.data(), span.size()));
-        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-            return true;
-        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+    auto json_or_error = split_body_headers(std::string_view(span.data(), span.size()));
+    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+        return true;
+    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
-        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-        bytes_expected += (request.body.begin() - span.data());
+    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+    bytes_expected += (request.body.begin() - span.data());
 
-        if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-            // TODO Maybe not a HTTP request, What to do?
-            return true;
+    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+        // TODO Maybe not a HTTP request, What to do?
+        return true;
 
-        connection.content_length = bytes_expected;
-    }
+    connection.content_length = bytes_expected;
+    // }
 
     if (span.size() < *connection.content_length)
         return false;
@@ -711,13 +711,7 @@ void automata_t::raise_call_or_calls() noexcept {
     if (scratch.is_http) {
         auto output = pipes.output_span();
         body_size = output.size() - body_size;
-        size_t len = snprintf(NULL, 0, "%lu", body_size);
-        size_t empty_cnt = http_header_length_capacity_k - len;
-        std::to_chars_result res =
-            std::to_chars(output.begin() + http_header_length_offset_k,
-                          output.begin() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
-        std::memset(output.begin() + http_header_length_offset_k + len, ' ', empty_cnt);
-        if (res.ec != std::errc())
+        if (!set_http_content_length(output.data(), body_size))
             return ujrpc_call_reply_error_out_of_memory(this);
     }
 }
