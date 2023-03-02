@@ -84,10 +84,9 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 | Fast API over REST      |   ❌   |    Py    |           1'203 μs |               3'184 rps |
 | Fast API over WebSocket |   ✅   |    Py    |              86 μs |            11'356 rps ¹ |
 | gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
-| gRPC                    |   ✅   |    C     |               ? μs |                   ? rps |
 |                         |       |          |                    |                         |
-| UJRPC with POSIX        |   ❌   |    Py    |               ? μs |                   ? rps |
 | UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
+| UJRPC with io_uring     |   ✅   |    Py    |              23 μs |              43'008 rps |
 | UJRPC with io_uring     |   ✅   |    C     |              22 μs |             231'000 rps |
 
 The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
@@ -101,16 +100,16 @@ The general logic is that you can't squeeze high performance from Free-Tier mach
 Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
 Here is the bandwidth they can sustain.
 
-| Setup                   |   🔁   | Clients | `t2.micro` | `t4g.small` |
-| :---------------------- | :---: | :-----: | ---------: | ----------: |
-| Fast API over REST      |   ❌   |    1    |    328 rps |     424 rps |
-| Fast API over WebSocket |   ✅   |    1    |  1'504 rps |   3'051 rps |
-| gRPC                    |   ✅   |    1    |  1'169 rps |   1'974 rps |
-|                         |       |         |            |             |
-| UJRPC with POSIX        |   ❌   |    1    |  1'082 rps |   2'438 rps |
-| UJRPC with io_uring     |   ✅   |    1    |      ? rps |   5'864 rps |
-| UJRPC with POSIX        |   ❌   |   32    |  3'399 rps |  39'877 rps |
-| UJRPC with io_uring     |   ✅   |   32    |     ?  rps |  88'455 rps |
+| Setup                   |   🔁   | Language | Clients | `t2.micro` | `t4g.small` |
+| :---------------------- | :---: | :------: | :-----: | ---------: | ----------: |
+| Fast API over REST      |   ❌   |    Py    |    1    |    328 rps |     424 rps |
+| Fast API over WebSocket |   ✅   |    Py    |    1    |  1'504 rps |   3'051 rps |
+| gRPC                    |   ✅   |    Py    |    1    |  1'169 rps |   1'974 rps |
+|                         |       |          |         |            |             |
+| UJRPC with POSIX        |   ❌   |    C     |    1    |  1'082 rps |   2'438 rps |
+| UJRPC with io_uring     |   ✅   |    C     |    1    |      ? rps |   5'864 rps |
+| UJRPC with POSIX        |   ❌   |    C     |   32    |  3'399 rps |  39'877 rps |
+| UJRPC with io_uring     |   ✅   |    C     |   32    |     ?  rps |  88'455 rps |
 
 ### Reproducing Results
 
@@ -194,11 +193,12 @@ kill %%
 
 ## Roadmap
 
-- [x] Batch requests
+- [x] Batch Requests
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
 - [ ] HTTP**S** Support
+- [ ] Batch-capable Endpoints
 - [ ] WebSockets
 - [ ] Complementing JSON with Amazon Ion
 - [ ] Custom UDP-based JSON-RPC like protocol

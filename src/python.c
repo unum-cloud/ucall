@@ -86,7 +86,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
 
     if (PyMethod_Check(callable)) {
         // When this is a class method...
-        // ToDo What?
+        // TODO: What?
     }
 
     long non_default_count = pos_count - pos_default_count;
@@ -345,8 +345,9 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static const char const* keywords_list[7] = {"interface",   "port",          "queue_depth", "max_callbacks",
-                                                 "max_threads", "count_threads", NULL};
+    static const char const* keywords_list[7] = {
+        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads", NULL,
+    };
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
     self->config.queue_depth = 4096;

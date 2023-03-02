@@ -637,7 +637,7 @@ bool automata_t::received_full_request() const noexcept {
     bytes_expected += (request.body.begin() - span.data());
 
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-        // TODO Maybe not a HTTP request, What to do?
+        // TODO: Maybe not a HTTP request, What to do?
         return true;
 
     connection.content_length = bytes_expected;
@@ -720,7 +720,7 @@ void automata_t::parse_and_raise_request() noexcept {
     auto request = connection.pipes.input_span();
     auto parsed_request_or_error = split_body_headers(request);
     if (auto error_ptr = std::get_if<default_error_t>(&parsed_request_or_error); error_ptr)
-        // TODO: This Error message may have to be wrapped into an HTTP header separately
+        // TODO: This error message may have to be wrapped into an HTTP header separately
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     auto parsed_request = std::get<parsed_request_t>(parsed_request_or_error);
