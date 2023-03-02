@@ -210,7 +210,7 @@ static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
                 !ujrpc_param_positional_str(call, i, &res, &len))
                 return ujrpc_call_reply_error_invalid_params(call);
 
-            len = tb64dec(res, len, res);
+            len = tb64dec((unsigned char const*)res, len, (unsigned char*)res);
             PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
             ujrpc_str_t res;
@@ -357,7 +357,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->config.max_lifetime_exchanges = UINT32_MAX;
     self->count_threads = 1;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
                                      &self->config.interface, &self->config.port, &self->config.queue_depth,
                                      &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
         return -1;
