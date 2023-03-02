@@ -22,7 +22,7 @@ class Stats:
 
     @property
     def success_rate(self) -> float:
-        return self.requests_correct * 1.0 / (self.requests)
+        return self.requests_correct * 1.0 / (self.requests + 1)
 
     def __repr__(self) -> str:
         bandwidth = self.requests / \
