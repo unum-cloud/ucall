@@ -23,6 +23,21 @@ jobs:
         with:
           output-dir: dist
 
+      - uses: actions/upload-artifact@v3
+        with:
+          path: ./dist/*.whl
+  
+  
+  publish_wheels:
+    name: Publish wheels to pypi
+    runs-on: ubuntu-20.04
+    
+    steps:
+      - name: Download a Build Artifact
+        uses: actions/download-artifact@v3.0.2
+        with:
+          path: ./dist/
+
       - name: publish to test-pypi
         uses: pypa/gh-action-pypi-publish@v1.6.4
         with:
