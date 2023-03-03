@@ -8,8 +8,16 @@ import subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
+__version__ = open('VERSION', 'r').read()
+__lib_name__ = 'ujrpc'
 
-def system_has_iouring():
+
+this_directory = os.path.abspath(dirname(__file__))
+with open(os.path.join(this_directory, 'README.md')) as f:
+    long_description = f.read()
+
+
+def system_has_uring():
     if platform.system() != 'Linux':
         return False
 
@@ -33,7 +41,7 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
-        if 'uring' in ext.name and not system_has_iouring():
+        if 'uring' in ext.name and not system_has_uring():
             return
 
         self.parallel = multiprocessing.cpu_count() // 2
@@ -81,9 +89,17 @@ class CMakeBuild(build_ext):
 
 
 setup(
-    name='ujrpc',
-    version='0.0.3',
+    name=__lib_name__,
+    version=__version__,
+
+    author='Ashot Vardanian',
+    author_email='info@unum.cloud',
+    url='https://github.com/unum-cloud/ujrpc',
+    description='Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     license='Apache-2.0',
+
     classifiers=[
         'Development Status :: 4 - Beta',
 
@@ -106,7 +122,10 @@ setup(
     ],
 
     # https://llllllllll.github.io/c-extension-tutorial/building-and-importing.html
-    ext_modules=[CMakeExtension('ujrpc.uring'), CMakeExtension('ujrpc.posix')],
+    ext_modules=[
+        CMakeExtension('ujrpc.uring'),
+        CMakeExtension('ujrpc.posix'),
+    ],
     cmdclass={
         'build_ext': CMakeBuild,
     },
