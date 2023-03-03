@@ -22,6 +22,7 @@ jobs:
       - uses: pypa/cibuildwheel@v2.12.0
         with:
           output-dir: dist
+          platform: linux
 
       - uses: actions/upload-artifact@v3
         with:
