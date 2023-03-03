@@ -1,11 +1,30 @@
 import os
 import sys
 import re
+import platform
 from os.path import dirname
 import multiprocessing
 import subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+
+
+def system_has_iouring():
+    if platform.system() != "Linux":
+        return False
+
+    kernel_version = platform.release()
+    major = int(kernel_version.split('.')[0])
+
+    if major < 5:
+        return False
+    if major > 5:
+        return True
+
+    minor = int(kernel_version.split('.')[1])
+    if minor < 19:
+        return False
+    return True
 
 
 class CMakeExtension(Extension):
@@ -16,6 +35,9 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
+        if 'uring' in ext.name and not system_has_iouring():
+            return
+
         self.parallel = multiprocessing.cpu_count() // 2
         extension_dir = os.path.abspath(dirname(
             self.get_ext_fullpath(ext.name)))
