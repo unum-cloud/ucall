@@ -24,6 +24,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")
@@ -42,7 +43,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(CMAKE_OSX_ARCHITECTURES "x86_64" "universal2" "arm64" CACHE STRING "Minimum OS X deployment version")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++17")
 endif()
-
 
 # Pull the version of Linux kernel, to check if io_uring is available
 if(LINUX)
@@ -182,7 +182,6 @@ if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     set_target_properties(py_ujrpc_uring PROPERTIES OUTPUT_NAME uring)
     target_compile_definitions(py_ujrpc_uring PRIVATE UKV_PYTHON_MODULE_NAME=uring)
 endif()
-
 
 Python3_add_library(py_ujrpc_posix src/python.c)
 target_include_directories(py_ujrpc_posix PUBLIC src/ include/)
