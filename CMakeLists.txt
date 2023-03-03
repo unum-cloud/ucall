@@ -187,7 +187,19 @@ endif()
 
 find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
-Python3_add_library(py_ujrpc src/python.c)
-target_include_directories(py_ujrpc PUBLIC src/ include/)
-target_link_libraries(py_ujrpc PRIVATE ${PYTHON_BACKEND} ${TB64_LIBS})
-set_target_properties(py_ujrpc PROPERTIES OUTPUT_NAME ujrpc)
+
+if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
+    Python3_add_library(py_ujrpc_uring src/python.c)
+    target_include_directories(py_ujrpc_uring PUBLIC src/ include/)
+    target_link_libraries(py_ujrpc_uring PRIVATE ujrpc_server_uring ${TB64_LIBS})
+    set_target_properties(py_ujrpc_uring PROPERTIES OUTPUT_NAME uring)
+    target_compile_definitions(py_ujrpc_uring PRIVATE UKV_PYTHON_MODULE_NAME=uring)
+endif()
+
+
+Python3_add_library(py_ujrpc_posix src/python.c)
+target_include_directories(py_ujrpc_posix PUBLIC src/ include/)
+target_link_libraries(py_ujrpc_posix PRIVATE ujrpc_server_posix ${TB64_LIBS})
+set_target_properties(py_ujrpc_posix PROPERTIES OUTPUT_NAME posix)
+target_compile_definitions(py_ujrpc_posix PRIVATE UKV_PYTHON_MODULE_NAME=posix)
+

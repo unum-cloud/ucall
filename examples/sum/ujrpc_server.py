@@ -1,4 +1,4 @@
-import ujrpc
+import ujrpc.uring as ujrpc
 import random
 
 server = ujrpc.Server(port=8545)

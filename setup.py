@@ -54,7 +54,7 @@ class CMakeBuild(build_ext):
 
         subprocess.check_call(['cmake', ext.source_dir] + cmake_args)
         subprocess.check_call(
-            ['cmake', '--build', '.', '--target', "py_" + ext.name] + build_args)
+            ['cmake', '--build', '.', '--target', "py_" + ext.name.replace(".", "_")] + build_args)
 
     def run(self):
         build_ext.run(self)
@@ -86,7 +86,7 @@ setup(
     ],
 
     # https://llllllllll.github.io/c-extension-tutorial/building-and-importing.html
-    ext_modules=[CMakeExtension('ujrpc')],
+    ext_modules=[CMakeExtension('ujrpc.uring'), CMakeExtension('ujrpc.posix')],
     cmdclass={
         'build_ext': CMakeBuild,
     },
