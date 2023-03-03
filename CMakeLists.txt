@@ -92,7 +92,7 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
     picohttpparser
-    GIT_REPOSITORY https://github.com/h2o/picohttpparser
+    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser
 )
 FetchContent_MakeAvailable(picohttpparser)
 include_directories(${picohttpparser_SOURCE_DIR})
