@@ -185,7 +185,7 @@ class ClientTCPHTTPBase64:
         return self.recv()
 
     def send(self):
-        jsonrpc = '{"jsonrpc":"2.0","id":%i,"method":"count_of","params":{"data":"%s"}}' % (
+        jsonrpc = '{"jsonrpc":"2.0","id":%i,"method":"echo","params":{"data":"%s"}}' % (
             self.identity, self.payload)
         headers = HTTP_HEADERS % (len(jsonrpc))
         self.expected = self.payload

@@ -23,12 +23,15 @@ Most modern networking is built either on slow and ambiguous REST APIs or unnece
 
 ```python
 from fastapi import FastAPI
+import uvicorn
 
 app = FastAPI()
 
 @app.get('/sum')
 def sum(a: int, b: int):
     return a + b
+
+uvicorn.run(...)
 ```
 
 It takes over a millisecond to handle such a call on the same machine.
@@ -36,13 +39,15 @@ In that time, light could have traveled 300 km through optics to the neighboring
 Let's look at UJRPC example.
 
 ```python
-from ujrpc import Server
+from ujrpc.posix import Server # or `ujrpc.uring`
 
-serve = Server()
+server = Server()
 
-@serve
+@server
 def sum(a: int, b: int):
     return a + b
+
+server.run()
 ```
 
 Not much difference on the outside, but there is magic happening behind the scenes.
@@ -61,6 +66,14 @@ Here is what we do to make networking faster:
 
 With `io_uring`, we can avoid system calls to reduce the latency on the hot path and still use the TCP/IP stack for maximum compatibility.
 With SIMD we add hardware acceleration to increase the bandwidth parsing large messages.
+Especially, if they contain binary data.
+
+```python
+@server
+def echo(data: bytes):
+    return data
+```
+
 At this point, it shouldn't be hard to imagine that one can be faster than gRPC.
 Let's estimate the gap.
 
@@ -86,7 +99,7 @@ We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both
 | gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
 |                         |       |          |                    |                         |
 | UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
-| UJRPC with io_uring     |   ✅   |    Py    |              23 μs |              43'008 rps |
+| UJRPC with io_uring     |   ✅   |    Py    |              23 μs |              43'000 rps |
 | UJRPC with io_uring     |   ✅   |    C     |              22 μs |             231'000 rps |
 
 The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
@@ -107,9 +120,9 @@ Here is the bandwidth they can sustain.
 | gRPC                    |   ✅   |    Py    |    1    |  1'169 rps |   1'974 rps |
 |                         |       |          |         |            |             |
 | UJRPC with POSIX        |   ❌   |    C     |    1    |  1'082 rps |   2'438 rps |
-| UJRPC with io_uring     |   ✅   |    C     |    1    |      ? rps |   5'864 rps |
+| UJRPC with io_uring     |   ✅   |    C     |    1    |          - |   5'864 rps |
 | UJRPC with POSIX        |   ❌   |    C     |   32    |  3'399 rps |  39'877 rps |
-| UJRPC with io_uring     |   ✅   |    C     |   32    |     ?  rps |  88'455 rps |
+| UJRPC with io_uring     |   ✅   |    C     |   32    |          - |  88'455 rps |
 
 ## Installation
 
