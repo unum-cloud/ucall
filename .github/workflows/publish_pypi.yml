@@ -51,5 +51,6 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.TWINE_API }}
+          packages_dir: ./dist/artifact
           verbose: true
           print_hash: true
