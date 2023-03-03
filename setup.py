@@ -1,11 +1,28 @@
 import os
 import sys
 import re
+import platform
 from os.path import dirname
 import multiprocessing
 import subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+
+
+def system_has_iouring():
+    if platform.system() != 'Linux':
+        return False
+
+    kernel_version = platform.release()
+    major, minor = (int(i) for i in kernel_version.split('.')[:2])
+
+    if major < 5:
+        return False
+    if major > 5:
+        return True
+    if minor < 19:
+        return False
+    return True
 
 
 class CMakeExtension(Extension):
@@ -16,6 +33,9 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
+        if 'uring' in ext.name and not system_has_iouring():
+            return
+
         self.parallel = multiprocessing.cpu_count() // 2
         extension_dir = os.path.abspath(dirname(
             self.get_ext_fullpath(ext.name)))
@@ -54,7 +74,7 @@ class CMakeBuild(build_ext):
 
         subprocess.check_call(['cmake', ext.source_dir] + cmake_args)
         subprocess.check_call(
-            ['cmake', '--build', '.', '--target', "py_" + ext.name] + build_args)
+            ['cmake', '--build', '.', '--target', "py_" + ext.name.replace(".", "_")] + build_args)
 
     def run(self):
         build_ext.run(self)
@@ -86,7 +106,7 @@ setup(
     ],
 
     # https://llllllllll.github.io/c-extension-tutorial/building-and-importing.html
-    ext_modules=[CMakeExtension('ujrpc')],
+    ext_modules=[CMakeExtension('ujrpc.uring'), CMakeExtension('ujrpc.posix')],
     cmdclass={
         'build_ext': CMakeBuild,
     },
