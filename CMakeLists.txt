@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(ujrpc LANGUAGES CXX C)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
@@ -35,10 +36,11 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11")
     set(CMAKE_OSX_SYSROOT CACHE STRING "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11" CACHE STRING "Minimum OS X deployment version")
     set(CMAKE_OSX_ARCHITECTURES "x86_64" "universal2" "arm64" CACHE STRING "Minimum OS X deployment version")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++17")
 endif()
 
 
@@ -95,7 +97,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
     SOURCE_DIR ${PICOHTTP_DIR}
     CONFIGURE_COMMAND echo Configuring PicoHTTPParse
-    BUILD_COMMAND cd ${PICOHTTP_DIR} && ${CMAKE_C_COMPILER} -O3 -c -fPIC picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
+    BUILD_COMMAND cd ${PICOHTTP_DIR} && gcc -O3 -fPIC -c picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
     INSTALL_COMMAND ""
     UPDATE_COMMAND ""
 )
@@ -127,8 +129,6 @@ set_property(TARGET tb64_internal
 )
 include_directories(${TB64_DIR})
 set(TB64_LIBS tb64_internal)
-
-
 
 if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
