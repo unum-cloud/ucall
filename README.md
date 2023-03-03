@@ -1,7 +1,7 @@
 <h1 align="center">Uninterrupted JSON RPC</h1>
 <h3 align="center">
 Remote Procedure Calls<br/>
-100x Faster than FastAPI<br/>
+Up to 100x Faster than FastAPI<br/>
 </h3>
 <br/>
 
