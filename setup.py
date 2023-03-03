@@ -10,18 +10,16 @@ from setuptools.command.build_ext import build_ext
 
 
 def system_has_iouring():
-    if platform.system() != "Linux":
+    if platform.system() != 'Linux':
         return False
 
     kernel_version = platform.release()
-    major = int(kernel_version.split('.')[0])
+    major, minor = (int(i) for i in kernel_version.split('.')[:2])
 
     if major < 5:
         return False
     if major > 5:
         return True
-
-    minor = int(kernel_version.split('.')[1])
     if minor < 19:
         return False
     return True
