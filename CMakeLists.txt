@@ -43,7 +43,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++17")
 endif()
 
-
 # Pull the version of Linux kernel, to check if io_uring is available
 if(LINUX)
     execute_process(COMMAND uname -r OUTPUT_VARIABLE UNAME_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -90,25 +89,12 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 
 # On MacOS you may need to locate headers here:
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
-set(PICOHTTP_DIR ${CMAKE_BINARY_DIR}/_deps/picohttpparser-ep)
-ExternalProject_Add(
-    picohttpparser-ep
-    GIT_REPOSITORY https://github.com/h2o/picohttpparser
-    PREFIX ${CMAKE_BINARY_DIR}/_deps/
-    SOURCE_DIR ${PICOHTTP_DIR}
-    CONFIGURE_COMMAND echo Configuring PicoHTTPParse
-    BUILD_COMMAND cd ${PICOHTTP_DIR} && gcc -O3 -fPIC -c picohttpparser.c && ar rcs libpicohttpparser.a picohttpparser.o
-    INSTALL_COMMAND ""
-    UPDATE_COMMAND ""
+FetchContent_Declare(
+    picohttpparser
+    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser
 )
-add_library(picohttp_internal STATIC IMPORTED GLOBAL)
-add_dependencies(picohttp_internal picohttpparser-ep)
-set_property(TARGET picohttp_internal
-    PROPERTY IMPORTED_LOCATION
-    ${PICOHTTP_DIR}/libpicohttpparser.a
-)
-include_directories(${PICOHTTP_DIR})
-set(PICOHTTP_LIBS picohttp_internal)
+FetchContent_MakeAvailable(picohttpparser)
+include_directories(${picohttpparser_SOURCE_DIR})
 
 set(TB64_DIR ${CMAKE_BINARY_DIR}/_deps/tb64-ep)
 ExternalProject_Add(
@@ -158,7 +144,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/)
 
 add_library(ujrpc_server_posix src/engine_posix.cpp)
-target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS})
+target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads)
 set(PYTHON_BACKEND ujrpc_server_posix)
 
 add_executable(ujrpc_example_sum_posix examples/sum/ujrpc_server.cpp)
@@ -168,7 +154,7 @@ target_compile_options(ujrpc_example_sum_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     add_library(ujrpc_server_uring src/engine_uring.cpp)
     set(PYTHON_BACKEND ujrpc_server_uring)
-    target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${PICOHTTP_LIBS} ${URING_LIBS})
+    target_link_libraries(ujrpc_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS})
     add_executable(ujrpc_example_sum_uring examples/sum/ujrpc_server.cpp)
     target_link_libraries(ujrpc_example_sum_uring ujrpc_server_uring cxxopts)
     target_compile_options(ujrpc_example_sum_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
@@ -196,10 +182,10 @@ if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     target_compile_definitions(py_ujrpc_uring PRIVATE UKV_PYTHON_MODULE_NAME=uring)
 endif()
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 
 Python3_add_library(py_ujrpc_posix src/python.c)
 target_include_directories(py_ujrpc_posix PUBLIC src/ include/)
 target_link_libraries(py_ujrpc_posix PRIVATE ujrpc_server_posix ${TB64_LIBS})
 set_target_properties(py_ujrpc_posix PROPERTIES OUTPUT_NAME posix)
 target_compile_definitions(py_ujrpc_posix PRIVATE UKV_PYTHON_MODULE_NAME=posix)
-
