@@ -105,9 +105,11 @@
         "iovecs",
         "numpy",
         "posix",
+        "SIMD",
         "simdjson",
         "tqdm",
         "ujrpc",
+        "uring",
         "uvicorn"
     ]
 }

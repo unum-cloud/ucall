@@ -1,8 +1,8 @@
-name: Pyblish Python Wheels
+name: Publish Python Wheels
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["main"]
 
 env:
   BUILD_TYPE: Release
@@ -36,7 +36,7 @@ jobs:
   
   
   publish_wheels:
-    name: Publish wheels to pypi
+    name: Publish wheels to PyPi
     runs-on: ubuntu-20.04
     needs: build_wheels
     
@@ -46,7 +46,7 @@ jobs:
         with:
           path: ./dist/
 
-      - name: publish to test-pypi
+      - name: Publish to PyPi
         uses: pypa/gh-action-pypi-publish@v1.6.4
         with:
           user: __token__

@@ -1,21 +1,23 @@
-import ujrpc.uring as ujrpc
 import random
+
+import ujrpc.uring as ujrpc
 
 server = ujrpc.Server(port=8545)
 
 
-@server.route
+@server
 def sum(a: int, b: int):
     return a+b
 
 
-@server.route
-def count_of(data: bytes):
+@server
+def echo(data: bytes):
     return data
 
 
-@server.route
+@server
 def transform(age: float, name: str, value: int, identity: bytes):
+
     if age < 15:
         return False
 
@@ -24,12 +26,16 @@ def transform(age: float, name: str, value: int, identity: bytes):
 
     new_identity = identity.decode() + f'_{name}'
 
-    return {'name': name,
-            'pins': [random.random()*age for _ in range(round(age))],
-            'val': {'len': value,
-                    'identity': new_identity.encode(),
-                    'data': [random.randbytes(value) for _ in range(value)]}
-            }
+    return {
+        'name': name,
+        'pins': [random.random()*age for _ in range(round(age))],
+        'val': {
+            'len': value,
+            'identity': new_identity.encode(),
+            'data': [random.randbytes(value) for _ in range(value)],
+        }
+    }
 
 
-server.run()
+if __name__ == '__main__':
+    server.run()
