@@ -63,7 +63,8 @@ uvicorn.run(...)
 <td>
 
 ```python
-from ujrpc.posix import Server # or `ujrpc.uring`
+from ujrpc.posix import Server
+# from ujrpc.uring import Server on 5.19+
 
 server = Server()
 
@@ -94,30 +95,43 @@ How does UJRPC compare to FastAPI and gRPC?
 | UJRPC with io_uring     |   ✅   |   🐍    |              23 μs |              43'000 rps |
 | UJRPC with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
-> All benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**, as it is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations. These specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.
-> The 🔁 column marks, if the TCP/IP connection is being reused during subsequent requests.
-> The "latency" column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
-> The "throughput" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
+<details>
+  <summary>How those numbers were obtained?</summary>
+
+All benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**.
+It is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations.
+These specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.
+
+- The 🔁 column marks, if the TCP/IP connection is being reused during subsequent requests.
+- The "latency" column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
+- The "throughput" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
+
 > ¹ FastAPI couldn't process concurrent requests with WebSockets.
 
-## How?!
+</details>
 
-How can a tiny pet-project with just a couple thousand lines of codes dwarf two of the most established networking libraries?
-**UJRPC stands on the shoulders of Titans**.
-Two Titans, to be exact:
+## How is that possible?!
 
-- `io_uring` for interrupt-less ~~hence the name~~ IO, to avoid system calls, reduce the latency on the hot path and still use the TCP/IP stack.
-  - `io_uring_prep_read_fixed` to read into registered buffers on 5.1+.
-  - `io_uring_prep_accept_direct` for reusable descriptors on 5.19+.
+How can a tiny pet-project with just a couple thousand lines of code dwarf two of the most established networking libraries?
+**UJRPC stands on the shoulders of Titans**:
+
+- `io_uring` for interrupt-less ~~hence the name~~ IO, *to reduce the latency by avoiding system calls*.
+  - `io_uring_prep_read_fixed` on 5.1+.
+  - `io_uring_prep_accept_direct` on 5.19+.
   - `io_uring_register_files_sparse` on 5.19+.
-  - `IORING_SETUP_COOP_TASKRUN` optional feature on 5.19+.
-  - `IORING_SETUP_SINGLE_ISSUER` optional feature on 6.0+.
-- SIMD-accelerated parsers and serializers with explicit memory controls, to increase the bandwidth parsing large messages, and avoid expensive memory allocations.
-  - [`simdjson`][simdjson] to parse JSON docs faster than gRPC can unpack a binary `ProtoBuf`.
-  - [`Turbo-Base64`][base64] to parse binary strings packed in JSON in a base-64 form.
-  - [`picohttpparser`][picohttpparser] to parse HTTP headers.
+  - `IORING_SETUP_COOP_TASKRUN` optional on 5.19+.
+  - `IORING_SETUP_SINGLE_ISSUER` optional on 6.0+.
+- SIMD-accelerated parsers with explicit memory controls, *mainly to increase the bandwidth on large messages*.
+  - [`simdjson`][simdjson] to parse JSON faster than gRPC can unpack `ProtoBuf`.
+  - [`Turbo-Base64`][base64] to decode binary values from a `Base64` form.
+  - [`picohttpparser`][picohttpparser] to navigate HTTP headers.
 
-You have already seen the latency of the round trip..., the throughput in requests per second..., wanna see the bandwidth?
+You have already seen 
+
+- the latency of the round trip..., 
+- the throughput in requests per second..., 
+- wanna see the bandwidth?
+
 Try yourself!
 
 ```python
@@ -145,13 +159,9 @@ Here is the bandwidth they can sustain.
 | UJRPC with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
 | UJRPC with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
-[simdjson]: https://github.com/simdjson/simdjson
-[base64]: https://github.com/powturbo/Turbo-Base64
-[picohttpparser]: https://github.com/h2o/picohttpparser
-
-> This tiny solution already works for C, C++, and Python.
-> We are inviting others to contribute bindings to other languages as well.
-
+This tiny solution already works for C, C++, and Python.
+We are inviting others to contribute bindings to other languages as well.
+If you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].
 
 ## Installation
 
@@ -191,76 +201,7 @@ include_directories(${ujrpc_SOURCE_DIR}/include)
 - Application layer is optional: use HTTP or not.
 - Unlike REST APIs, there is just one way to pass arguments.
 
-## Reproducing Benchmarks
-
-### FastAPI
-
-```sh
-pip install uvicorn fastapi websocket-client requests tqdm fire
-cd examples && uvicorn sum.fastapi_server:app --log-level critical &
-cd ..
-python examples/bench.py "sum.fastapi_client.ClientREST" --progress
-python examples/bench.py "sum.fastapi_client.ClientWebSocket" --progress
-kill %%
-```
-
-Want to dispatch more clients and aggregate statistics?
-
-```sh
-python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
-python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
-```
-
-### UJRPC
-
-UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
-You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
-
-```sh
-sudo apt-get install cmake g++ build-essential
-cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
-./build_release/build/bin/ujrpc_example_sum_posix &
-./build_release/build/bin/ujrpc_example_sum_uring &
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
-kill %%
-```
-
-Want to customize server settings?
-
-```sh
-./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
-```
-
-Want to dispatch more clients and aggregate more accurate statistics?
-
-```sh
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 32 --seconds 100
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 32 --seconds 100
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 32 --seconds 100
-```
-
-A lot has been said about the speed of Python code ~~or the lack of~~.
-To get more accurate numbers for mean request latency, you can use the GoLang version:
-
-```sh
-go run ./examples/sum/ujrpc_client.go
-```
-
-Or push it even further dispatching dozens of processes with GNU `parallel` utility:
-
-```sh
-sudo apt install parallel
-parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
-```
-
-### gRPC Results
-
-```sh
-pip install grpcio grpcio-tools
-python ./examples/sum/grpc_server.py &
-python examples/bench.py "sum.grpc_client.gRPCClient" --progress
-python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
-kill %%
-```
+[simdjson]: https://github.com/simdjson/simdjson
+[base64]: https://github.com/powturbo/Turbo-Base64
+[picohttpparser]: https://github.com/h2o/picohttpparser
+[sum-examples]: https://github.com/unum-cloud/ujrpc/tree/dev/examples/sum
