@@ -87,6 +87,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cxxopts)
 include_directories(${cxxopts_SOURCE_DIR}/include)
 
+# Parsing HTTP headers
 # On MacOS you may need to locate headers here:
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
@@ -96,26 +97,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(picohttpparser)
 include_directories(${picohttpparser_SOURCE_DIR})
 
-set(TB64_DIR ${CMAKE_BINARY_DIR}/_deps/tb64-ep)
-ExternalProject_Add(
-    tb64-ep
+# Base64 decoding
+FetchContent_Declare(
+    tb64
     GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64/
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
-    SOURCE_DIR ${TB64_DIR}
-    CONFIGURE_COMMAND echo Configuring FastBase64
-    BUILD_COMMAND cd ${TB64_DIR} && FPIC=-fPIC make libtb64.a
-    INSTALL_COMMAND ""
-    UPDATE_COMMAND ""
 )
-add_library(tb64_internal STATIC IMPORTED GLOBAL)
-add_dependencies(tb64_internal tb64-ep)
-set_property(TARGET tb64_internal
-    PROPERTY IMPORTED_LOCATION
-    ${TB64_DIR}/libtb64.a
-)
-include_directories(${TB64_DIR})
-set(TB64_LIBS tb64_internal)
+FetchContent_MakeAvailable(tb64)
+include_directories(${tb64_SOURCE_DIR})
 
+# LibUring
 if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
     ExternalProject_Add(
@@ -171,21 +162,20 @@ if(UJRPC_BUILD_EXAMPLES)
     target_link_libraries(ujrpc_example_pytorcs ujrpc_server_posix "${TORCH_LIBRARIES}")
 endif()
 
+# Python bindings
 find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 
 if(LINUX AND LINUX_KERNEL_VERSION VERSION_GREATER_EQUAL 5.19)
     Python3_add_library(py_ujrpc_uring src/python.c)
     target_include_directories(py_ujrpc_uring PUBLIC src/ include/)
-    target_link_libraries(py_ujrpc_uring PRIVATE ujrpc_server_uring ${TB64_LIBS})
+    target_link_libraries(py_ujrpc_uring PRIVATE ujrpc_server_uring tb64)
     set_target_properties(py_ujrpc_uring PROPERTIES OUTPUT_NAME uring)
     target_compile_definitions(py_ujrpc_uring PRIVATE UKV_PYTHON_MODULE_NAME=uring)
 endif()
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-
 Python3_add_library(py_ujrpc_posix src/python.c)
 target_include_directories(py_ujrpc_posix PUBLIC src/ include/)
-target_link_libraries(py_ujrpc_posix PRIVATE ujrpc_server_posix ${TB64_LIBS})
+target_link_libraries(py_ujrpc_posix PRIVATE ujrpc_server_posix tb64)
 set_target_properties(py_ujrpc_posix PROPERTIES OUTPUT_NAME posix)
 target_compile_definitions(py_ujrpc_posix PRIVATE UKV_PYTHON_MODULE_NAME=posix)
