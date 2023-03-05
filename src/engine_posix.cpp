@@ -92,7 +92,7 @@ void forward_call(engine_t& engine) noexcept {
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     named_callback_t call_data = std::get<named_callback_t>(callback_or_error);
-    return call_data.callback(&engine, call_data.callback_data);
+    return call_data.callback(&engine, call_data.callback_tag);
 }
 
 /**
@@ -338,10 +338,10 @@ cleanup:
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
-                         ujrpc_data_t callback_data) {
+                         ujrpc_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back_reserved({name, callback, callback_data});
+        engine.callbacks.push_back_reserved({name, callback, callback_tag});
 }
 
 void ujrpc_take_calls(ujrpc_server_t server, uint16_t) {
