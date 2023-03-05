@@ -23,7 +23,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")
@@ -87,6 +87,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cxxopts)
 include_directories(${cxxopts_SOURCE_DIR}/include)
 
+# Parsing HTTP headers
 # On MacOS you may need to locate headers here:
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
@@ -96,6 +97,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(picohttpparser)
 include_directories(${picohttpparser_SOURCE_DIR})
 
+# Base64 decoding
 FetchContent_Declare(
     tb64
     GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64/
@@ -104,6 +106,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
 
+# LibUring
 if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
     ExternalProject_Add(
@@ -159,6 +162,7 @@ if(UJRPC_BUILD_EXAMPLES)
     target_link_libraries(ujrpc_example_pytorcs ujrpc_server_posix "${TORCH_LIBRARIES}")
 endif()
 
+# Python bindings
 find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 
