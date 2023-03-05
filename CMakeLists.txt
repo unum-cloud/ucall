@@ -98,7 +98,7 @@ include_directories(${picohttpparser_SOURCE_DIR})
 
 FetchContent_Declare(
     tb64
-    GIT_REPOSITORY https://github.com/DarvinHarutyunyan/Turbo-Base64/
+    GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64/
     PREFIX ${CMAKE_BINARY_DIR}/_deps/
 )
 FetchContent_MakeAvailable(tb64)
