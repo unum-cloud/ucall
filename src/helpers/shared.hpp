@@ -41,7 +41,7 @@ static constexpr descriptor_t bad_descriptor_k{-1};
 struct named_callback_t {
     ujrpc_str_t name{};
     ujrpc_callback_t callback{};
-    ujrpc_data_t callback_data{};
+    ujrpc_callback_tag_t callback_tag{};
 };
 
 template <typename element_at> class span_gt {

@@ -423,10 +423,10 @@ cleanup:
     *server_out = nullptr;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback, ujrpc_data_t user_data) {
+void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback, ujrpc_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back_reserved({name, callback, user_data});
+        engine.callbacks.push_back_reserved({name, callback, callback_tag});
 }
 
 void ujrpc_free(ujrpc_server_t server) {
@@ -655,7 +655,7 @@ void automata_t::raise_call() noexcept {
         return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     named_callback_t named_callback = std::get<named_callback_t>(callback_or_error);
-    return named_callback.callback(this, named_callback.callback_data);
+    return named_callback.callback(this, named_callback.callback_tag);
 }
 
 void automata_t::raise_call_or_calls() noexcept {
@@ -750,9 +750,9 @@ template <std::size_t max_count_ak> std::size_t engine_t::pop_completed(complete
     completion_mutex.lock();
     io_uring_for_each_cqe(&uring, uring_head, uring_cqe) {
         ++passed;
-        if (!uring_cqe->user_data)
+        if (!uring_cqe->callback_tag)
             continue;
-        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
+        events[completed].connection_ptr = (connection_t*)uring_cqe->callback_tag;
         events[completed].stage = events[completed].connection_ptr->stage;
         events[completed].result = uring_cqe->res;
         ++completed;

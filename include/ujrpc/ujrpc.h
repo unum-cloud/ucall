@@ -19,10 +19,10 @@ extern "C" {
 
 typedef void* ujrpc_server_t;
 typedef void* ujrpc_call_t;
-typedef void* ujrpc_data_t;
+typedef void* ujrpc_callback_tag_t;
 typedef char const* ujrpc_str_t;
 
-typedef void (*ujrpc_callback_t)(ujrpc_call_t, ujrpc_data_t);
+typedef void (*ujrpc_callback_t)(ujrpc_call_t, ujrpc_callback_tag_t);
 
 typedef struct ujrpc_config_t {
     char const* interface;
@@ -47,7 +47,7 @@ typedef struct ujrpc_config_t {
 } ujrpc_config_t;
 
 void ujrpc_init(ujrpc_config_t*, ujrpc_server_t*);
-void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t, ujrpc_data_t);
+void ujrpc_add_procedure(ujrpc_server_t, ujrpc_str_t, ujrpc_callback_t, ujrpc_callback_tag_t);
 void ujrpc_take_call(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_take_calls(ujrpc_server_t, uint16_t thread_idx);
 void ujrpc_free(ujrpc_server_t);

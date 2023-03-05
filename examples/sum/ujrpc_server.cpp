@@ -11,7 +11,7 @@
 
 #include "ujrpc/ujrpc.h"
 
-static void sum(ujrpc_call_t call, ujrpc_data_t) {
+static void sum(ujrpc_call_t call, ujrpc_callback_tag_t) {
     int64_t a{}, b{};
     char c_str[256]{};
     bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);

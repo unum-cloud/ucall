@@ -163,8 +163,8 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     return 0;
 }
 
-static void wrapper(ujrpc_call_t call, ujrpc_data_t user_data) {
-    py_wrapper_t* wrap = (py_wrapper_t*)(user_data);
+static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
+    py_wrapper_t* wrap = (py_wrapper_t*)(callback_tag);
     PyObject* args = PyTuple_New(wrap->params_cnt);
 
     for (size_t i = 0; i < wrap->params_cnt; ++i) {
