@@ -24,28 +24,45 @@ FastAPI, for example, looks very approachable.
 We aim to be equally or even simpler to use.
 
 <table>
-  <tr>
-    <th>FastAPI</th>
-    <th>UJRPC</th>
-  </tr>
-  <tr>
-    <td><pre lang="sh">pip install fastapi uvicorn</pre></td>
-    <td><pre lang="sh">pip install ujrpc</pre></td>
-  </tr>
-  <tr>
-    <td><pre lang="python">
+<tr>
+<th width="50%">FastAPI</th><th width="50%">UJRPC</th>
+</tr>
+<tr>
+<td>
+
+```sh
+pip install fastapi uvicorn
+```
+
+</td>
+<td>
+
+```sh
+pip install ujrpc
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+```python
 from fastapi import FastAPI
 import uvicorn
 
-app = FastAPI()
+server = FastAPI()
 
-@app.get('/sum')
+@server.get('/sum')
 def sum(a: int, b: int):
     return a + b
 
 uvicorn.run(...)    
-    </pre></td>
-    <td><pre lang="python">
+```
+
+</td>
+<td>
+
+```python
 from ujrpc.posix import Server # or `ujrpc.uring`
 
 server = Server()
@@ -55,31 +72,53 @@ def sum(a: int, b: int):
     return a + b
 
 server.run()    
-    </pre></td>
-  </tr>
+```
+
+</td>
+</tr>
 </table>
 
-It takes over a millisecond to handle such a call on the same machine.
+It takes over a millisecond to handle a trivial FastAPI call on a recent 8-core CPU.
 In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
-Let's look at UJRPC example.
+How does UJRPC compare to FastAPI and gRPC?
 
-Not much difference on the outside, but there is magic happening behind the scenes.
-Here is what we do to make networking faster:
+| Setup                   |   🔁   | Server | Latency w 1 client | Throughput w 32 clients |
+| :---------------------- | :---: | :----: | -----------------: | ----------------------: |
+| Fast API over REST      |   ❌   |   🐍    |           1'203 μs |               3'184 rps |
+| Fast API over WebSocket |   ✅   |   🐍    |              86 μs |            11'356 rps ¹ |
+|                         |       |        |                    |                         |
+| gRPC                    |   ✅   |   🐍    |             164 μs |               9'849 rps |
+| gRPC                    |   ✅   |   C    |                  - |                       - |
+|                         |       |        |                    |                         |
+| UJRPC with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
+| UJRPC with io_uring     |   ✅   |   🐍    |              23 μs |              43'000 rps |
+| UJRPC with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
-- I/O layer without interrupts (hence the name), like `io_uring`.
+> All benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**, as it is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations. These specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.
+> The 🔁 column marks, if the TCP/IP connection is being reused during subsequent requests.
+> The "latency" column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
+> The "throughput" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
+> ¹ FastAPI couldn't process concurrent requests with WebSockets.
+
+## How?!
+
+How can a tiny pet-project with just a couple thousand lines of codes dwarf two of the most established networking libraries?
+**UJRPC stands on the shoulders of Titans**.
+Two Titans, to be exact:
+
+- `io_uring` for interrupt-less ~~hence the name~~ IO, to avoid system calls, reduce the latency on the hot path and still use the TCP/IP stack.
   - `io_uring_prep_read_fixed` to read into registered buffers on 5.1+.
   - `io_uring_prep_accept_direct` for reusable descriptors on 5.19+.
   - `io_uring_register_files_sparse` on 5.19+.
   - `IORING_SETUP_COOP_TASKRUN` optional feature on 5.19+.
   - `IORING_SETUP_SINGLE_ISSUER` optional feature on 6.0+.
-- Efficient SIMD-accelerated parsers and serializers:
-   - [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.
-   - [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.
-   - [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.
+- SIMD-accelerated parsers and serializers with explicit memory controls, to increase the bandwidth parsing large messages, and avoid expensive memory allocations.
+  - [`simdjson`][simdjson] to parse JSON docs faster than gRPC can unpack a binary `ProtoBuf`.
+  - [`Turbo-Base64`][base64] to parse binary strings packed in JSON in a base-64 form.
+  - [`picohttpparser`][picohttpparser] to parse HTTP headers.
 
-With `io_uring`, we can avoid system calls to reduce the latency on the hot path and still use the TCP/IP stack for maximum compatibility.
-With SIMD we add hardware acceleration to increase the bandwidth parsing large messages.
-Especially, if they contain binary data.
+You have already seen the latency of the round trip..., the throughput in requests per second..., wanna see the bandwidth?
+Try yourself!
 
 ```python
 @server
@@ -87,55 +126,32 @@ def echo(data: bytes):
     return data
 ```
 
-At this point, it shouldn't be hard to imagine that one can be faster than gRPC.
-Let's estimate the gap.
+### Free Tier Throughput
 
-> This tiny solution already works for C, C++, and Python.
-> We are inviting others to contribute bindings to other languages as well.
+We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
+The general logic is that you can't squeeze high performance from Free-Tier machines.
+Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
+This library is so fast, that it doesn't need more than 1 core, so you can run a super fast server even on tiny free-tier machines!
+Here is the bandwidth they can sustain.
+
+| Setup                   |   🔁   | Server | Clients | `t2.micro` | `t4g.small` |
+| :---------------------- | :---: | :----: | :-----: | ---------: | ----------: |
+| Fast API over REST      |   ❌   |   🐍    |    1    |    328 rps |     424 rps |
+| Fast API over WebSocket |   ✅   |   🐍    |    1    |  1'504 rps |   3'051 rps |
+| gRPC                    |   ✅   |   🐍    |    1    |  1'169 rps |   1'974 rps |
+|                         |       |        |         |            |             |
+| UJRPC with POSIX        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
+| UJRPC with io_uring     |   ✅   |   C    |    1    |          - |   5'864 rps |
+| UJRPC with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
+| UJRPC with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
 [simdjson]: https://github.com/simdjson/simdjson
 [base64]: https://github.com/powturbo/Turbo-Base64
 [picohttpparser]: https://github.com/h2o/picohttpparser
 
-## Benchmarks
+> This tiny solution already works for C, C++, and Python.
+> We are inviting others to contribute bindings to other languages as well.
 
-All benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.
-
-### Single Large Node
-
-We measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.
-
-| Setup                   |   🔁   | Language | Latency w 1 client | Throughput w 32 clients |
-| :---------------------- | :---: | :------: | -----------------: | ----------------------: |
-| Fast API over REST      |   ❌   |    Py    |           1'203 μs |               3'184 rps |
-| Fast API over WebSocket |   ✅   |    Py    |              86 μs |            11'356 rps ¹ |
-| gRPC                    |   ✅   |    Py    |             164 μs |               9'849 rps |
-|                         |       |          |                    |                         |
-| UJRPC with POSIX        |   ❌   |    C     |              62 μs |              79'000 rps |
-| UJRPC with io_uring     |   ✅   |    Py    |              23 μs |              43'000 rps |
-| UJRPC with io_uring     |   ✅   |    C     |              22 μs |             231'000 rps |
-
-The first column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
-The second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
-
-> ¹ FastAPI couldn't process concurrent requests with WebSockets.
-
-### Free Tier Throughput
-
-The general logic is that you can't squeeze high performance from Free-Tier machines.
-Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
-Here is the bandwidth they can sustain.
-
-| Setup                   |   🔁   | Language | Clients | `t2.micro` | `t4g.small` |
-| :---------------------- | :---: | :------: | :-----: | ---------: | ----------: |
-| Fast API over REST      |   ❌   |    Py    |    1    |    328 rps |     424 rps |
-| Fast API over WebSocket |   ✅   |    Py    |    1    |  1'504 rps |   3'051 rps |
-| gRPC                    |   ✅   |    Py    |    1    |  1'169 rps |   1'974 rps |
-|                         |       |          |         |            |             |
-| UJRPC with POSIX        |   ❌   |    C     |    1    |  1'082 rps |   2'438 rps |
-| UJRPC with io_uring     |   ✅   |    C     |    1    |          - |   5'864 rps |
-| UJRPC with POSIX        |   ❌   |    C     |   32    |  3'399 rps |  39'877 rps |
-| UJRPC with io_uring     |   ✅   |    C     |   32    |          - |  88'455 rps |
 
 ## Installation
 
