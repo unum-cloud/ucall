@@ -19,9 +19,21 @@ Up to 100x Faster than FastAPI<br/>
 
 ---
 
-Most modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC. FastAPI, for example, looks very easy to use:
+Most modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC.
+FastAPI, for example, looks very approachable.
+We aim to be equally or even simpler to use.
 
-```python
+<table>
+  <tr>
+    <th>FastAPI</th>
+    <th>UJRPC</th>
+  </tr>
+  <tr>
+    <td><pre lang="sh">pip install fastapi uvicorn</pre></td>
+    <td><pre lang="sh">pip install ujrpc</pre></td>
+  </tr>
+  <tr>
+    <td><pre lang="python">
 from fastapi import FastAPI
 import uvicorn
 
@@ -31,14 +43,9 @@ app = FastAPI()
 def sum(a: int, b: int):
     return a + b
 
-uvicorn.run(...)
-```
-
-It takes over a millisecond to handle such a call on the same machine.
-In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
-Let's look at UJRPC example.
-
-```python
+uvicorn.run(...)    
+    </pre></td>
+    <td><pre lang="python">
 from ujrpc.posix import Server # or `ujrpc.uring`
 
 server = Server()
@@ -47,8 +54,14 @@ server = Server()
 def sum(a: int, b: int):
     return a + b
 
-server.run()
-```
+server.run()    
+    </pre></td>
+  </tr>
+</table>
+
+It takes over a millisecond to handle such a call on the same machine.
+In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
+Let's look at UJRPC example.
 
 Not much difference on the outside, but there is magic happening behind the scenes.
 Here is what we do to make networking faster:
