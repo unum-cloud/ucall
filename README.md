@@ -87,9 +87,7 @@ How does UJRPC compare to FastAPI and gRPC?
 | :---------------------- | :---: | :----: | -----------------: | ----------------------: |
 | Fast API over REST      |   ❌   |   🐍    |           1'203 μs |               3'184 rps |
 | Fast API over WebSocket |   ✅   |   🐍    |              86 μs |            11'356 rps ¹ |
-|                         |       |        |                    |                         |
-| gRPC                    |   ✅   |   🐍    |             164 μs |               9'849 rps |
-| gRPC                    |   ✅   |   C    |                  - |                       - |
+| gRPC ²                  |   ✅   |   🐍    |             164 μs |               9'849 rps |
 |                         |       |        |                    |                         |
 | UJRPC with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
 | UJRPC with io_uring     |   ✅   |   🐍    |              23 μs |              43'000 rps |
@@ -107,6 +105,8 @@ These specific numbers were obtained on `c7g.metal` beefy instances with Gravito
 - The "throughput" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
 
 > ¹ FastAPI couldn't process concurrent requests with WebSockets.
+
+> ² We tried generating a C++ backend with gRPC, but it's numbers, suspiciously, weren't better. There is also an async gRPC option, that wasn't tried.
 
 </details>
 
