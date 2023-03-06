@@ -1,6 +1,6 @@
 import random
 
-import ujrpc.uring as ujrpc
+import ujrpc.posix as ujrpc
 
 server = ujrpc.Server(port=8545)
 
