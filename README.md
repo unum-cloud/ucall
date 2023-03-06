@@ -112,16 +112,17 @@ These specific numbers were obtained on `c7g.metal` beefy instances with Gravito
 
 ## How is that possible?!
 
-How can a tiny pet-project with just a couple thousand lines of code dwarf two of the most established networking libraries?
-**UJRPC stands on the shoulders of Titans**:
+How can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?
+**UJRPC stands on the shoulders of Giants**:
 
-- `io_uring` for interrupt-less ~~hence the name~~ IO, *to reduce the latency by avoiding system calls*.
+- `io_uring` for interrupt-less IO.
   - `io_uring_prep_read_fixed` on 5.1+.
   - `io_uring_prep_accept_direct` on 5.19+.
   - `io_uring_register_files_sparse` on 5.19+.
   - `IORING_SETUP_COOP_TASKRUN` optional on 5.19+.
   - `IORING_SETUP_SINGLE_ISSUER` optional on 6.0+.
-- SIMD-accelerated parsers with explicit memory controls, *mainly to increase the bandwidth on large messages*.
+
+- SIMD-accelerated parsers with manual memory control.
   - [`simdjson`][simdjson] to parse JSON faster than gRPC can unpack `ProtoBuf`.
   - [`Turbo-Base64`][base64] to decode binary values from a `Base64` form.
   - [`picohttpparser`][picohttpparser] to navigate HTTP headers.
@@ -145,8 +146,7 @@ def echo(data: bytes):
 We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
 The general logic is that you can't squeeze high performance from Free-Tier machines.
 Currently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.
-This library is so fast, that it doesn't need more than 1 core, so you can run a super fast server even on tiny free-tier machines!
-Here is the bandwidth they can sustain.
+This library is so fast, that it doesn't need more than 1 core, so you can run a fast server even on a tiny Free-Tier server!
 
 | Setup                   |   🔁   | Server | Clients | `t2.micro` | `t4g.small` |
 | :---------------------- | :---: | :----: | :-----: | ---------: | ----------: |
@@ -159,8 +159,7 @@ Here is the bandwidth they can sustain.
 | UJRPC with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
 | UJRPC with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
-This tiny solution already works for C, C++, and Python.
-We are inviting others to contribute bindings to other languages as well.
+In this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.
 If you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].
 
 ## Installation
@@ -188,12 +187,13 @@ include_directories(${ujrpc_SOURCE_DIR}/include)
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
+- [ ] Numpy Array serialization
 - [ ] HTTP**S** Support
 - [ ] Batch-capable Endpoints
 - [ ] WebSockets
-- [ ] Complementing JSON with Amazon Ion
-- [ ] Custom UDP-based JSON-RPC like protocol
-- [ ] AF_XDP on Linux
+- [ ] AF_XDP and UDp-based analogs on Linux
+
+> Want to affect the roadmap and request a feature? Join the discussions on Discord.
 
 ## Why JSON-RPC?
 
