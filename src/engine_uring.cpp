@@ -423,7 +423,8 @@ cleanup:
     *server_out = nullptr;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback, ujrpc_callback_tag_t callback_tag) {
+void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
+                         ujrpc_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
         engine.callbacks.push_back_reserved({name, callback, callback_tag});
@@ -750,9 +751,9 @@ template <std::size_t max_count_ak> std::size_t engine_t::pop_completed(complete
     completion_mutex.lock();
     io_uring_for_each_cqe(&uring, uring_head, uring_cqe) {
         ++passed;
-        if (!uring_cqe->callback_tag)
+        if (!uring_cqe->user_data)
             continue;
-        events[completed].connection_ptr = (connection_t*)uring_cqe->callback_tag;
+        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
         events[completed].stage = events[completed].connection_ptr->stage;
         events[completed].result = uring_cqe->res;
         ++completed;

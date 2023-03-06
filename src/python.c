@@ -389,6 +389,7 @@ static PyTypeObject ujrpc_type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc = PyDoc_STR("Server class for Remote Procedure Calls implemented in Python"),
     .tp_methods = server_methods,
+    .tp_call = (PyCFunction)&server_add_procedure,
     .tp_getset = server_computed_properties,
     .tp_init = (initproc)server_init,
     .tp_new = server_new,
