@@ -165,7 +165,7 @@ If you want to reproduce those benchmarks, check out the [`sum` examples on GitH
 ## Installation
 
 ```sh
-pip install uform
+pip install ujrpc
 ```
 
 A CMake user?
