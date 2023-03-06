@@ -1,7 +1,7 @@
 # UJRPC C SDK
 
 C is the "Lingua franca" of modern computing, and we use it as our primary interface.
-We wanted to make it as light-weight as possible, and to allow optional arguments, without dynamic allocations and named lookups.
+We wanted to make it as lightweight as possible and to allow optional arguments without dynamic allocations and named lookups.
 So unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ujrpc_param_named_i64()`, and its siblings.
 The minimal sum example could look like this.
 
