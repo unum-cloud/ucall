@@ -3,11 +3,11 @@ import random
 from typing import Optional
 
 import grpc
-import grpc_schema_pb2 as pb2
-import grpc_schema_pb2_grpc as pb2_grpc
+import sum_pb2 as pb2
+import sum_pb2_grpc as pb2_grpc
 
 
-class gRPCClient:
+class SumClient:
     """
     Client for gRPC functionality
     """
@@ -20,19 +20,19 @@ class gRPCClient:
         self.channel = grpc.insecure_channel(f'{self.host}:{self.server_port}')
 
         # bind the client and the server
-        self.stub = pb2_grpc.gRPCStub(self.channel)
+        self.stub = pb2_grpc.SumServiceStub(self.channel)
 
     def get_url(self, a, b):
         """
-        Client function to call the rpc for GetServerResponse
+        Client function to call the rpc for Sum
         """
-        result = pb2.Sum(a=a, b=b)
-        return self.stub.GetServerResponse(result)
+        result = pb2.SumRequest(a=a, b=b)
+        return self.stub.Sum(result)
 
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
         result = self.get_url(a=a, b=b)
-        c = result.c
+        c = result.result
         assert a + b == c, 'Wrong sum'
         return c
