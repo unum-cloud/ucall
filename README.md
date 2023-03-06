@@ -23,7 +23,7 @@ Most modern networking is built either on slow and ambiguous REST APIs or unnece
 FastAPI, for example, looks very approachable.
 We aim to be equally or even simpler to use.
 
-<table>
+<table width="100%">
 <tr>
 <th width="50%">FastAPI</th><th width="50%">UJRPC</th>
 </tr>
@@ -94,19 +94,20 @@ How does UJRPC compare to FastAPI and gRPC?
 | UJRPC with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
 <details>
-  <summary>How those numbers were obtained?</summary>
+  <summary>Table legend</summary>
 
 All benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**.
 It is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations.
 These specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.
 
 - The 🔁 column marks, if the TCP/IP connection is being reused during subsequent requests.
+- The "server" column defines the programming language, in which the server was implemented.
 - The "latency" column report the amount of time between sending a request and receiving a response. μ stands for micro, μs subsequently means microseconds.
 - The "throughput" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.
 
 > ¹ FastAPI couldn't process concurrent requests with WebSockets.
 
-> ² We tried generating a C++ backend with gRPC, but it's numbers, suspiciously, weren't better. There is also an async gRPC option, that wasn't tried.
+> ² We tried generating C++ backends with gRPC, but its numbers, suspiciously, weren't better. There is also an async gRPC option, that wasn't tried.
 
 </details>
 
@@ -127,12 +128,7 @@ How can a tiny pet-project with just a couple thousand lines of code compete wit
   - [`Turbo-Base64`][base64] to decode binary values from a `Base64` form.
   - [`picohttpparser`][picohttpparser] to navigate HTTP headers.
 
-You have already seen 
-
-- the latency of the round trip..., 
-- the throughput in requests per second..., 
-- wanna see the bandwidth?
-
+You have already seen the latency of the round trip..., the throughput in requests per second..., want to see the bandwidth?
 Try yourself!
 
 ```python
@@ -162,13 +158,15 @@ This library is so fast, that it doesn't need more than 1 core, so you can run a
 In this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.
 If you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].
 
-## Installation
+## Quick Start
+
+For Python:
 
 ```sh
 pip install uform
 ```
 
-A CMake user?
+For CMake projects:
 
 ```cmake
 include(FetchContent)
@@ -181,17 +179,52 @@ FetchContent_MakeAvailable(ujrpc)
 include_directories(${ujrpc_SOURCE_DIR}/include)
 ```
 
+The C usage example is mouthful compared to Python.
+We wanted to make it as lightweight as possible and to allow optional arguments without dynamic allocations and named lookups.
+So unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ujrpc_param_named_i64()`, and its siblings.
+
+```c
+#include <cstdio.h>
+#include <ujrpc/ujrpc.h>
+
+static void sum(ujrpc_call_t call, ujrpc_callback_tag_t) {
+    int64_t a{}, b{};
+    char printed_sum[256]{};
+    bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
+    bool got_b = ujrpc_param_named_i64(call, "b", 0, &b);
+    if (!got_a || !got_b)
+        return ujrpc_call_reply_error_invalid_params(call);
+
+    int len = snprintf(printed_sum, 256, "%ll", a + b);
+    ujrpc_call_reply_content(call, printed_sum, len);
+}
+
+int main(int argc, char** argv) {
+
+    ujrpc_server_t server{};
+    ujrpc_config_t config{};
+
+    ujrpc_init(&config, &server);
+    ujrpc_add_procedure(server, "sum", &sum, NULL);
+    ujrpc_take_calls(server, 0);
+    ujrpc_free(server);
+    return 0;
+}
+```
+
 ## Roadmap
 
 - [x] Batch Requests
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
-- [ ] Numpy Array serialization
-- [ ] HTTP**S** Support
-- [ ] Batch-capable Endpoints
-- [ ] WebSockets
-- [ ] AF_XDP and UDp-based analogs on Linux
+- [ ] Numpy `array` serialization
+- [ ] HTTP**S** support
+- [ ] Batch-capable endpoints for ML
+- [ ] Zero-ETL relay calls
+- [ ] Integrating with [UKV][ukv]
+- [ ] WebSockets for web interfaces
+- [ ] AF_XDP and UDP-based analogs on Linux
 
 > Want to affect the roadmap and request a feature? Join the discussions on Discord.
 
@@ -205,3 +238,4 @@ include_directories(${ujrpc_SOURCE_DIR}/include)
 [base64]: https://github.com/powturbo/Turbo-Base64
 [picohttpparser]: https://github.com/h2o/picohttpparser
 [sum-examples]: https://github.com/unum-cloud/ujrpc/tree/dev/examples/sum
+[ukv]: https://github.com/unum-cloud/ukv
