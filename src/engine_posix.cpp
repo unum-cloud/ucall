@@ -231,7 +231,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
-        size_t bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -246,7 +246,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
-        size_t bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, 0);
+        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
