@@ -256,6 +256,9 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         buffer_ptr = nullptr;
     }
 
+    shutdown(engine.connection, SHUT_WR);
+    // If later on some UB is detected for client not recieving full data,
+    // then it may be required to put a `recv` with timeout between `shutdown` and `close`
     close(engine.connection);
 }
 
