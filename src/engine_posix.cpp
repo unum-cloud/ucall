@@ -122,9 +122,9 @@ void forward_call_or_calls(engine_t& engine) noexcept {
 
         // Start a JSON array.
         scratch.is_batch = true;
-        engine.batch_response.iovecs[0].iov_base = (void*)"[";
-        engine.batch_response.iovecs[0].iov_len = 1;
-        engine.batch_response.iovecs_count++;
+        engine.batch_response.iovecs[scratch.is_http].iov_base = const_cast<char*>("[");
+        engine.batch_response.iovecs[scratch.is_http].iov_len = 1;
+        engine.batch_response.iovecs_count += scratch.is_http + 1;
 
         for (sjd::element const one : many) {
             scratch.tree = one;
@@ -141,7 +141,20 @@ void forward_call_or_calls(engine_t& engine) noexcept {
         engine.batch_response.iovecs[engine.batch_response.iovecs_count].iov_len = 1;
         engine.batch_response.iovecs_count++;
 
-        send_reply(engine);
+        if (scratch.is_http) {
+            size_t body_len = 0;
+            for (size_t i = 1; i < engine.batch_response.iovecs_count; ++i)
+                body_len += engine.batch_response.iovecs[i].iov_len;
+
+            char headers[http_header_size_k] = {};
+            std::memcpy(headers, http_header_k, http_header_size_k);
+            set_http_content_length(headers, body_len);
+
+            engine.batch_response.iovecs[0].iov_base = headers;
+            engine.batch_response.iovecs[0].iov_len = http_header_size_k;
+            send_reply(engine);
+        } else
+            send_reply(engine);
 
         // Deallocate copies of received responses:
         for (std::size_t response_idx = 0; response_idx != engine.batch_response.copies_count; ++response_idx)
@@ -160,7 +173,9 @@ void forward_packet(engine_t& engine) noexcept {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    scratch.dynamic_packet = std::get<parsed_request_t>(json_or_error).body;
+    auto request = std::get<parsed_request_t>(json_or_error);
+    scratch.is_http = request.type.size();
+    scratch.dynamic_packet = request.body;
     return forward_call_or_calls(engine);
 }
 
@@ -198,29 +213,25 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
     auto buffer_ptr = &engine.packet_buffer[0];
-    // size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
-
-    // auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
-    // if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-    //     return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
-    // parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
     size_t bytes_expected = 0;
-    if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1) {
-        close(engine.connection);
-        return;
-    }
-    // auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    // bytes_expected += (request.body.begin() - buffer_ptr);
-    // if (res.ec == std::errc::invalid_argument || bytes_expected <= 0) {
-    //     close(engine.connection);
-    //     return;
-    // }
+    size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
+    auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
+    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+    bytes_expected += (request.body.begin() - buffer_ptr);
+
+    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+        if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+            // TODO what?
+            bytes_expected = ram_page_size_k;
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
-        size_t bytes_received = recv(engine.connection, buffer_ptr, ram_page_size_k, 0);
+        size_t bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -295,7 +306,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     // In the worst case we may have `max_batch_size` requests, where each will
     // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
     // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.resize(config.max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2))
+    if (!embedded_iovecs.resize(config.max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2 +
+                                iovecs_for_http_response_k))
         goto cleanup;
     if (!embedded_copies.resize(config.max_batch_size))
         goto cleanup;
@@ -370,11 +382,24 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch) {
         struct msghdr message {};
-        struct iovec iovecs[iovecs_for_content_k] {};
-        fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
-        message.msg_iov = iovecs;
-        message.msg_iovlen = iovecs_for_content_k;
-        send_message(engine, message);
+        if (scratch.is_http) {
+            struct iovec iovecs[iovecs_for_content_k + 1]{};
+            size_t content_len = fill_with_content(iovecs + 1, scratch.dynamic_id, std::string_view(body, body_len));
+            message.msg_iov = iovecs;
+            message.msg_iovlen = iovecs_for_content_k + 1;
+            char headers[http_header_size_k];
+            std::memcpy(headers, http_header_k, http_header_size_k);
+            set_http_content_length(headers, content_len);
+            iovecs[0].iov_base = const_cast<char*>(headers);
+            iovecs[0].iov_len = http_header_size_k;
+            send_message(engine, message);
+        } else {
+            struct iovec iovecs[iovecs_for_content_k] {};
+            fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
+            message.msg_iov = iovecs;
+            message.msg_iovlen = iovecs_for_content_k;
+            send_message(engine, message);
+        }
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.
