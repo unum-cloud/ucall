@@ -13,12 +13,8 @@ class SumClient:
     """
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 50051) -> None:
-        self.host = uri
-        self.server_port = port
-
         # instantiate a channel
-        self.channel = grpc.insecure_channel(f'{self.host}:{self.server_port}')
-
+        self.channel = grpc.insecure_channel(f'{uri}:{port}')
         # bind the client and the server
         self.stub = pb2_grpc.SumServiceStub(self.channel)
 
