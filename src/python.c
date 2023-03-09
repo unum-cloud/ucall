@@ -316,8 +316,12 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
 
 static Py_ssize_t server_callbacks_count(py_server_t* self, PyObject* _) { return self->count_added; }
 static PyObject* server_port(py_server_t* self, PyObject* _) { return PyLong_FromLong(self->config.port); }
-static PyObject* server_queue_depth(py_server_t* self, PyObject* _) { return 0; }
-static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) { return 0; }
+static PyObject* server_queue_depth(py_server_t* self, PyObject* _) {
+    return PyLong_FromLong(self->config.queue_depth);
+}
+static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) {
+    return PyLong_FromLong(self->config.max_lifetime_micro_seconds);
+}
 
 static PyMethodDef server_methods[] = {
     {"route", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
@@ -389,7 +393,7 @@ static PyTypeObject ujrpc_type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc = PyDoc_STR("Server class for Remote Procedure Calls implemented in Python"),
     .tp_methods = server_methods,
-    .tp_call = (PyCFunction)&server_add_procedure,
+    .tp_call = (ternaryfunc)&server_add_procedure,
     .tp_getset = server_computed_properties,
     .tp_init = (initproc)server_init,
     .tp_new = server_new,
