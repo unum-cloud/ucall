@@ -1,4 +1,3 @@
-.. UKV documentation navigation file.
 ==========
 Overview
 ==========
