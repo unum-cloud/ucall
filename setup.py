@@ -122,6 +122,8 @@ setup(
     ],
 
     # https://llllllllll.github.io/c-extension-tutorial/building-and-importing.html
+    packages=['ujrpc'],
+    package_dir={'': 'src/'},
     ext_modules=[
         CMakeExtension('ujrpc.uring'),
         CMakeExtension('ujrpc.posix'),
