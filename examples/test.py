@@ -1,12 +1,13 @@
 import random
 import json
 import requests
-
+import numpy as np
 import pytest
 import base64
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
+from ujrpc.client import HTTPClient
 
 
 class ClientGeneric:
@@ -141,14 +142,30 @@ def test_non_uniform_batch():
     ])
 
 
+def test_numpy():
+    a = np.random.randint(0, 101, size=(1, 3, 10))
+    b = np.random.randint(0, 101, size=(1, 3, 10))
+    res = a * b
+    client = HTTPClient()
+    response = client({
+        'method': 'mul',
+        'params': {'a': a, 'b':  b},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    assert isinstance(response['result'], np.ndarray)
+    assert np.array_equal(response['result'], res)
+
+
 if __name__ == '__main__':
     pytest.main()
 
+    test_normal()
+    test_shuffled_tcp()
+    test_numpy()
     test_uniform_batches()
     test_shuffled_http_batches()
     test_shuffled_http()
-    test_shuffled_tcp()
-    test_normal()
     test_notification()
     test_method_missing()
     test_param_missing()
