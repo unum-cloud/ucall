@@ -1,8 +1,8 @@
 import random
 
-import ujrpc.posix as ujrpc
+from ujrpc.posix import Server
 
-server = ujrpc.Server(port=8545)
+server = Server(port=8545)
 
 
 @server

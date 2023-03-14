@@ -1,7 +1,7 @@
 import numpy as np
-from ujrpc.posix_server import RichServer
+from ujrpc.rich_posix import Server
 
-server = RichServer(port=8545)
+server = Server(port=8545)
 
 
 @server
