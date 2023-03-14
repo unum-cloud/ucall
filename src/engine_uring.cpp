@@ -857,9 +857,15 @@ void automata_t::close_gracefully() noexcept {
     io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
 
     uring_sqe = io_uring_get_sqe(&engine.uring);
+    io_uring_prep_shutdown(uring_sqe, int(connection.descriptor), SHUT_WR);
+    io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
+
+    uring_sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_close(uring_sqe, int(connection.descriptor));
     io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, 0);
+
     uring_result = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
 }

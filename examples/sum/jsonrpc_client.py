@@ -49,6 +49,16 @@ def socket_is_closed(sock: socket.socket) -> bool:
     return False
 
 
+def recvall(sock, buffer_size=4096):
+    data = b""
+    while True:
+        chunk = sock.recv(buffer_size)
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
 def parse_response(response: bytes) -> object:
     if len(response) == 0:
         raise requests.Timeout()
@@ -118,7 +128,7 @@ class ClientTCP:
 
     def recv(self) -> int:
         # self.sock.settimeout(0.01)
-        response_bytes = self.sock.recv(4096).decode()
+        response_bytes = recvall(self.sock).decode()
         self.sock.settimeout(None)
         response = json.loads(response_bytes)
         assert 'error' not in response, response['error']
