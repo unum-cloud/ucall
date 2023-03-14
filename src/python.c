@@ -69,8 +69,8 @@ typedef struct {
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
 
-    PyObject* py_signature = PyObject_GetAttrString(callable, "__signature__");
-    if (py_signature) {
+    if (PyObject_HasAttrString(callable, "__signature__")) {
+        get_attr_safe_m(py_signature, callable, "__signature__");
         get_attr_safe_m(params, py_signature, "parameters");
         PyObject* items = PyMapping_Items(params);
         long total_params = PyList_Size(items);
