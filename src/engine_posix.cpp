@@ -69,8 +69,11 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 
 void send_message(engine_t& engine, struct msghdr& message) noexcept {
     auto bytes_sent = sendmsg(engine.connection, &message, 0);
-    if (bytes_sent < 0)
+    if (bytes_sent < 0) {
+        if (errno == EMSGSIZE)
+            ujrpc_call_reply_error_out_of_memory(&engine);
         return;
+    }
     engine.stats.bytes_sent += bytes_sent;
     engine.stats.packets_sent++;
 }
@@ -152,9 +155,9 @@ void forward_call_or_calls(engine_t& engine) noexcept {
 
             engine.batch_response.iovecs[0].iov_base = headers;
             engine.batch_response.iovecs[0].iov_len = http_header_size_k;
-            send_reply(engine);
-        } else
-            send_reply(engine);
+        }
+
+        send_reply(engine);
 
         // Deallocate copies of received responses:
         for (std::size_t response_idx = 0; response_idx != engine.batch_response.copies_count; ++response_idx)
@@ -395,14 +398,13 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
             set_http_content_length(headers, content_len);
             iovecs[0].iov_base = const_cast<char*>(headers);
             iovecs[0].iov_len = http_header_size_k;
-            send_message(engine, message);
         } else {
             struct iovec iovecs[iovecs_for_content_k] {};
             fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
             message.msg_iov = iovecs;
             message.msg_iovlen = iovecs_for_content_k;
-            send_message(engine, message);
         }
+        send_message(engine, message);
     }
 
     // In case of a batch or async request, preserve a copy of data on the heap.
