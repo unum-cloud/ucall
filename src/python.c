@@ -77,7 +77,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
         py_param_t* parameters = (py_param_t*)malloc(total_params * sizeof(py_param_t));
 
         for (Py_ssize_t i = 0; i < total_params; i++) {
-            PyTupleObject* item = PyList_GetItem(items, i);
+            PyObject* item = PyList_GetItem(items, i);
             PyObject* py_param = PyTuple_GetItem(item, 1);
             PyObject* name = PyTuple_GetItem(item, 0);
             PyObject* type = PyObject_GetAttrString(py_param, "annotation");
