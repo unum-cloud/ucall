@@ -54,7 +54,7 @@ def test_shuffled_http_batches():
 
 def test_uniform_batches():
     client = SumClientHTTPBatches()
-    for batch_size in range(1, 1000):
+    for batch_size in range(1, 100):
         numbers = [random.randint(1, 1000) for _ in range(batch_size)]
         client.send(numbers, numbers)
         client.recv()

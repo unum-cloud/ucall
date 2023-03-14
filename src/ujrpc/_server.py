@@ -1,4 +1,3 @@
-from ujrpc import posix as ujrpc
 import numpy as np
 from typing import Callable, get_type_hints
 import inspect
@@ -6,11 +5,8 @@ from functools import wraps
 from io import BytesIO
 
 
-class PyServer:
+class _Server:
     server = None
-
-    def __init__(self, **kwargs):
-        self.server = ujrpc.Server(**kwargs)
 
     def __call__(self, func: Callable):
         return self.route(func)

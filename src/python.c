@@ -69,15 +69,15 @@ typedef struct {
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
 
-    PyObject* py_signature = PyObject_GetAttrString(callable, "__signature__");
-    if (py_signature) {
+    if (PyObject_HasAttrString(callable, "__signature__")) {
+        get_attr_safe_m(py_signature, callable, "__signature__");
         get_attr_safe_m(params, py_signature, "parameters");
         PyObject* items = PyMapping_Items(params);
         long total_params = PyList_Size(items);
         py_param_t* parameters = (py_param_t*)malloc(total_params * sizeof(py_param_t));
 
         for (Py_ssize_t i = 0; i < total_params; i++) {
-            PyTupleObject* item = PyList_GetItem(items, i);
+            PyObject* item = PyList_GetItem(items, i);
             PyObject* py_param = PyTuple_GetItem(item, 1);
             PyObject* name = PyTuple_GetItem(item, 0);
             PyObject* type = PyObject_GetAttrString(py_param, "annotation");
