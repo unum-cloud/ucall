@@ -413,7 +413,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
         std::memcpy(body_copy, body, body_len);
         engine.batch_response.copies[engine.batch_response.copies_count++] = body_copy;
         fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id,
-                          std::string_view(body, body_len), true);
+                          std::string_view(body_copy, body_len), true);
         engine.batch_response.iovecs_count += iovecs_for_content_k;
     }
 }
