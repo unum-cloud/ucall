@@ -150,7 +150,7 @@ server = Server()
 model = uform.get_model('unum-cloud/uform-vl-multilingual')
 
 @server
-def vectorize(description: str, photo: PIL.Image) -> numpy.ndarray:
+def vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:
     image = model.preprocess_image(photo)
     tokens = model.preprocess_text(description)
     joint_embedding = model.encode_multimodal(image=image, text=tokens)
@@ -174,7 +174,7 @@ response = client({
     'jsonrpc': '2.0',
     'id': 100,
 })
-# Or the same with synthatic sugar:
+# Or the same with syntactic sugar:
 response = client.vectorize(description=description, image=image) 
 ```
 
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
-- [ ] Numpy `array` serialization
+- [x] NumPy `array` and Pillow serialization
 - [ ] HTTP**S** support
 - [ ] Batch-capable endpoints for ML
 - [ ] Zero-ETL relay calls

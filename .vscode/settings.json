@@ -110,6 +110,7 @@
         "tqdm",
         "ujrpc",
         "uring",
-        "uvicorn"
+        "uvicorn",
+        "vectorize"
     ]
 }
