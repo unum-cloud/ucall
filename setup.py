@@ -131,5 +131,9 @@ setup(
     cmdclass={
         'build_ext': CMakeBuild,
     },
+    install_requires=[
+        'numpy>=1.16',
+        'pillow'
+    ],
     zip_safe=False,
 )

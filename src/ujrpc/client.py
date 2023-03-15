@@ -1,5 +1,6 @@
 import requests
 import numpy as np
+from PIL import Image
 from io import BytesIO
 import base64
 
@@ -11,26 +12,47 @@ class HTTPClient:
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
         self.url = f'http://{uri}:{port}/'
 
-    def is_numpy(self, buf):
-        return buf[:6] == b'\x93NUMPY'
-
-    def __call__(self, jsonrpc: object) -> object:
+    def pack(self, jsonrpc):
         for k, v in jsonrpc['params'].items():
+            buf = BytesIO()
             if isinstance(v, np.ndarray):
-                buf = BytesIO()
-                np.save(buf, jsonrpc['params'][k])
+                np.save(buf, v)
                 buf.seek(0)
                 jsonrpc['params'][k] = base64.b64encode(
                     buf.getvalue()).decode()
 
+            if isinstance(v, Image.Image):
+                v.save(buf, v.format)
+                buf.seek(0)
+                jsonrpc['params'][k] = base64.b64encode(
+                    buf.getvalue()).decode()
+
+        return jsonrpc
+
+    def unpack(self, bin):
+        buf = BytesIO(bin)
+
+        if bin[:6] == b'\x93NUMPY':
+            return np.load(buf, allow_pickle=True)
+
+        try:
+            img = Image.open(buf)
+            img.verify()
+            buf.seek(0)
+            return Image.open(buf)  # Must reopen after verify
+        except:
+            pass  # Not an Image file
+
+        return bin
+
+    def __call__(self, jsonrpc: object) -> object:
+        jsonrpc = self.pack(jsonrpc)
         res = requests.post(self.url, json=jsonrpc).json()
 
         if 'result' in res:
             try:
                 bin = base64.b64decode(res['result'])
-                if self.is_numpy(bin):
-                    buf = BytesIO(bin)
-                    res['result'] = np.load(buf, allow_pickle=True)
+                res['result'] = self.unpack(bin)
             except:
                 pass
 

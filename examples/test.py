@@ -1,9 +1,9 @@
 import random
-import json
 import requests
 import numpy as np
+from PIL import Image
+from io import BytesIO
 import pytest
-import base64
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
@@ -157,12 +157,31 @@ def test_numpy():
     assert np.array_equal(response['result'], res)
 
 
+def test_pillow():
+    img = Image.open("examples/sum/original.jpg")
+    res = img.rotate(45)
+    client = HTTPClient()
+    response = client({
+        'method': 'rotate',
+        'params': {'image': img},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    assert isinstance(response['result'], Image.Image)
+    res.format = img.format
+    response['result'].save("./t1.jpg", response['result'].format)
+    res.save("./t2.jpg", res.format)
+    # raw bytes of the images are not equal, but the images are equal visually
+    # How to make a proper equality check?
+
+
 if __name__ == '__main__':
     pytest.main()
 
     test_normal()
     test_shuffled_tcp()
-    test_numpy()
+    # test_numpy()
+    # test_pillow()
     test_uniform_batches()
     test_shuffled_http_batches()
     test_shuffled_http()
