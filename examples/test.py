@@ -161,12 +161,7 @@ def test_pillow():
     img = Image.open('examples/sum/original.jpg')
     res = img.rotate(45)
     client = Client()
-    response = client({
-        'method': 'rotate',
-        'params': {'image': img},
-        'jsonrpc': '2.0',
-        'id': 100,
-    })
+    response = client.rotate(image=img)
     assert isinstance(response['result'], Image.Image)
     ar1 = np.asarray(res)
     ar2 = np.asarray(response['result'])

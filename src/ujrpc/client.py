@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 import base64
+import random
 
 
 class Client:
@@ -11,6 +12,26 @@ class Client:
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
         self.url = f'http://{uri}:{port}/'
+
+    def __getattr__(self, name, **kwargs):
+
+        def call(id=None, **kwargs):
+            if id is None:
+                id = random.randint(1, 2**16)
+
+            json = {
+                'method': name,
+                'params': {},
+                'jsonrpc': '2.0',
+                'id': id,
+            }
+
+            for kw, arg in kwargs.items():
+                json['params'][kw] = arg
+
+            return self.__call__(json)
+
+        return call
 
     def pack(self, jsonrpc):
         for k, v in jsonrpc['params'].items():
