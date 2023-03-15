@@ -137,7 +137,48 @@ def echo(data: bytes):
     return data
 ```
 
-### Free Tier Throughput
+## More Functionality than FastAPI
+
+FastAPI supports native type, while UJRPC supports `numpy.ndarray`, `PIL.Image` and other custom types.
+This comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).
+
+```python
+from ujrpc.rich_posix import Server
+import ufrom
+
+server = Server()
+model = uform.get_model('unum-cloud/uform-vl-multilingual')
+
+@server
+def vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:
+    image = model.preprocess_image(photo)
+    tokens = model.preprocess_text(description)
+    joint_embedding = model.encode_multimodal(image=image, text=tokens)
+
+    return joint_embedding.cpu().detach().numpy()
+```
+
+We also have our own optional `Client` class that helps with those custom types.
+
+```python
+from ujrpc.client import Client
+
+client = Client()
+# Explicit JSON-RPC call:
+response = client({
+    'method': 'vectorize',
+    'params': {
+        'description': description,
+        'image': image,
+    },
+    'jsonrpc': '2.0',
+    'id': 100,
+})
+# Or the same with syntactic sugar:
+response = client.vectorize(description=description, image=image) 
+```
+
+## Free Tier Throughput
 
 We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
 The general logic is that you can't squeeze high performance from Free-Tier machines.
@@ -218,7 +259,7 @@ int main(int argc, char** argv) {
 - [x] JSON-RPC over raw TCP sockets
 - [x] JSON-RPC over TCP with HTTP
 - [x] Concurrent sessions
-- [ ] Numpy `array` serialization
+- [x] NumPy `array` and Pillow serialization
 - [ ] HTTP**S** support
 - [ ] Batch-capable endpoints for ML
 - [ ] Zero-ETL relay calls
