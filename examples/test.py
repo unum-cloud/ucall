@@ -7,7 +7,7 @@ import pytest
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
-from ujrpc.client import HTTPClient
+from ujrpc.client import Client
 
 
 class ClientGeneric:
@@ -146,7 +146,7 @@ def test_numpy():
     a = np.random.randint(0, 101, size=(1, 3, 10))
     b = np.random.randint(0, 101, size=(1, 3, 10))
     res = a * b
-    client = HTTPClient()
+    client = Client()
     response = client({
         'method': 'mul',
         'params': {'a': a, 'b':  b},
@@ -158,9 +158,9 @@ def test_numpy():
 
 
 def test_pillow():
-    img = Image.open("examples/sum/original.jpg")
+    img = Image.open('examples/sum/original.jpg')
     res = img.rotate(45)
-    client = HTTPClient()
+    client = Client()
     response = client({
         'method': 'rotate',
         'params': {'image': img},
@@ -168,11 +168,9 @@ def test_pillow():
         'id': 100,
     })
     assert isinstance(response['result'], Image.Image)
-    res.format = img.format
-    response['result'].save("./t1.jpg", response['result'].format)
-    res.save("./t2.jpg", res.format)
-    # raw bytes of the images are not equal, but the images are equal visually
-    # How to make a proper equality check?
+    ar1 = np.asarray(res)
+    ar2 = np.asarray(response['result'])
+    assert np.array_equal(ar1, ar2)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ from io import BytesIO
 import base64
 
 
-class HTTPClient:
+class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
     response = None
 
@@ -22,7 +22,9 @@ class HTTPClient:
                     buf.getvalue()).decode()
 
             if isinstance(v, Image.Image):
-                v.save(buf, v.format)
+                if not v.format:
+                    v.format = 'tiff'
+                v.save(buf, v.format,  compression='raw', compression_level=0)
                 buf.seek(0)
                 jsonrpc['params'][k] = base64.b64encode(
                     buf.getvalue()).decode()

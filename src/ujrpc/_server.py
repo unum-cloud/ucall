@@ -34,7 +34,11 @@ class _Server:
 
         if isinstance(res, Image.Image):
             buf = BytesIO()
-            res.save(buf, res.format)
+            if not res.format:
+                res.format = 'tiff'
+            res.save(buf, res.format, compression='raw',
+                     compression_level=0)
+
             return buf.getvalue()
 
         return res

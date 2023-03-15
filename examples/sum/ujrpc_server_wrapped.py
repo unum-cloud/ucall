@@ -18,7 +18,6 @@ def sum(a: int, b: int):
 @server
 def rotate(image: Image.Image):
     rotated = image.rotate(45)
-    rotated.format = image.format
     return rotated
 
 
