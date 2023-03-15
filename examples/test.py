@@ -1,13 +1,13 @@
 import random
-import json
 import requests
 import numpy as np
+from PIL import Image
+from io import BytesIO
 import pytest
-import base64
 from sum.jsonrpc_client import ClientTCP as SumClientTCP
 from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
 from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
-from ujrpc.client import HTTPClient
+from ujrpc.client import Client
 
 
 class ClientGeneric:
@@ -146,7 +146,7 @@ def test_numpy():
     a = np.random.randint(0, 101, size=(1, 3, 10))
     b = np.random.randint(0, 101, size=(1, 3, 10))
     res = a * b
-    client = HTTPClient()
+    client = Client()
     response = client({
         'method': 'mul',
         'params': {'a': a, 'b':  b},
@@ -157,12 +157,29 @@ def test_numpy():
     assert np.array_equal(response['result'], res)
 
 
+def test_pillow():
+    img = Image.open('examples/sum/original.jpg')
+    res = img.rotate(45)
+    client = Client()
+    response = client({
+        'method': 'rotate',
+        'params': {'image': img},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    assert isinstance(response['result'], Image.Image)
+    ar1 = np.asarray(res)
+    ar2 = np.asarray(response['result'])
+    assert np.array_equal(ar1, ar2)
+
+
 if __name__ == '__main__':
     pytest.main()
 
     test_normal()
     test_shuffled_tcp()
-    test_numpy()
+    # test_numpy()
+    # test_pillow()
     test_uniform_batches()
     test_shuffled_http_batches()
     test_shuffled_http()
