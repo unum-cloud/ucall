@@ -33,30 +33,30 @@ class Client:
 
         return call
 
-    def pack(self, jsonrpc):
-        items = None
-        if isinstance(jsonrpc['params'], dict):
-            items = jsonrpc['params'].items()
+    def pack(self, req):
+        keys = None
+        if isinstance(req['params'], dict):
+            keys = req['params'].keys()
         else:
-            items = enumerate(jsonrpc['params'])
+            keys = range(0, len(req['params']))
 
-        for k, v in items:
+        for k in keys:
             buf = BytesIO()
-            if isinstance(v, np.ndarray):
-                np.save(buf, v)
+            if isinstance(req['params'][k], np.ndarray):
+                np.save(buf, req['params'][k])
                 buf.seek(0)
-                jsonrpc['params'][k] = base64.b64encode(
+                req['params'][k] = base64.b64encode(
                     buf.getvalue()).decode()
 
-            if isinstance(v, Image.Image):
-                if not v.format:
-                    v.format = 'tiff'
-                v.save(buf, v.format,  compression='raw', compression_level=0)
+            if isinstance(req['params'][k], Image.Image):
+                if not req['params'][k].format:
+                    req['params'][k].format = 'tiff'
+                req['params'][k].save(buf, req['params'][k].format,  compression='raw', compression_level=0)
                 buf.seek(0)
-                jsonrpc['params'][k] = base64.b64encode(
+                req['params'][k] = base64.b64encode(
                     buf.getvalue()).decode()
 
-        return jsonrpc
+        return req
 
     def unpack(self, bin):
         buf = BytesIO(bin)
