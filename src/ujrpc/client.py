@@ -9,12 +9,11 @@ from PIL import Image
 
 class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
-    response = None
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
         self.url = f'http://{uri}:{port}/'
 
-    def __getattr__(self, name, *args, **kwargs):
+    def __getattr__(self, name):
 
         def call(id=None, **kwargs):
             if id is None:

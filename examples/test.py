@@ -74,13 +74,8 @@ def test_uniform_batches():
 
 
 def test_normal():
-    client = ClientGeneric()
-    response = client({
-        'method': 'sum',
-        'params': {'a': 2, 'b': 2},
-        'jsonrpc': '2.0',
-        'id': 100,
-    })
+    client = Client()
+    response = client.sum(a=2, b=2)
     assert response['result'] == 4
 
 
