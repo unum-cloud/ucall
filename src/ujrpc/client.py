@@ -32,7 +32,7 @@ def make_tcp_socket(ip: str, port: int):
 
 
 def recvall(sock, buffer_size=4096):
-    data = b""
+    data = b''
     while True:
         chunk = sock.recv(buffer_size)
         if not chunk:
@@ -61,7 +61,7 @@ class Client:
             params = kwargs
             if len(args) != 0:
                 assert len(
-                    kwargs) == 0, "Can't mix positional and keyword parameters!"
+                    kwargs) == 0, 'Can\'t mix positional and keyword parameters!'
                 params = args
 
             if id is None:
