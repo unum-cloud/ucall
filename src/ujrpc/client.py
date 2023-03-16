@@ -15,13 +15,18 @@ class Client:
 
     def __getattr__(self, name):
 
-        def call(id=None, **kwargs):
+        def call(*args, id=None, **kwargs):
+            params = kwargs
+            if len(args) != 0:
+                assert len(kwargs) == 0, "Can't mix positional and keyword parameters!"
+                params = args
+
             if id is None:
                 id = random.randint(1, 2**16)
 
             return self.__call__({
                 'method': name,
-                'params': kwargs,
+                'params': params,
                 'jsonrpc': '2.0',
                 'id': id,
             })
@@ -29,7 +34,13 @@ class Client:
         return call
 
     def pack(self, jsonrpc):
-        for k, v in jsonrpc['params'].items():
+        items = None
+        if isinstance(jsonrpc['params'], dict):
+            items = jsonrpc['params'].items()
+        else:
+            items = enumerate(jsonrpc['params'])
+
+        for k, v in items:
             buf = BytesIO()
             if isinstance(v, np.ndarray):
                 np.save(buf, v)

@@ -78,6 +78,11 @@ def test_normal():
     response = client.sum(a=2, b=2)
     assert response['result'] == 4
 
+def test_normal_positional():
+    client = Client()
+    response = client.sum(2, 2)
+    assert response['result'] == 4
+
 
 def test_notification():
     client = ClientGeneric()
@@ -167,6 +172,7 @@ if __name__ == '__main__':
     pytest.main()
 
     test_normal()
+    test_normal_positional()
     test_shuffled_tcp()
     # test_numpy()
     # test_pillow()
