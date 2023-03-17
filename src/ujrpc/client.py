@@ -57,21 +57,17 @@ class Client:
         self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ujrpc\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
     def __getattr__(self, name):
-        def call(*args, id=None, **kwargs):
+        def call(*args, **kwargs):
             params = kwargs
             if len(args) != 0:
                 assert len(
                     kwargs) == 0, 'Can\'t mix positional and keyword parameters!'
                 params = args
 
-            if id is None:
-                id = random.randint(1, 2**16)
-
             return self.__call__({
                 'method': name,
                 'params': params,
                 'jsonrpc': '2.0',
-                'id': id,
             })
 
         return call
@@ -118,7 +114,7 @@ class Client:
 
         return bin
 
-    def send(self, json_data: dict):
+    def _send(self, json_data: dict):
         request = json.dumps(json_data)
         if self.use_http:
             request = self.http_template % (len(request)) + request
@@ -127,7 +123,7 @@ class Client:
             self.sock) else self.sock
         self.sock.send(request.encode())
 
-    def recv(self):
+    def _recv(self):
         response_bytes = recvall(self.sock)
         response = None
         if self.use_http:
@@ -138,9 +134,10 @@ class Client:
         return response
 
     def __call__(self, jsonrpc: object) -> object:
+        jsonrpc['id'] = random.randint(1, 2**16)
         jsonrpc = self.pack(jsonrpc)
-        self.send(jsonrpc)
-        res = self.recv()
+        self._send(jsonrpc)
+        res = self._recv()
 
         if 'result' in res:
             try:
