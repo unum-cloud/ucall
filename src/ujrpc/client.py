@@ -57,16 +57,16 @@ class Response:
 
     @property
     def bytes(self) -> bytes:
-        return base64.b64decode(self.raise_for_status())
+        return base64.b64decode(self.json)
 
     @property
     def numpy(self) -> np.ndarray:
-        buf = BytesIO(self.bytes())
+        buf = BytesIO(self.bytes)
         return np.load(buf, allow_pickle=True)
 
     @property
     def image(self) -> Image.Image:
-        buf = BytesIO(self.bytes())
+        buf = BytesIO(self.bytes)
         return Image.open(buf)
 
 
