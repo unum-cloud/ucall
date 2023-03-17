@@ -74,13 +74,13 @@ def test_uniform_batches():
 
 
 def test_normal():
-    client = ClientGeneric()
-    response = client({
-        'method': 'sum',
-        'params': {'a': 2, 'b': 2},
-        'jsonrpc': '2.0',
-        'id': 100,
-    })
+    client = Client()
+    response = client.sum(a=2, b=2)
+    assert response['result'] == 4
+
+def test_normal_positional():
+    client = Client()
+    response = client.sum(2, 2)
     assert response['result'] == 4
 
 
@@ -172,6 +172,7 @@ if __name__ == '__main__':
     pytest.main()
 
     test_normal()
+    test_normal_positional()
     test_shuffled_tcp()
     # test_numpy()
     # test_pillow()
