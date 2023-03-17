@@ -42,34 +42,34 @@ def _recvall(sock, buffer_size=4096):
 
 
 class Response:
-    data: json
 
     def __init__(self, data):
         self.data = data
 
-    def raise_or_get(self) -> Union[bool, int, float, str]:
-        self.raise_error()
+    @property
+    def json(self) -> Union[bool, int, float, str]:
         return self.data['result']
 
-    def raise_error(self):
+    def raise_status(self):
         if 'error' in self.data:
             raise RuntimeError(self.data['error'])
 
-    def as_bytes(self) -> bytes:
+    @property
+    def bytes(self) -> bytes:
         return base64.b64decode(self.raise_or_get())
 
-    def as_numpy(self) -> np.ndarray:
+    @property
+    def numpy(self) -> np.ndarray:
         buf = BytesIO(self.as_bytes())
         return np.load(buf, allow_pickle=True)
 
-    def as_image(self) -> Image.Image:
+    @property
+    def image(self) -> Image.Image:
         buf = BytesIO(self.as_bytes())
         return Image.open(buf)
 
 
 class Request:
-    data: dict
-    packed: dict
 
     def __init__(self, json):
         self.data = json
@@ -108,11 +108,6 @@ class Request:
 
 class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
-    uri: str
-    port: int
-    sock: socket
-    use_http: bool
-    http_template: str
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, use_http: bool = True) -> None:
         self.uri = uri

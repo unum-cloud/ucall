@@ -76,13 +76,15 @@ def test_uniform_batches():
 def test_normal():
     client = Client()
     response = client.sum(a=2, b=2)
-    assert response.raise_or_get() == 4
+    response.raise_status()
+    assert response.json == 4
 
 
 def test_normal_positional():
     client = Client()
     response = client.sum(2, 2)
-    assert response.raise_or_get() == 4
+    response.raise_status()
+    assert response.json == 4
 
 
 def test_notification():
@@ -154,7 +156,8 @@ def test_numpy():
         'jsonrpc': '2.0',
         'id': 100,
     })
-    assert np.array_equal(response.as_numpy(), res)
+    response.raise_status()
+    assert np.array_equal(response.numpy, res)
 
 
 def test_pillow():
@@ -162,8 +165,9 @@ def test_pillow():
     res = img.rotate(45)
     client = Client()
     response = client.rotate(image=img)
+    response.raise_status()
     ar1 = np.asarray(res)
-    ar2 = np.asarray(response.as_image())
+    ar2 = np.asarray(response.image)
     assert np.array_equal(ar1, ar2)
 
 
