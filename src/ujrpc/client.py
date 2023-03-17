@@ -75,6 +75,20 @@ class Request:
         self.data = json
         self.packed = self.pack(json)
 
+    def _pack_numpy(self, array):
+        buf = BytesIO()
+        np.save(buf, array)
+        buf.seek(0)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _pack_pillow(self, image):
+        buf = BytesIO()
+        if not image.format:
+            image.format = 'tiff'
+        image.save(buf, image.format,  compression='raw', compression_level=0)
+        buf.seek(0)
+        return base64.b64encode(buf.getvalue()).decode()
+
     def pack(self, req):
         keys = None
         if isinstance(req['params'], dict):
@@ -83,21 +97,11 @@ class Request:
             keys = range(0, len(req['params']))
 
         for k in keys:
-            buf = BytesIO()
             if isinstance(req['params'][k], np.ndarray):
-                np.save(buf, req['params'][k])
-                buf.seek(0)
-                req['params'][k] = base64.b64encode(
-                    buf.getvalue()).decode()
+                req['params'][k] = self._pack_numpy(req['params'][k])
 
-            if isinstance(req['params'][k], Image.Image):
-                if not req['params'][k].format:
-                    req['params'][k].format = 'tiff'
-                req['params'][k].save(
-                    buf, req['params'][k].format,  compression='raw', compression_level=0)
-                buf.seek(0)
-                req['params'][k] = base64.b64encode(
-                    buf.getvalue()).decode()
+            elif isinstance(req['params'][k], Image.Image):
+                req['params'][k] = self._pack_pillow(req['params'][k])
 
         return req
 
