@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 
-def socket_is_closed(sock: socket.socket) -> bool:
+def _socket_is_closed(sock: socket.socket) -> bool:
     """
     Returns True if the remote side did close the connection
     """
@@ -25,13 +25,13 @@ def socket_is_closed(sock: socket.socket) -> bool:
     return False
 
 
-def make_tcp_socket(ip: str, port: int):
+def _make_tcp_socket(ip: str, port: int):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((ip, port))
     return sock
 
 
-def recvall(sock, buffer_size=4096):
+def _recvall(sock, buffer_size=4096):
     data = b''
     while True:
         chunk = sock.recv(buffer_size)
@@ -119,12 +119,12 @@ class Client:
         if self.use_http:
             request = self.http_template % (len(request)) + request
 
-        self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
+        self.sock = _make_tcp_socket(self.uri, self.port) if _socket_is_closed(
             self.sock) else self.sock
         self.sock.send(request.encode())
 
     def _recv(self):
-        response_bytes = recvall(self.sock)
+        response_bytes = _recvall(self.sock)
         response = None
         if self.use_http:
             response = json.loads(
