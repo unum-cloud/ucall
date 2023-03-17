@@ -47,25 +47,26 @@ class Response:
         self.data = data
 
     @property
-    def json(self) -> Union[bool, int, float, str]:
+    def json(self) -> Union[bool, int, float, str, dict, list, tuple]:
+        self.raise_for_status()
         return self.data['result']
 
-    def raise_status(self):
+    def raise_for_status(self):
         if 'error' in self.data:
             raise RuntimeError(self.data['error'])
 
     @property
     def bytes(self) -> bytes:
-        return base64.b64decode(self.raise_or_get())
+        return base64.b64decode(self.raise_for_status())
 
     @property
     def numpy(self) -> np.ndarray:
-        buf = BytesIO(self.as_bytes())
+        buf = BytesIO(self.bytes())
         return np.load(buf, allow_pickle=True)
 
     @property
     def image(self) -> Image.Image:
-        buf = BytesIO(self.as_bytes())
+        buf = BytesIO(self.bytes())
         return Image.open(buf)
 
 
