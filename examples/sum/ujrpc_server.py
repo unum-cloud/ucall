@@ -16,6 +16,11 @@ def echo(data: bytes):
 
 
 @server
+def perform(a: int, b: int, bin: bytes, text: str):
+    return f'{text}_{a*b}_{len(bin)}'
+
+
+@server
 def transform(age: float, name: str, value: int, identity: bytes):
 
     if age < 15:

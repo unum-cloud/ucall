@@ -422,6 +422,10 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
+
+    printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
+    printf("- %lu threads\n", self->config.max_threads);
+    printf("- %lu max concurrent connections\n", self->config.max_concurrent_connections);
     return 0;
 }
 

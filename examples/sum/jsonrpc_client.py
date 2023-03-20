@@ -8,6 +8,7 @@ import json
 import string
 import base64
 from typing import Optional, List
+from ujrpc.client import Client
 
 
 # Using such strings is much faster than JSON package
@@ -247,3 +248,22 @@ class ClientHTTPBatches:
 
         assert self.expected == received, 'Wrong sum'
         return received
+
+
+class ClientReddit:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.client = Client(uri, port, use_http=True)
+        self.bin_len = 512
+        self.bin = base64.b64encode(random.randbytes(self.bin_len)).decode()
+        self.text = ''.join(random.choices(
+            string.ascii_uppercase, k=self.bin_len))
+
+    def __call__(self) -> str:
+        a = random.randint(1, 1000)
+        b = random.randint(1, 1000)
+        res = self.client.perform(a=a, b=b, bin=self.bin, text=self.text)
+        assert res.json == f'{self.text}_{a*b}_{self.bin_len}'
+        return res.json

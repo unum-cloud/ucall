@@ -16,6 +16,11 @@ def sum(a: int, b: int):
 
 
 @server
+def perform(a: int, b: int, bin: bytes, text: str):
+    return f'{text}_{a*b}_{len(bin)}'
+
+
+@server
 def rotate(image: Image.Image):
     rotated = image.rotate(45)
     return rotated
