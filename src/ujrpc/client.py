@@ -168,7 +168,6 @@ class Client:
 
     def _recv(self) -> Response:
         response_bytes = _recvall(self.sock)
-        print(response_bytes)
         response = json.loads(response_bytes)
         return Response(response)
 
