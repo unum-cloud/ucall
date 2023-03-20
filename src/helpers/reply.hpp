@@ -54,8 +54,8 @@ bool set_http_content_length(char* headers, size_t content_len) {
     return true;
 }
 
-void fill_with_error(struct iovec* buffers, std::string_view request_id, std::string_view error_code,
-                     std::string_view error_message, bool append_comma = false) {
+size_t fill_with_error(struct iovec* buffers, std::string_view request_id, std::string_view error_code,
+                       std::string_view error_message, bool append_comma = false) {
 
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "foobar", "id": "1"}
@@ -78,6 +78,7 @@ void fill_with_error(struct iovec* buffers, std::string_view request_id, std::st
     char const* protocol_suffix = R"("}},)";
     buffers[6].iov_base = (char*)protocol_suffix;
     buffers[6].iov_len = 3 + append_comma;
+    return 22 + request_id.size() + 17 + error_code.size() + 12 + error_message.size() + 3 + append_comma;
 }
 
 template <std::size_t iovecs_len_ak> std::size_t iovecs_length(struct iovec const* iovecs) noexcept {

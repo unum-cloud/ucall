@@ -438,12 +438,28 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch) {
         struct msghdr message {};
-        struct iovec iovecs[iovecs_for_error_k] {};
-        fill_with_error(iovecs, scratch.dynamic_id,       //
-                        std::string_view(code, code_len), //
-                        std::string_view(note, note_len));
-        message.msg_iov = iovecs;
-        message.msg_iovlen = iovecs_for_error_k;
+        if (scratch.is_http) {
+            struct iovec iovecs[iovecs_for_error_k + 1]{};
+            size_t content_len = fill_with_error(iovecs + 1, scratch.dynamic_id,   //
+                                                 std::string_view(code, code_len), //
+                                                 std::string_view(note, note_len));
+            message.msg_iov = iovecs;
+            message.msg_iovlen = iovecs_for_error_k + 1;
+            char headers[http_header_size_k];
+            std::memcpy(headers, http_header_k, http_header_size_k);
+            set_http_content_length(headers, content_len);
+            iovecs[0].iov_base = const_cast<char*>(headers);
+            iovecs[0].iov_len = http_header_size_k;
+        } else {
+            struct iovec iovecs[iovecs_for_error_k] {};
+            fill_with_error(iovecs, scratch.dynamic_id,       //
+                            std::string_view(code, code_len), //
+                            std::string_view(note, note_len));
+
+            message.msg_iov = iovecs;
+            message.msg_iovlen = iovecs_for_error_k;
+        }
+
         send_message(engine, message);
     }
 

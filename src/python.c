@@ -264,8 +264,22 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
     }
 
     PyObject* response = PyObject_CallObject(wrap->callable, args);
-    if (response == NULL)
-        return ujrpc_call_reply_error_unknown(call); // TODO return actual error.
+    if (response == NULL) {
+        PyObject *ptype, *pvalue, *ptraceback;
+        PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+        if (ptype != NULL) {
+            PyObject* pvalue_str = PyObject_Str(pvalue);
+            size_t sz = 0;
+            ujrpc_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
+            ujrpc_call_reply_error(call, 500, error_str, sz);
+            Py_DECREF(pvalue_str);
+        } else
+            ujrpc_call_reply_error_unknown(call);
+        Py_XDECREF(ptype);
+        Py_XDECREF(pvalue);
+        Py_XDECREF(ptraceback);
+        return;
+    }
 
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
