@@ -90,7 +90,7 @@ How does UJRPC compare to FastAPI and gRPC?
 | gRPC ²                  |   ✅   |   🐍    |             164 μs |               9'849 rps |
 |                         |       |        |                    |                         |
 | UJRPC with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
-| UJRPC with io_uring     |   ✅   |   🐍    |              23 μs |              43'000 rps |
+| UJRPC with io_uring     |   ✅   |   🐍    |             40 μs |            210'000 rps |
 | UJRPC with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
 <details>
