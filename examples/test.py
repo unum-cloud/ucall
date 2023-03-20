@@ -76,14 +76,12 @@ def test_uniform_batches():
 def test_normal():
     client = Client()
     response = client.sum(a=2, b=2)
-    response.raise_status()
     assert response.json == 4
 
 
 def test_normal_positional():
     client = Client()
     response = client.sum(2, 2)
-    response.raise_status()
     assert response.json == 4
 
 

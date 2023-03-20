@@ -32,13 +32,35 @@ def _make_tcp_socket(ip: str, port: int):
 
 
 def _recvall(sock, buffer_size=4096):
-    data = b''
-    while True:
+    header = sock.recv(4)
+    body = None
+    content_len = -1
+
+    if header == b'HTTP':
+        while b'\r\n\r\n' not in header:
+            chunk = sock.recv(1024)
+            if not chunk:
+                break
+            header += chunk
+
+        header, body = header.split(b'\r\n\r\n', 1)
+
+        pref = b'Content-Length:'
+        for line in header.splitlines():
+            if line.startswith(pref):
+                content_len = int(line[len(pref):].strip())
+    else:
+        body = header
+
+    content_len -= len(body)
+    while content_len != 0:
         chunk = sock.recv(buffer_size)
         if not chunk:
             break
-        data += chunk
-    return data
+        body += chunk
+        content_len -= len(chunk)
+
+    return body
 
 
 class Response:
@@ -146,12 +168,8 @@ class Client:
 
     def _recv(self) -> Response:
         response_bytes = _recvall(self.sock)
-        response = None
-        if self.use_http:
-            response = json.loads(
-                response_bytes[response_bytes.index(b'\r\n\r\n'):])
-        else:
-            response = json.loads(response_bytes)
+        print(response_bytes)
+        response = json.loads(response_bytes)
         return Response(response)
 
     def __call__(self, jsonrpc: object) -> Response:
