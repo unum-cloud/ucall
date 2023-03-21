@@ -372,6 +372,7 @@ void ujrpc_free(ujrpc_server_t server) {
         return;
 
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
+    close(engine.socket);
     engine.~engine_t();
     std::free(server);
 }

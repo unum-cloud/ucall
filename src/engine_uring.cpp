@@ -435,7 +435,9 @@ void ujrpc_free(ujrpc_server_t server) {
         return;
 
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
+    io_uring_unregister_buffers(&engine.uring);
     io_uring_queue_exit(&engine.uring);
+    close(engine.socket);
     engine.~engine_t();
     std::free(server);
 }
