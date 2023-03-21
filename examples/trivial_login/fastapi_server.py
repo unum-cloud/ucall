@@ -7,9 +7,9 @@ from fastapi import FastAPI, WebSocket
 app = FastAPI()
 
 
-@app.get('/sum')
-async def sum(a: int, b: int):
-    return a + b
+@app.get('/validate_session')
+async def validate_session(user_id: int, session_id: int):
+    return (user_id ^ session_id) % 23 == 0
 
 
 @app.get('/create_user')

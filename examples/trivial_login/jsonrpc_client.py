@@ -18,8 +18,8 @@ from ujrpc.client import Client
 #     'jsonrpc': '2.0',
 #     'id': identity,
 # })
-REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i}}'
-REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i,"text":"%s"}}'
+REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"validate_session","params":{"user_id":%i,"session_id":%i}}'
+REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"validate_session","params":{"user_id":%i,"session_id":%i,"text":"%s"}}'
 HTTP_HEADERS = 'POST / HTTP/1.1\r\nHost: 127.0.0.1:8540\r\nUser-Agent: python-requests/2.27.1\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
 # The ID of the current running process, used as a default
@@ -88,7 +88,7 @@ class ClientHTTP:
         b = random.randint(1, 1000) if b is None else b
         json_str = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         jsonrpc = json.loads(json_str)
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.response = requests.post(self.url, json=jsonrpc)
 
     def recv(self):
@@ -97,7 +97,7 @@ class ClientHTTP:
 
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
@@ -122,7 +122,7 @@ class ClientTCP:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
         jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
             self.sock) else self.sock
         self.sock.send(jsonrpc.encode())
@@ -136,7 +136,7 @@ class ClientTCP:
         received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
@@ -161,7 +161,7 @@ class ClientTCPHTTP:
         b = random.randint(1, 1000) if b is None else b
         jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         headers = HTTP_HEADERS % (len(jsonrpc))
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
             self.sock) else self.sock
         self.sock.send((headers + jsonrpc).encode())
@@ -176,7 +176,7 @@ class ClientTCPHTTP:
         received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
@@ -232,7 +232,7 @@ class ClientHTTPBatches:
     def send(self, a: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))],
              b: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))]) -> int:
 
-        self.expected = [ai + bi for ai, bi in zip(a, b)]
+        self.expected = [((ai ^ bi) % 23 == 0) for ai, bi in zip(a, b)]
         json_str = [
             REQUEST_BIG_PATTERN % (self.identity, ai, bi, self.payload)
             for ai, bi in zip(a, b)]
@@ -246,7 +246,7 @@ class ClientHTTPBatches:
             received.append(ri['result'])
             assert ri['jsonrpc']
 
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 

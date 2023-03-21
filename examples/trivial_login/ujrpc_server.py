@@ -6,8 +6,8 @@ server = Server(port=8545)
 
 
 @server
-def sum(a: int, b: int):
-    return a+b
+def validate_session(user_id: int, session_id: int):
+    return (user_id ^ session_id) % 23 == 0
 
 
 @server

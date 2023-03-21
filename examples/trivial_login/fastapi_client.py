@@ -24,9 +24,10 @@ class ClientREST:
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        result = requests.get(f'{self.url}sum?a={a}&b={b}').text
+        result = requests.get(
+            f'{self.url}validate_session?user_id={a}&session_id={b}').text
         c = int(result)
-        assert a + b == c, 'Wrong sum'
+        assert ((a ^ b) % 23 == 0) == c, 'Wrong Answer'
         return c
 
 
@@ -60,5 +61,5 @@ class ClientWebSocket:
         self.sock.send_binary(struct.pack('<II', a, b))
         result = self.sock.recv()
         c = struct.unpack('<I', result)[0]
-        assert a + b == c, 'Wrong sum'
+        assert ((a ^ b) % 23 == 0) == c, 'Wrong Answer'
         return c
