@@ -1,13 +1,11 @@
 import random
+
+import pytest
 import requests
 import numpy as np
 from PIL import Image
-from io import BytesIO
-import pytest
-from sum.jsonrpc_client import ClientTCP as SumClientTCP
-from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
-from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
 from ujrpc.client import Client
+from sum.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP as SumClientTCP
 
 
 class ClientGeneric:
@@ -43,17 +41,17 @@ def test_shuffled_tcp():
 
 def test_shuffled_http():
     for connections in range(1, 10):
-        shuffled_n_identities(SumClientHTTP, count_clients=connections)
+        shuffled_n_identities(ClientHTTP, count_clients=connections)
 
 
 def test_shuffled_http_batches():
     for connections in range(1, 10):
         print(connections)
-        shuffled_n_identities(SumClientHTTPBatches, count_clients=connections)
+        shuffled_n_identities(ClientHTTPBatches, count_clients=connections)
 
 
 def test_uniform_batches():
-    client = SumClientHTTPBatches()
+    client = ClientHTTPBatches()
     for batch_size in range(1, 100):
         numbers = [random.randint(1, 1000) for _ in range(batch_size)]
         client.send(numbers, numbers)

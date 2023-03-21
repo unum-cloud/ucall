@@ -1,10 +1,11 @@
 import json
 import errno
-import socket
-import random
 import base64
+import random
+import socket
 from io import BytesIO
 from typing import Union
+
 import numpy as np
 from PIL import Image
 
