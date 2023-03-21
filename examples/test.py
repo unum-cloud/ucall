@@ -5,7 +5,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ujrpc.client import Client
-from sum.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP
+from trivial_login.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP
 
 
 class ClientGeneric:
@@ -73,21 +73,21 @@ def test_uniform_batches():
 
 def test_normal():
     client = Client()
-    response = client.sum(a=2, b=2)
-    assert response.json == 4
+    response = client.validate_session(user_id=2, session_id=2)
+    assert response.json == True
 
 
 def test_normal_positional():
     client = Client()
-    response = client.sum(2, 2)
-    assert response.json == 4
+    response = client.validate_session(2, 2)
+    assert response.json == True
 
 
 def test_notification():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2, 'b': 2},
+        'method': 'validate_session',
+        'params': {'user_id': 2, 'session_id': 2},
         'jsonrpc': '2.0',
     })
     assert len(response) == 0
@@ -107,8 +107,8 @@ def test_method_missing():
 def test_param_missing():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2},
+        'method': 'validate_session',
+        'params': {'user_id': 2},
         'jsonrpc': '2.0',
         'id': 0,
     })
@@ -118,8 +118,8 @@ def test_param_missing():
 def test_param_type():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2.0, 'b': 3.5},
+        'method': 'validate_session',
+        'params': {'user_id': 2.0, 'session_id': 3.5},
         'jsonrpc': '2.0',
         'id': 0,
     })
@@ -129,10 +129,10 @@ def test_param_type():
 def test_non_uniform_batch():
     a = 2
     b = 2
-    r_normal = {'method': 'sum', 'params': {
-        'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0}
-    r_notification = {'method': 'sum', 'params': {
-        'a': a, 'b': b}, 'jsonrpc': '2.0'}
+    r_normal = {'method': 'validate_session', 'params': {
+        'user_id': a, 'session_id': b}, 'jsonrpc': '2.0', 'id': 0}
+    r_notification = {'method': 'validate_session', 'params': {
+        'user_id': a, 'session_id': b}, 'jsonrpc': '2.0'}
 
     client = ClientGeneric()
     response = client([
