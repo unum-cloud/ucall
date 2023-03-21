@@ -18,17 +18,17 @@ class ValidateClient:
         # bind the client and the server
         self.stub = pb2_grpc.LoginServiceStub(self.channel)
 
-    def get_url(self, a, b):
+    def get_url(self, user_id, session_id):
         """
         Client function to call the rpc for Validate
         """
-        result = pb2.ValidateRequest(a=a, b=b)
+        result = pb2.ValidateRequest(user_id=user_id, session_id=session_id)
         return self.stub.Validate(result)
 
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        result = self.get_url(a=a, b=b)
+        result = self.get_url(user_id=a, session_id=b)
         c = result.result
         assert ((a ^ b) % 23 == 0) == c, 'Wrong Result'
         return c

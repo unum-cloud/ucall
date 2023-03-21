@@ -11,7 +11,7 @@ class ValidateServiceService(pb2_grpc.LoginServiceServicer):
         pass
 
     def Validate(self, request, context):
-        return pb2.ValidateResponse(result=((request.a ^ request.b) % 23 == 0))
+        return pb2.ValidateResponse(result=((request.user_id ^ request.session_id) % 23 == 0))
 
 
 def serve():
