@@ -12,9 +12,9 @@ async def sum(a: int, b: int):
     return a + b
 
 
-@app.get('/perform')
-async def perform(a: int, b: int, bin: str, text: str):
-    return f'{text}_{a*b}_{len(base64.b64decode(bin))}'
+@app.get('/create_user')
+async def create_user(age: int, name: str, avatar: str, bio: str):
+    return f'Created {name} aged {age} with bio {bio} and avatar_size {len(base64.b64decode(avatar))}'
 
 
 @app.websocket('/sum-ws')

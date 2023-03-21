@@ -36,15 +36,15 @@ class ClientRESTReddit:
         self.identity = identity
         self.url = f'http://{uri}:{port}/'
         self.bin_len = 1500
-        self.bin = base64.b64encode(random.randbytes(self.bin_len)).decode()
-        self.text = ''.join(random.choices(
+        self.avatar = base64.b64encode(random.randbytes(self.bin_len)).decode()
+        self.bio = ''.join(random.choices(
             string.ascii_uppercase, k=self.bin_len))
+        self.name = 'John'
 
-    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
-        a = random.randint(1, 1000) if a is None else a
-        b = random.randint(1, 1000) if b is None else b
+    def __call__(self) -> int:
+        age = random.randint(1, 1000)
         result = requests.get(
-            f'{self.url}perform?a={a}&b={b}&bin={self.bin}&text={self.text}').text
+            f'{self.url}create_user?age={age}&bio={self.bio}&name={self.name}&text={self.bio}').text
         return result
 
 
