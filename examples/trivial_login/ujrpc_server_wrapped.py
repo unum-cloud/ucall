@@ -11,8 +11,13 @@ def mul(a: np.ndarray, b: np.ndarray):
 
 
 @server
-def sum(a: int, b: int):
-    return a+b
+def validate_session(user_id: int, session_id: int):
+    return (user_id ^ session_id) % 23 == 0
+
+
+@server
+def create_user(age: int, name: str, avatar: bytes, bio: str):
+    return f'Created {name} aged {age} with bio {bio} and avatar_size {len(avatar)}'
 
 
 @server

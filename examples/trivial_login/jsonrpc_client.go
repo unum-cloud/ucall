@@ -48,7 +48,7 @@ func main() {
 		for {
 			a := rand.Intn(1000)
 			b := rand.Intn(1000)
-			jsonRPC := fmt.Sprintf(`{"jsonrpc":"2.0","method":"sum","params":{"a":%d,"b":%d},"id":0}`, a, b)
+			jsonRPC := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":0}`, a, b)
 			_, err = conn.Write([]byte(jsonRPC))
 			if err != nil {
 				break

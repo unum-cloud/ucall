@@ -1,13 +1,14 @@
-import socket
-import errno
 import os
-import requests
-import random
-import socket
 import json
-import string
+import errno
+import socket
 import base64
+import random
+import string
 from typing import Optional, List
+
+import requests
+from ujrpc.client import Client
 
 
 # Using such strings is much faster than JSON package
@@ -17,8 +18,8 @@ from typing import Optional, List
 #     'jsonrpc': '2.0',
 #     'id': identity,
 # })
-REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i}}'
-REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"sum","params":{"a":%i,"b":%i,"text":"%s"}}'
+REQUEST_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"validate_session","params":{"user_id":%i,"session_id":%i}}'
+REQUEST_BIG_PATTERN = '{"jsonrpc":"2.0","id":%i,"method":"validate_session","params":{"user_id":%i,"session_id":%i,"text":"%s"}}'
 HTTP_HEADERS = 'POST / HTTP/1.1\r\nHost: 127.0.0.1:8540\r\nUser-Agent: python-requests/2.27.1\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
 # The ID of the current running process, used as a default
@@ -66,7 +67,7 @@ def parse_response(response: bytes) -> object:
     return json.loads(response.decode())
 
 
-class ClientHTTP:
+class CaseHTTP:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -87,7 +88,7 @@ class ClientHTTP:
         b = random.randint(1, 1000) if b is None else b
         json_str = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         jsonrpc = json.loads(json_str)
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.response = requests.post(self.url, json=jsonrpc)
 
     def recv(self):
@@ -96,11 +97,11 @@ class ClientHTTP:
 
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
-class ClientTCP:
+class CaseTCP:
     """JSON-RPC Client that operates directly over TCP/IPv4 stack, without HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -121,7 +122,7 @@ class ClientTCP:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
         jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
             self.sock) else self.sock
         self.sock.send(jsonrpc.encode())
@@ -135,11 +136,11 @@ class ClientTCP:
         received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
-class ClientTCPHTTP:
+class CaseTCPHTTP:
     """JSON-RPC Client that operates directly over TCP/IPv4 stack, with HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -160,7 +161,7 @@ class ClientTCPHTTP:
         b = random.randint(1, 1000) if b is None else b
         jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
         headers = HTTP_HEADERS % (len(jsonrpc))
-        self.expected = a + b
+        self.expected = (a ^ b) % 23 == 0
         self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
             self.sock) else self.sock
         self.sock.send((headers + jsonrpc).encode())
@@ -175,11 +176,11 @@ class ClientTCPHTTP:
         received = response['result']
         assert response['jsonrpc']
         assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
 
 
-class ClientTCPHTTPBase64:
+class CaseTCPHTTPBase64:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -217,7 +218,7 @@ class ClientTCPHTTPBase64:
         return received
 
 
-class ClientHTTPBatches:
+class CaseHTTPBatches:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -231,7 +232,7 @@ class ClientHTTPBatches:
     def send(self, a: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))],
              b: List[int] = [random.randint(0, 2**32) for _ in range(random.randint(2, 50))]) -> int:
 
-        self.expected = [ai + bi for ai, bi in zip(a, b)]
+        self.expected = [((ai ^ bi) % 23 == 0) for ai, bi in zip(a, b)]
         json_str = [
             REQUEST_BIG_PATTERN % (self.identity, ai, bi, self.payload)
             for ai, bi in zip(a, b)]
@@ -245,5 +246,26 @@ class ClientHTTPBatches:
             received.append(ri['result'])
             assert ri['jsonrpc']
 
-        assert self.expected == received, 'Wrong sum'
+        assert self.expected == received, 'Wrong Answer'
         return received
+
+
+class CaseUserCreation:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.client = Client(uri, port, use_http=True)
+        self.bin_len = 512
+        self.avatar = base64.b64encode(random.randbytes(self.bin_len)).decode()
+        self.bio = ''.join(random.choices(
+            string.ascii_uppercase, k=self.bin_len))
+        self.name = 'John Lock'
+
+    def __call__(self) -> str:
+        age = random.randint(1, 1000)
+
+        res = self.client.create_user(
+            age=age, name=self.name, avatar=self.avatar, bio=self.bio)
+        assert res.json == f'Created {self.name} aged {age} with bio {self.bio} and avatar_size {self.bin_len}'
+        return res.json

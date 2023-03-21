@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package login;
+
+service LoginService {
+  rpc Validate (ValidateRequest) returns (ValidateResponse) {}
+}
+
+message ValidateRequest {
+  int64 user_id = 1;
+  int64 session_id = 2;
+}
+
+message ValidateResponse {
+  bool result = 1;
+}
+
+

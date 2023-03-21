@@ -1,13 +1,11 @@
 import random
+
+import pytest
 import requests
 import numpy as np
 from PIL import Image
-from io import BytesIO
-import pytest
-from sum.jsonrpc_client import ClientTCP as SumClientTCP
-from sum.jsonrpc_client import ClientHTTP as SumClientHTTP
-from sum.jsonrpc_client import ClientHTTPBatches as SumClientHTTPBatches
 from ujrpc.client import Client
+from trivial_login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
 
 
 class ClientGeneric:
@@ -38,22 +36,22 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
 
 def test_shuffled_tcp():
     for connections in range(1, 10):
-        shuffled_n_identities(SumClientTCP, count_clients=connections)
+        shuffled_n_identities(CaseTCP, count_clients=connections)
 
 
 def test_shuffled_http():
     for connections in range(1, 10):
-        shuffled_n_identities(SumClientHTTP, count_clients=connections)
+        shuffled_n_identities(CaseHTTP, count_clients=connections)
 
 
 def test_shuffled_http_batches():
     for connections in range(1, 10):
         print(connections)
-        shuffled_n_identities(SumClientHTTPBatches, count_clients=connections)
+        shuffled_n_identities(CaseHTTPBatches, count_clients=connections)
 
 
 def test_uniform_batches():
-    client = SumClientHTTPBatches()
+    client = CaseHTTPBatches()
     for batch_size in range(1, 100):
         numbers = [random.randint(1, 1000) for _ in range(batch_size)]
         client.send(numbers, numbers)
@@ -75,23 +73,21 @@ def test_uniform_batches():
 
 def test_normal():
     client = Client()
-    response = client.sum(a=2, b=2)
-    response.raise_status()
-    assert response.json == 4
+    response = client.validate_session(user_id=2, session_id=2)
+    assert response.json == True
 
 
 def test_normal_positional():
     client = Client()
-    response = client.sum(2, 2)
-    response.raise_status()
-    assert response.json == 4
+    response = client.validate_session(2, 2)
+    assert response.json == True
 
 
 def test_notification():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2, 'b': 2},
+        'method': 'validate_session',
+        'params': {'user_id': 2, 'session_id': 2},
         'jsonrpc': '2.0',
     })
     assert len(response) == 0
@@ -111,8 +107,8 @@ def test_method_missing():
 def test_param_missing():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2},
+        'method': 'validate_session',
+        'params': {'user_id': 2},
         'jsonrpc': '2.0',
         'id': 0,
     })
@@ -122,8 +118,8 @@ def test_param_missing():
 def test_param_type():
     client = ClientGeneric()
     response = client({
-        'method': 'sum',
-        'params': {'a': 2.0, 'b': 3.5},
+        'method': 'validate_session',
+        'params': {'user_id': 2.0, 'session_id': 3.5},
         'jsonrpc': '2.0',
         'id': 0,
     })
@@ -133,10 +129,10 @@ def test_param_type():
 def test_non_uniform_batch():
     a = 2
     b = 2
-    r_normal = {'method': 'sum', 'params': {
-        'a': a, 'b': b}, 'jsonrpc': '2.0', 'id': 0}
-    r_notification = {'method': 'sum', 'params': {
-        'a': a, 'b': b}, 'jsonrpc': '2.0'}
+    r_normal = {'method': 'validate_session', 'params': {
+        'user_id': a, 'session_id': b}, 'jsonrpc': '2.0', 'id': 0}
+    r_notification = {'method': 'validate_session', 'params': {
+        'user_id': a, 'session_id': b}, 'jsonrpc': '2.0'}
 
     client = ClientGeneric()
     response = client([

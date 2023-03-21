@@ -14,13 +14,13 @@ listener_reuse = None
 async def respond_reusers(endpoint: ucp.Endpoint):
     while True:
         await endpoint.recv(triplet[:2])
-        triplet[2] = triplet[0] + triplet[1]
+        triplet[2] = ((triplet[0] ^ triplet[1]) % 23 == 0)
         await endpoint.send(triplet[2:])
 
 
 async def respond(endpoint: ucp.Endpoint):
     await endpoint.recv(triplet[:2])
-    triplet[2] = triplet[0] + triplet[1]
+    triplet[2] = ((triplet[0] ^ triplet[1]) % 23 == 0)
     await endpoint.send(triplet[2:])
 
 
