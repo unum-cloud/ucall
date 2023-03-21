@@ -257,13 +257,15 @@ class ClientReddit:
         self.expected = -1
         self.client = Client(uri, port, use_http=True)
         self.bin_len = 512
-        self.bin = base64.b64encode(random.randbytes(self.bin_len)).decode()
-        self.text = ''.join(random.choices(
+        self.avatar = base64.b64encode(random.randbytes(self.bin_len)).decode()
+        self.bio = ''.join(random.choices(
             string.ascii_uppercase, k=self.bin_len))
+        self.name = 'John Lock'
 
     def __call__(self) -> str:
-        a = random.randint(1, 1000)
-        b = random.randint(1, 1000)
-        res = self.client.perform(a=a, b=b, bin=self.bin, text=self.text)
-        assert res.json == f'{self.text}_{a*b}_{self.bin_len}'
+        age = random.randint(1, 1000)
+
+        res = self.client.create_user(
+            age=age, name=self.name, avatar=self.avatar, bio=self.bio)
+        assert res.json == f'Created {self.name} aged {age} with bio {self.bio} and avatar_size {self.bin_len}'
         return res.json

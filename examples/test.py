@@ -5,7 +5,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ujrpc.client import Client
-from sum.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP as SumClientTCP
+from sum.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP
 
 
 class ClientGeneric:
@@ -36,7 +36,7 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
 
 def test_shuffled_tcp():
     for connections in range(1, 10):
-        shuffled_n_identities(SumClientTCP, count_clients=connections)
+        shuffled_n_identities(ClientTCP, count_clients=connections)
 
 
 def test_shuffled_http():

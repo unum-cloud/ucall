@@ -16,8 +16,8 @@ def echo(data: bytes):
 
 
 @server
-def perform(a: int, b: int, bin: bytes, text: str):
-    return f'{text}_{a*b}_{len(bin)}'
+def create_user(age: int, name: str, avatar: bytes, bio: str):
+    return f'Created {name} aged {age} with bio {bio} and avatar_size {len(avatar)}'
 
 
 @server
