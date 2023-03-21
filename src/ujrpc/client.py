@@ -50,6 +50,7 @@ def _recvall(sock, buffer_size=4096):
         for line in header.splitlines():
             if line.startswith(pref):
                 content_len = int(line[len(pref):].strip())
+                break
     else:
         body = header
 
