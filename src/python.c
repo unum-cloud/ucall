@@ -65,6 +65,7 @@ typedef struct {
     py_wrapper_t* wrappers;
     size_t wrapper_capacity;
     size_t count_added;
+    bool quiet;
 } py_server_t;
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
@@ -386,8 +387,8 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static const char const* keywords_list[7] = {
-        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads", NULL,
+    static const char const* keywords_list[8] = {
+        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads", "quiet", NULL,
     };
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
@@ -397,10 +398,12 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->config.max_concurrent_connections = 1024;
     self->config.max_lifetime_exchanges = UINT32_MAX;
     self->count_threads = 1;
+    self->quiet = false;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnp", (char**)keywords_list, //
                                      &self->config.interface, &self->config.port, &self->config.queue_depth,
-                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
+                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
+                                     &self->quiet))
         return -1;
 
     self->wrapper_capacity = 16;
@@ -409,9 +412,11 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
 
-    printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
-    printf("- %lu threads\n", self->config.max_threads);
-    printf("- %lu max concurrent connections\n", self->config.max_concurrent_connections);
+    if (!self->quiet) {
+        printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
+        printf("- %lu threads\n", self->config.max_threads);
+        printf("- %lu max concurrent connections\n", self->config.max_concurrent_connections);
+    }
     return 0;
 }
 
