@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import struct
+import base64
 
 from fastapi import FastAPI, WebSocket
 
@@ -9,6 +10,11 @@ app = FastAPI()
 @app.get('/sum')
 async def sum(a: int, b: int):
     return a + b
+
+
+@app.get('/perform')
+async def perform(a: int, b: int, bin: str, text: str):
+    return f'{text}_{a*b}_{len(base64.b64decode(bin))}'
 
 
 @app.websocket('/sum-ws')

@@ -2,6 +2,8 @@
 import os
 import struct
 import random
+import string
+import base64
 from typing import Optional
 
 # Dependencies
@@ -26,6 +28,24 @@ class ClientREST:
         c = int(result)
         assert a + b == c, 'Wrong sum'
         return c
+
+
+class ClientRESTReddit:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8000, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.url = f'http://{uri}:{port}/'
+        self.bin_len = 1500
+        self.bin = base64.b64encode(random.randbytes(self.bin_len)).decode()
+        self.text = ''.join(random.choices(
+            string.ascii_uppercase, k=self.bin_len))
+
+    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+        a = random.randint(1, 1000) if a is None else a
+        b = random.randint(1, 1000) if b is None else b
+        result = requests.get(
+            f'{self.url}perform?a={a}&b={b}&bin={self.bin}&text={self.text}').text
+        return result
 
 
 class ClientWebSocket:
