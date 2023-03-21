@@ -67,7 +67,7 @@ def parse_response(response: bytes) -> object:
     return json.loads(response.decode())
 
 
-class ClientHTTP:
+class CaseHTTP:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -101,7 +101,7 @@ class ClientHTTP:
         return received
 
 
-class ClientTCP:
+class CaseTCP:
     """JSON-RPC Client that operates directly over TCP/IPv4 stack, without HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -140,7 +140,7 @@ class ClientTCP:
         return received
 
 
-class ClientTCPHTTP:
+class CaseTCPHTTP:
     """JSON-RPC Client that operates directly over TCP/IPv4 stack, with HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -180,7 +180,7 @@ class ClientTCPHTTP:
         return received
 
 
-class ClientTCPHTTPBase64:
+class CaseTCPHTTPBase64:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -218,7 +218,7 @@ class ClientTCPHTTPBase64:
         return received
 
 
-class ClientHTTPBatches:
+class CaseHTTPBatches:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
@@ -250,7 +250,7 @@ class ClientHTTPBatches:
         return received
 
 
-class ClientReddit:
+class CaseUserCreation:
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity

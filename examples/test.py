@@ -5,7 +5,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ujrpc.client import Client
-from trivial_login.jsonrpc_client import ClientHTTP, ClientHTTPBatches, ClientTCP
+from trivial_login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
 
 
 class ClientGeneric:
@@ -36,22 +36,22 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
 
 def test_shuffled_tcp():
     for connections in range(1, 10):
-        shuffled_n_identities(ClientTCP, count_clients=connections)
+        shuffled_n_identities(CaseTCP, count_clients=connections)
 
 
 def test_shuffled_http():
     for connections in range(1, 10):
-        shuffled_n_identities(ClientHTTP, count_clients=connections)
+        shuffled_n_identities(CaseHTTP, count_clients=connections)
 
 
 def test_shuffled_http_batches():
     for connections in range(1, 10):
         print(connections)
-        shuffled_n_identities(ClientHTTPBatches, count_clients=connections)
+        shuffled_n_identities(CaseHTTPBatches, count_clients=connections)
 
 
 def test_uniform_batches():
-    client = ClientHTTPBatches()
+    client = CaseHTTPBatches()
     for batch_size in range(1, 100):
         numbers = [random.randint(1, 1000) for _ in range(batch_size)]
         client.send(numbers, numbers)
