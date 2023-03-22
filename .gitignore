@@ -17,6 +17,7 @@ Makefile
 !docs/Makefile
 .DS_Store
 wheelhouse
+package-lock.json
 
 # Prerequisites
 *.d
