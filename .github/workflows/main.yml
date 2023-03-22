@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3
-    - run: cd assets/ && npm install && npx semantic-release
+    - run: cd .github/workflows/ && npm install && npx semantic-release
 
 
   build_wheels:

@@ -22,6 +22,14 @@
               "release": "minor"
             },
             {
+              "tag": "Improve",
+              "release": "minor"
+            },
+            {
+              "tag": "Optimze",
+              "release": "patch"
+            },
+            {
               "tag": "Make",
               "release": "patch"
             }
@@ -38,6 +46,14 @@
               "release": "minor"
             },
             {
+              "tag": "Improve",
+              "release": "minor"
+            },
+            {
+              "tag": "Optimze",
+              "release": "patch"
+            },
+            {
               "tag": "Make",
               "release": "patch"
             }
@@ -49,7 +65,7 @@
     "prepare": [
       {
         "path": "@semantic-release/exec",
-        "cmd": "echo ${nextRelease.version} > VERSION && git commit -am 'Build: Bump Version' && git push"
+        "cmd": "echo ${nextRelease.version} > ../../VERSION && git commit -am 'Build: Bump Version' && git push"
       }
     ]
   }
