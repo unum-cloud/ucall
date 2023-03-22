@@ -20,6 +20,10 @@
             {
               "tag": "Add",
               "release": "minor"
+            },
+            {
+              "tag": "Make",
+              "release": "patch"
             }
           ]
         }
@@ -32,6 +36,10 @@
             {
               "tag": "Add",
               "release": "minor"
+            },
+            {
+              "tag": "Make",
+              "release": "patch"
             }
           ]
         }
