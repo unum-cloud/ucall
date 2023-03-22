@@ -32,6 +32,10 @@
             {
               "tag": "Make",
               "release": "patch"
+            },
+            {
+              "tag": "Refactor",
+              "release": false
             }
           ]
         }
@@ -56,6 +60,10 @@
             {
               "tag": "Make",
               "release": "patch"
+            },
+            {
+              "tag": "Refactor",
+              "release": false
             }
           ]
         }
