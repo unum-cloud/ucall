@@ -2,10 +2,10 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import sum_pb2 as sum__pb2
+import validate_session_pb2 as validate__session__pb2
 
 
-class SumServiceStub(object):
+class LoginServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -14,42 +14,42 @@ class SumServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.Sum = channel.unary_unary(
-                '/sum.SumService/Sum',
-                request_serializer=sum__pb2.SumRequest.SerializeToString,
-                response_deserializer=sum__pb2.SumResponse.FromString,
+        self.Validate = channel.unary_unary(
+                '/login.LoginService/Validate',
+                request_serializer=validate__session__pb2.ValidateRequest.SerializeToString,
+                response_deserializer=validate__session__pb2.ValidateResponse.FromString,
                 )
 
 
-class SumServiceServicer(object):
+class LoginServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def Sum(self, request, context):
+    def Validate(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_SumServiceServicer_to_server(servicer, server):
+def add_LoginServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Sum': grpc.unary_unary_rpc_method_handler(
-                    servicer.Sum,
-                    request_deserializer=sum__pb2.SumRequest.FromString,
-                    response_serializer=sum__pb2.SumResponse.SerializeToString,
+            'Validate': grpc.unary_unary_rpc_method_handler(
+                    servicer.Validate,
+                    request_deserializer=validate__session__pb2.ValidateRequest.FromString,
+                    response_serializer=validate__session__pb2.ValidateResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'sum.SumService', rpc_method_handlers)
+            'login.LoginService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class SumService(object):
+class LoginService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def Sum(request,
+    def Validate(request,
             target,
             options=(),
             channel_credentials=None,
@@ -59,8 +59,8 @@ class SumService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/sum.SumService/Sum',
-            sum__pb2.SumRequest.SerializeToString,
-            sum__pb2.SumResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/login.LoginService/Validate',
+            validate__session__pb2.ValidateRequest.SerializeToString,
+            validate__session__pb2.ValidateResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

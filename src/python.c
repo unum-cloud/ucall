@@ -65,6 +65,7 @@ typedef struct {
     py_wrapper_t* wrappers;
     size_t wrapper_capacity;
     size_t count_added;
+    bool quiet;
 } py_server_t;
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
@@ -264,8 +265,22 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
     }
 
     PyObject* response = PyObject_CallObject(wrap->callable, args);
-    if (response == NULL)
-        return ujrpc_call_reply_error_unknown(call); // TODO return actual error.
+    if (response == NULL) {
+        PyObject *ptype, *pvalue, *ptraceback;
+        PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+        if (ptype != NULL) {
+            PyObject* pvalue_str = PyObject_Str(pvalue);
+            size_t sz = 0;
+            ujrpc_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
+            ujrpc_call_reply_error(call, 500, error_str, sz);
+            Py_DECREF(pvalue_str);
+        } else
+            ujrpc_call_reply_error_unknown(call);
+        Py_XDECREF(ptype);
+        Py_XDECREF(pvalue);
+        Py_XDECREF(ptraceback);
+        return;
+    }
 
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
@@ -386,8 +401,8 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 }
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
-    static const char const* keywords_list[7] = {
-        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads", NULL,
+    static const char const* keywords_list[8] = {
+        "interface", "port", "queue_depth", "max_callbacks", "max_threads", "count_threads", "quiet", NULL,
     };
     self->config.interface = "0.0.0.0";
     self->config.port = 8545;
@@ -397,10 +412,12 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->config.max_concurrent_connections = 1024;
     self->config.max_lifetime_exchanges = UINT32_MAX;
     self->count_threads = 1;
+    self->quiet = false;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnn", (char**)keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnp", (char**)keywords_list, //
                                      &self->config.interface, &self->config.port, &self->config.queue_depth,
-                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads))
+                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
+                                     &self->quiet))
         return -1;
 
     self->wrapper_capacity = 16;
@@ -408,6 +425,12 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
+
+    if (!self->quiet) {
+        printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
+        printf("- %lu threads\n", self->config.max_threads);
+        printf("- %lu max concurrent connections\n", self->config.max_concurrent_connections);
+    }
     return 0;
 }
 

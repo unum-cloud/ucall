@@ -1,78 +1,178 @@
-from io import BytesIO
-import requests
+import json
+import errno
 import base64
 import random
+import socket
+from io import BytesIO
+from typing import Union
 
 import numpy as np
 from PIL import Image
 
 
+def _socket_is_closed(sock: socket.socket) -> bool:
+    """
+    Returns True if the remote side did close the connection
+    """
+    if sock is None:
+        return True
+    try:
+        buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+        if buf == b'':
+            return True
+    except BlockingIOError as exc:
+        if exc.errno != errno.EAGAIN:
+            raise
+    return False
+
+
+def _make_tcp_socket(ip: str, port: int):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((ip, port))
+    return sock
+
+
+def _recvall(sock, buffer_size=4096):
+    header = sock.recv(4)
+    body = None
+    content_len = -1
+
+    if header == b'HTTP':
+        while b'\r\n\r\n' not in header:
+            chunk = sock.recv(1024)
+            if not chunk:
+                break
+            header += chunk
+
+        header, body = header.split(b'\r\n\r\n', 1)
+
+        pref = b'Content-Length:'
+        for line in header.splitlines():
+            if line.startswith(pref):
+                content_len = int(line[len(pref):].strip())
+                break
+    else:
+        body = header
+
+    content_len -= len(body)
+    while content_len != 0:
+        chunk = sock.recv(buffer_size)
+        if not chunk:
+            break
+        body += chunk
+        content_len -= len(chunk)
+
+    return body
+
+
+class Response:
+
+    def __init__(self, data):
+        self.data = data
+
+    @property
+    def json(self) -> Union[bool, int, float, str, dict, list, tuple]:
+        self.raise_for_status()
+        return self.data['result']
+
+    def raise_for_status(self):
+        if 'error' in self.data:
+            raise RuntimeError(self.data['error'])
+
+    @property
+    def bytes(self) -> bytes:
+        return base64.b64decode(self.json)
+
+    @property
+    def numpy(self) -> np.ndarray:
+        buf = BytesIO(self.bytes)
+        return np.load(buf, allow_pickle=True)
+
+    @property
+    def image(self) -> Image.Image:
+        buf = BytesIO(self.bytes)
+        return Image.open(buf)
+
+
+class Request:
+
+    def __init__(self, json):
+        self.data = json
+        self.packed = self.pack(json)
+
+    def _pack_numpy(self, array):
+        buf = BytesIO()
+        np.save(buf, array)
+        buf.seek(0)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _pack_pillow(self, image):
+        buf = BytesIO()
+        if not image.format:
+            image.format = 'tiff'
+        image.save(buf, image.format,  compression='raw', compression_level=0)
+        buf.seek(0)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def pack(self, req):
+        keys = None
+        if isinstance(req['params'], dict):
+            keys = req['params'].keys()
+        else:
+            keys = range(0, len(req['params']))
+
+        for k in keys:
+            if isinstance(req['params'][k], np.ndarray):
+                req['params'][k] = self._pack_numpy(req['params'][k])
+
+            elif isinstance(req['params'][k], Image.Image):
+                req['params'][k] = self._pack_pillow(req['params'][k])
+
+        return req
+
+
 class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
-    response = None
 
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8545) -> None:
-        self.url = f'http://{uri}:{port}/'
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, use_http: bool = True) -> None:
+        self.uri = uri
+        self.port = port
+        self.use_http = use_http
+        self.sock = None
+        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ujrpc\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
-    def __getattr__(self, name, *args, **kwargs):
-
-        def call(id=None, **kwargs):
-            if id is None:
-                id = random.randint(1, 2**16)
+    def __getattr__(self, name):
+        def call(*args, **kwargs):
+            params = kwargs
+            if len(args) != 0:
+                assert len(
+                    kwargs) == 0, 'Can\'t mix positional and keyword parameters!'
+                params = args
 
             return self.__call__({
                 'method': name,
-                'params': kwargs,
+                'params': params,
                 'jsonrpc': '2.0',
-                'id': id,
             })
 
         return call
 
-    def pack(self, jsonrpc):
-        for k, v in jsonrpc['params'].items():
-            buf = BytesIO()
-            if isinstance(v, np.ndarray):
-                np.save(buf, v)
-                buf.seek(0)
-                jsonrpc['params'][k] = base64.b64encode(
-                    buf.getvalue()).decode()
+    def _send(self, json_data: dict):
+        json_data['id'] = random.randint(1, 2**16)
+        req_obj = Request(json_data)
+        request = json.dumps(req_obj.packed)
+        if self.use_http:
+            request = self.http_template % (len(request)) + request
 
-            if isinstance(v, Image.Image):
-                if not v.format:
-                    v.format = 'tiff'
-                v.save(buf, v.format,  compression='raw', compression_level=0)
-                buf.seek(0)
-                jsonrpc['params'][k] = base64.b64encode(
-                    buf.getvalue()).decode()
+        self.sock = _make_tcp_socket(self.uri, self.port) if _socket_is_closed(
+            self.sock) else self.sock
+        self.sock.send(request.encode())
 
-        return jsonrpc
+    def _recv(self) -> Response:
+        response_bytes = _recvall(self.sock)
+        response = json.loads(response_bytes)
+        return Response(response)
 
-    def unpack(self, bin):
-        buf = BytesIO(bin)
-
-        if bin[:6] == b'\x93NUMPY':
-            return np.load(buf, allow_pickle=True)
-
-        try:
-            img = Image.open(buf)
-            img.verify()
-            buf.seek(0)
-            return Image.open(buf)  # Must reopen after verify
-        except:
-            pass  # Not an Image file
-
-        return bin
-
-    def __call__(self, jsonrpc: object) -> object:
-        jsonrpc = self.pack(jsonrpc)
-        res = requests.post(self.url, json=jsonrpc).json()
-
-        if 'result' in res:
-            try:
-                bin = base64.b64decode(res['result'])
-                res['result'] = self.unpack(bin)
-            except:
-                pass
-
-        return res
+    def __call__(self, jsonrpc: object) -> Response:
+        self._send(jsonrpc)
+        return self._recv()

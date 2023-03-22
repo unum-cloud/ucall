@@ -33,7 +33,7 @@ googleanalytics_enabled = True
 
 html_logo = '../assets/unum.png'
 html_theme = 'furo'
-html_static_path = ['_static']
+html_static_path = []
 html_css_files = []
 html_js_files = []
 

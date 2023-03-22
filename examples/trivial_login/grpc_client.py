@@ -3,11 +3,11 @@ import random
 from typing import Optional
 
 import grpc
-import sum_pb2 as pb2
-import sum_pb2_grpc as pb2_grpc
+import validate_session_pb2 as pb2
+import validate_session_pb2_grpc as pb2_grpc
 
 
-class SumClient:
+class ValidateClient:
     """
     Client for gRPC functionality
     """
@@ -16,19 +16,19 @@ class SumClient:
         # instantiate a channel
         self.channel = grpc.insecure_channel(f'{uri}:{port}')
         # bind the client and the server
-        self.stub = pb2_grpc.SumServiceStub(self.channel)
+        self.stub = pb2_grpc.LoginServiceStub(self.channel)
 
-    def get_url(self, a, b):
+    def get_url(self, user_id, session_id):
         """
-        Client function to call the rpc for Sum
+        Client function to call the rpc for Validate
         """
-        result = pb2.SumRequest(a=a, b=b)
-        return self.stub.Sum(result)
+        result = pb2.ValidateRequest(user_id=user_id, session_id=session_id)
+        return self.stub.Validate(result)
 
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
         a = random.randint(1, 1000) if a is None else a
         b = random.randint(1, 1000) if b is None else b
-        result = self.get_url(a=a, b=b)
+        result = self.get_url(user_id=a, session_id=b)
         c = result.result
-        assert a + b == c, 'Wrong sum'
+        assert ((a ^ b) % 23 == 0) == c, 'Wrong Result'
         return c

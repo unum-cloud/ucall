@@ -12,32 +12,33 @@ host = ucp.get_address()
 port = 13337
 port_reuse = 13338
 
-async def request_sum_reuse(endpoint: ucp.Endpoint):
+
+async def request_validate_reuse(endpoint: ucp.Endpoint):
     triplet[0] = random.randint(1, 1000)
-    triplet[1] = random.randint(1, 1000)    
+    triplet[1] = random.randint(1, 1000)
     await endpoint.send(triplet[:2])
     await endpoint.recv(triplet[2:])
-    assert triplet[0] + triplet[1] == triplet[2], 'Wrong sum'
+    assert triplet[0] + triplet[1] == triplet[2], 'Wrong Answer'
 
 
-async def request_sum():
+async def request_validate():
     endpoint = await ucp.create_endpoint(host, port)
     triplet[0] = random.randint(1, 1000)
-    triplet[1] = random.randint(1, 1000)    
+    triplet[1] = random.randint(1, 1000)
     await endpoint.send(triplet[:2])
     await endpoint.recv(triplet[2:])
-    assert triplet[0] + triplet[1] == triplet[2], 'Wrong sum'
+    assert triplet[0] + triplet[1] == triplet[2], 'Wrong Answer'
     await endpoint.close()
 
 
 async def bench_reusing():
     endpoint = await ucp.create_endpoint(host, port_reuse)
-    await benchmark_request_async(request_sum_reuse, endpoint)
+    await benchmark_request_async(request_validate_reuse, endpoint)
     await endpoint.close()
 
 
 async def bench_creating():
-    await benchmark_request_async(request_sum)
+    await benchmark_request_async(request_validate)
 
 
 if __name__ == '__main__':

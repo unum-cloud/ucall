@@ -11,16 +11,16 @@
 
 #include "ujrpc/ujrpc.h"
 
-static void sum(ujrpc_call_t call, ujrpc_callback_tag_t) {
+static void validate_session(ujrpc_call_t call, ujrpc_callback_tag_t) {
     int64_t a{}, b{};
     char c_str[256]{};
-    bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
-    bool got_b = ujrpc_param_named_i64(call, "b", 0, &b);
+    bool got_a = ujrpc_param_named_i64(call, "user_id", 0, &a);
+    bool got_b = ujrpc_param_named_i64(call, "session_id", 0, &b);
     if (!got_a || !got_b)
         return ujrpc_call_reply_error_invalid_params(call);
 
-    std::to_chars_result print = std::to_chars(&c_str[0], &c_str[0] + sizeof(c_str), a + b, 10);
-    ujrpc_call_reply_content(call, &c_str[0], print.ptr - &c_str[0]);
+    const char* res = ((a ^ b) % 23 == 0) ? "true" : "false";
+    ujrpc_call_reply_content(call, res, strlen(res));
 }
 
 int main(int argc, char** argv) {

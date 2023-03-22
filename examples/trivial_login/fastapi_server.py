@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 import struct
+import base64
 
 from fastapi import FastAPI, WebSocket
 
 app = FastAPI()
 
 
-@app.get('/sum')
-async def sum(a: int, b: int):
-    return a + b
+@app.get('/validate_session')
+async def validate_session(user_id: int, session_id: int):
+    return (user_id ^ session_id) % 23 == 0
+
+
+@app.get('/create_user')
+async def create_user(age: int, name: str, avatar: str, bio: str):
+    return f'Created {name} aged {age} with bio {bio} and avatar_size {len(base64.b64decode(avatar))}'
 
 
 @app.websocket('/sum-ws')
