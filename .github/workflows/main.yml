@@ -1,4 +1,4 @@
-name: Publish Python Wheels
+name: Incremental Release
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 env:
   BUILD_TYPE: Release
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN }}
 
 jobs:
 
@@ -15,8 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+      with:
+        persist-credentials: false
     - uses: actions/setup-node@v3
-    - run: cd .github/workflows/ && npm install && npx semantic-release
+    - run: cp .github/workflows/package.json . && npm install && npx semantic-release
 
 
   build_wheels:
@@ -29,6 +31,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: 'main'      
       - uses: actions/setup-python@v3
       - uses: crazy-max/ghaction-setup-docker@v1.0.0
         with:
