@@ -24,10 +24,6 @@
             },
             {
               "tag": "Improve",
-              "release": "minor"
-            },
-            {
-              "tag": "Optimze",
               "release": "patch"
             },
             {
@@ -52,10 +48,6 @@
             },
             {
               "tag": "Improve",
-              "release": "minor"
-            },
-            {
-              "tag": "Optimze",
               "release": "patch"
             },
             {
