@@ -31,6 +31,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: 'main'      
       - uses: actions/setup-python@v3
       - uses: crazy-max/ghaction-setup-docker@v1.0.0
         with:
