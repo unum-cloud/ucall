@@ -9,7 +9,7 @@
 project = 'Unum · UJRPC'
 copyright = '2023, Unum'
 author = 'Unum'
-release = open('../VERSION', 'r').read()
+release = open('../VERSION', 'r').read().strip()
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
