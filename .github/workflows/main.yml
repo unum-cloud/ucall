@@ -1,4 +1,4 @@
-name: Publish Python Wheels
+name: Incremental Release
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3
-    - run: cd .github/workflows/ && npm install && npx semantic-release
+    - run: cp .github/workflows/package.json . && npm install && npx semantic-release
 
 
   build_wheels:
