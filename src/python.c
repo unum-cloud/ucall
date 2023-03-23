@@ -428,8 +428,8 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     if (!self->quiet) {
         printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
-        printf("- %lu threads\n", self->config.max_threads);
-        printf("- %lu max concurrent connections\n", self->config.max_concurrent_connections);
+        printf("- %i threads\n", self->config.max_threads);
+        printf("- %u max concurrent connections\n", self->config.max_concurrent_connections);
     }
     return 0;
 }
