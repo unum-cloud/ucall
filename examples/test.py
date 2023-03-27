@@ -5,7 +5,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ujrpc.client import Client
-from trivial_login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
+from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
 
 
 class ClientGeneric:
@@ -160,7 +160,7 @@ def test_pillow():
     img = Image.open('examples/sum/original.jpg')
     res = img.rotate(45)
     client = Client()
-    response = client.rotate(image=img)
+    response = client.rotate_avatar(image=img)
     response.raise_status()
     ar1 = np.asarray(res)
     ar2 = np.asarray(response.image)

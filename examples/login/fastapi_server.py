@@ -17,16 +17,16 @@ async def create_user(age: int, name: str, avatar: str, bio: str):
     return f'Created {name} aged {age} with bio {bio} and avatar_size {len(base64.b64decode(avatar))}'
 
 
-@app.websocket('/sum-ws')
+@app.websocket('/validate_session_ws')
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     while True:
         data = await websocket.receive_bytes()
-        a, b = struct.unpack('<II', data)
-        c = a + b
-        await websocket.send_bytes(struct.pack('<I', c))
+        user_id, session_id = struct.unpack('<II', data)
+        result = (user_id ^ session_id) % 23 == 0
+        await websocket.send_bytes(struct.pack('<I', result))
 
 
 @app.get('/')
 async def root():
-    return 'Call the `sum` method for REST API or `sum-ws` for WebSockets'
+    return 'Call the `sum` method for REST API or `validate_session_ws` for WebSockets'
