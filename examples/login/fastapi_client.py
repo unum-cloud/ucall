@@ -53,7 +53,7 @@ class ClientWebSocket:
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8000, identity: int = PROCESS_ID) -> None:
         self.identity = identity
-        self.sock = create_connection(f'ws://{uri}:{port}/sum-ws')
+        self.sock = create_connection(f'ws://{uri}:{port}/validate_session_ws')
 
     def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
         a = random.randint(1, 1000) if a is None else a

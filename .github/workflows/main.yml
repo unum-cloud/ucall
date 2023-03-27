@@ -1,4 +1,4 @@
-name: Incremental Release
+name: Release
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
 
 
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build Wheels for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: versioning
     strategy:
@@ -45,7 +45,7 @@ jobs:
           version: 23.0.1
       - uses: docker/setup-qemu-action@v2.1.0
 
-      - name: Install cibuildwheel
+      - name: Install CIBuildWheel
         run: python -m pip install cibuildwheel
 
       - name: Build wheels
@@ -57,12 +57,12 @@ jobs:
   
   
   publish_wheels:
-    name: Publish wheels to PyPi
+    name: Publish Wheels to PyPi
     runs-on: ubuntu-20.04
     needs: build_wheels
     
     steps:
-      - name: Download a Build Artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v3.0.2
         with:
           path: ./dist/
@@ -77,8 +77,8 @@ jobs:
           print_hash: true
 
 
-  deploy:
-    name: Deploy
+  deploy_docs:
+    name: Deploy Docs
     environment: 
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -89,17 +89,17 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: 'main'   
-      - name: Setup Pages
+      - name: Setup GitHub Pages
         uses: actions/configure-pages@v2
-      - name: Install Deps
+      - name: Install dependencies
         run: sudo apt update && sudo apt install -y doxygen graphviz dia git && pip install sphinx breathe furo m2r2 sphinxcontrib-googleanalytics==0.2.dev20220708 sphinxcontrib-jquery
-      - name: Install ujrpc from pip
+      - name: Install UJRPC from PyPi
         run: pip install ujrpc
-      - name: Build Docs
+      - name: Build documentation
         run: cd docs && doxygen conf.dox && make html
       - name: Copy assets
         run: cp -r assets build/docs/html/
-      - name: Upload Artifacts
+      - name: Upload artifacts
         uses: actions/upload-pages-artifact@v1
         with:
           # Upload entire repository

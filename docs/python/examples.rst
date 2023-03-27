@@ -2,15 +2,15 @@ Examples
 ========
 
 =====================
-Trivial Login Server
+Login Server
 =====================
-.. literalinclude:: ../../examples/trivial_login/ujrpc_server.py
+.. literalinclude:: ../../examples/login/ujrpc_server.py
    :language: python
 
 ==============================
-Trivial Login with RichServer
+Fancy Login Server
 ==============================
-.. literalinclude:: ../../examples/trivial_login/ujrpc_server_wrapped.py
+.. literalinclude:: ../../examples/login/ujrpc_server_wrapped.py
    :language: python
 
 
