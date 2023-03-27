@@ -2,4 +2,4 @@
 Benchmarks
 ========================
 
-.. mdinclude:: ../examples/sum/README.md
+.. mdinclude:: ../examples/trivial_login/README.md

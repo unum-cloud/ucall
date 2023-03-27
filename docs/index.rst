@@ -18,8 +18,13 @@ Overview
    :hidden:
    :caption: �
 
+   python/index
+
+.. toctree:: 
+   :hidden:
+   :caption: �
+
    benchmarks
-   contributing
 
 .. toctree:: 
    :hidden:
