@@ -8,3 +8,4 @@ C Standard
    :hidden:
    
    reference
+   examples
