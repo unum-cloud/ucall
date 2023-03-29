@@ -56,6 +56,7 @@ include(ExternalProject)
 FetchContent_Declare(
     simdjson
     GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+    GIT_TAG v3.1.6
     GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(simdjson)
@@ -71,8 +72,9 @@ if (${UJRPC_BUILD_BENCHMARKS})
     set(BENCHMARK_USE_BUNDLED_GTEST ON)
     FetchContent_Declare(
         benchmark
-        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_REPOSITORY https://github.com/google/benchmark
         GIT_TAG v1.7.0
+        GIT_SHALLOW 1
     )
     FetchContent_MakeAvailable(benchmark)
     include_directories(${benchmark_SOURCE_DIR}/include)
@@ -83,6 +85,7 @@ FetchContent_Declare(
     cxxopts
     GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
     GIT_TAG v3.1.1
+    GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(cxxopts)
 include_directories(${cxxopts_SOURCE_DIR}/include)
@@ -93,6 +96,7 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 FetchContent_Declare(
     picohttpparser
     GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
+    GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(picohttpparser)
 include_directories(${picohttpparser_SOURCE_DIR})
@@ -101,6 +105,7 @@ include_directories(${picohttpparser_SOURCE_DIR})
 FetchContent_Declare(
     tb64
     GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64.git
+    GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
@@ -112,6 +117,7 @@ if(LINUX)
         liburing-ep
         GIT_REPOSITORY https://github.com/axboe/liburing.git
         GIT_TAG liburing-2.3
+        GIT_SHALLOW 1
         PREFIX ${CMAKE_BINARY_DIR}/_deps/
         SOURCE_DIR ${URING_DIR}
         CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
