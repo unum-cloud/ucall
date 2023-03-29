@@ -120,7 +120,7 @@ if(LINUX)
         GIT_SHALLOW 1
         PREFIX ${CMAKE_BINARY_DIR}/_deps/
         SOURCE_DIR ${URING_DIR}
-        CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
+        CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --nolibc --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
         BUILD_COMMAND cd ${URING_DIR} && make;
         INSTALL_COMMAND ""
         UPDATE_COMMAND ""
