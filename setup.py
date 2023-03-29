@@ -17,22 +17,6 @@ with open(os.path.join(this_directory, 'README.md')) as f:
     long_description = f.read()
 
 
-def system_has_uring():
-    if platform.system() != 'Linux':
-        return False
-
-    kernel_version = platform.release()
-    major, minor = (int(i) for i in kernel_version.split('.')[:2])
-
-    if major < 5:
-        return False
-    if major > 5:
-        return True
-    if minor < 19:
-        return False
-    return True
-
-
 class CMakeExtension(Extension):
     def __init__(self, name, source_dir=''):
         Extension.__init__(self, name, sources=[])
@@ -41,7 +25,7 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
-        if 'uring' in ext.name and not system_has_uring():
+        if 'uring' in ext.name and platform.system() != 'Linux':
             return
 
         self.parallel = multiprocessing.cpu_count() // 2
