@@ -55,7 +55,7 @@ include(ExternalProject)
 
 FetchContent_Declare(
     simdjson
-    GIT_REPOSITORY https://github.com/ashvardanian/simdjson
+    GIT_REPOSITORY https://github.com/simdjson/simdjson.git
     GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(simdjson)
@@ -81,8 +81,8 @@ endif()
 # CLI
 FetchContent_Declare(
     cxxopts
-    GIT_REPOSITORY https://github.com/jarro2783/cxxopts
-    GIT_TAG v3.0.0
+    GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+    GIT_TAG v3.1.1
 )
 FetchContent_MakeAvailable(cxxopts)
 include_directories(${cxxopts_SOURCE_DIR}/include)
@@ -92,7 +92,7 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
     picohttpparser
-    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser
+    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
 )
 FetchContent_MakeAvailable(picohttpparser)
 include_directories(${picohttpparser_SOURCE_DIR})
@@ -100,7 +100,7 @@ include_directories(${picohttpparser_SOURCE_DIR})
 # Base64 decoding
 FetchContent_Declare(
     tb64
-    GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64/
+    GIT_REPOSITORY https://github.com/unum-cloud/Turbo-Base64.git
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
@@ -110,7 +110,7 @@ if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
     ExternalProject_Add(
         liburing-ep
-        GIT_REPOSITORY https://github.com/axboe/liburing
+        GIT_REPOSITORY https://github.com/axboe/liburing.git
         GIT_TAG liburing-2.3
         PREFIX ${CMAKE_BINARY_DIR}/_deps/
         SOURCE_DIR ${URING_DIR}
