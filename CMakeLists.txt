@@ -27,11 +27,11 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 endif()
 
 # Check if we are running on Linux
-if(UNIX AND NOT APPLE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(LINUX TRUE)
 endif()
 
@@ -120,7 +120,7 @@ if(LINUX)
         GIT_SHALLOW 1
         PREFIX ${CMAKE_BINARY_DIR}/_deps/
         SOURCE_DIR ${URING_DIR}
-        CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
+        CONFIGURE_COMMAND echo Configuring LibUring && cd ${URING_DIR} && ./configure --nolibc --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER};
         BUILD_COMMAND cd ${URING_DIR} && make;
         INSTALL_COMMAND ""
         UPDATE_COMMAND ""

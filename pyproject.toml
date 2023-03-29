@@ -15,9 +15,12 @@ before-build = [
     "mkdir -p build/ujrpc"
 ]
 
-skip = ["*musllinux*", "*i686*", "pp*", "cp36-*"]
+skip = ["*musllinux*", "*i686*", "pp*", "cp36-*", "cp37-*", "cp38-*"]
 
 [tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
 archs = ["x86_64", "aarch64"]
 before-all = [
     "yum install -y glibc-devel wget python3-devel"
