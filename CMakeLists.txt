@@ -55,7 +55,7 @@ include(ExternalProject)
 
 FetchContent_Declare(
     simdjson
-    GIT_REPOSITORY https://github.com/ashvardanian/simdjson
+    GIT_REPOSITORY https://github.com/simdjson/simdjson
     GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(simdjson)
