@@ -321,6 +321,17 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     return wrap.callable;
 }
 
+static bool pycheck_take_call(py_server_t* self, uint16_t thread_idx) {
+    if (PyErr_CheckSignals() != 0) { // Must be called from the main thread only!
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyErr_SetString(PyExc_KeyboardInterrupt, "Server Stopped");
+        PyGILState_Release(gstate);
+        return false;
+    }
+    ujrpc_take_call(self->server, thread_idx);
+    return true;
+}
+
 static PyObject* server_run(py_server_t* self, PyObject* args) {
     Py_ssize_t max_cycles = -1;
     double max_seconds = -1;
@@ -331,33 +342,31 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
         return NULL;
     }
     if (max_cycles == -1 && max_seconds == -1) {
-        ujrpc_take_calls(self->server, 0);
+        while (pycheck_take_call(self, 0))
+            ;
+    } else if (max_seconds == -1) {
+        while (max_cycles > 0 && pycheck_take_call(self, 0))
+            --max_cycles;
     } else if (max_cycles == -1) {
         time_t start, end;
         time(&start);
-        while (max_seconds > 0) {
-            ujrpc_take_call(self->server, 0);
+        while (max_seconds > 0 && pycheck_take_call(self, 0)) {
             time(&end);
             max_seconds -= difftime(end, start);
             start = end;
         }
-    } else if (max_seconds == -1) {
-        while (max_cycles > 0) {
-            ujrpc_take_call(self->server, 0);
-            --max_cycles;
-        }
     } else {
         time_t start, end;
         time(&start);
-        while (max_cycles > 0 && max_seconds > 0) {
-            ujrpc_take_call(self->server, self->count_threads);
+        while (max_cycles > 0 && max_seconds > 0 && pycheck_take_call(self, 0)) {
             --max_cycles;
             time(&end);
             max_seconds -= difftime(end, start);
             start = end;
         }
     }
-    return Py_None;
+
+    return NULL;
 }
 
 static Py_ssize_t server_callbacks_count(py_server_t* self, PyObject* _) { return self->count_added; }
