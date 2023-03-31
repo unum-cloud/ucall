@@ -106,6 +106,9 @@ class Request:
         buf.seek(0)
         return base64.b64encode(buf.getvalue()).decode()
 
+    def _pack_bytes(self, buffer):
+        return base64.b64encode(buffer).decode()
+
     def _pack_pillow(self, image):
         buf = BytesIO()
         if not image.format:
@@ -127,6 +130,9 @@ class Request:
 
             elif isinstance(req['params'][k], Image.Image):
                 req['params'][k] = self._pack_pillow(req['params'][k])
+
+            elif isinstance(req['params'][k], bytes):
+                req['params'][k] = self._pack_bytes(req['params'][k])
 
         return req
 
