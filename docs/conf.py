@@ -30,7 +30,7 @@ extensions = [
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '*.md']
 
 
-googleanalytics_id = 'UA-150644745-1'
+googleanalytics_id = '341385789'
 googleanalytics_enabled = True
 
 # -- Options for HTML output -------------------------------------------------
@@ -39,12 +39,8 @@ googleanalytics_enabled = True
 html_logo = '../assets/unum.png'
 html_theme = 'furo'
 html_static_path = ['_static']
-html_css_files = [
-    'custom.css'
-]
-html_js_files = [
-    'custom.js'
-]
+html_css_files = ['custom.css']
+html_js_files = ['custom.js']
 
 
 breathe_projects = {'UJRPC': '../build/xml'}
