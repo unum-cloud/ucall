@@ -1,7 +1,10 @@
-from ujrpc.client import Client
-from PIL import Image
-import argparse
 from pydoc import locate
+from typing import Optional
+import argparse
+
+from PIL import Image
+
+from ujrpc.client import Client
 
 
 def get_kwargs(buffer):
@@ -17,8 +20,9 @@ def get_kwargs(buffer):
     return kwargs
 
 
-def cast(value: str, type_str):
-    if type_str is None:
+def cast(value: str, type_name: Optional[str]):
+    """Casts a single argument value to the expected `type_name` or guesses it."""
+    if type_name is None:
         if value.isdigit():
             return int(value)
         if value.replace('.', '', 1).isdigit():
@@ -27,16 +31,17 @@ def cast(value: str, type_str):
             return bool(value)
         return value
 
-    std = type_str.lower()
-    if std == 'image':
+    type_name = type_name.lower()
+    if type_name == 'image':
         return Image.open(value)
-    if std == 'binary':
+    if type_name == 'binary':
         return open(value, 'rb').read()
 
-    return locate(std)(value)
+    return locate(type_name)(value)
 
 
 def fix_types(args, kwargs):
+    """Casts `args` and `kwargs` to expected types."""
     for i in range(len(args)):
         if ':' in args[i]:
             val, tp = args[i].split(':')
@@ -51,12 +56,12 @@ def fix_types(args, kwargs):
             kwargs[key] = cast(kwargs[key], None)
 
 
-def add_specials(kwargs, special, tp):
+def add_specials(kwargs, special: Optional[list[str]], type_name: str):
     if special is None:
         return
     for x in special:
         if not '=' in x:
-            raise KeyError(f'Missing key in {tp} argument')
+            raise KeyError(f'Missing key in {type_name} argument')
         k, v = x.split('=')
         kwargs[k] = v + ':' + tp
 
@@ -69,21 +74,20 @@ def cli():
     add_specials(kwargs, parsed.file, 'binary')
     add_specials(kwargs, parsed.image, 'image')
 
-    print(args, kwargs)
     fix_types(args, kwargs)
-    print(args, kwargs)
     client = Client(uri=parsed.uri, port=parsed.port, use_http=True)
     res = getattr(client, parsed.method)(*args, **kwargs)
-    print(res.json)
 
 
 def get_parser():
     parser = argparse.ArgumentParser(description='UJRPC Client CLI')
     parser.add_argument('method', type=str, help='method name')
+    
     parser.add_argument('--uri', type=str,
                         help='server uri', default='localhost')
     parser.add_argument('--port', type=int, help='server port', default=8545)
     parser.add_argument('kwargs', nargs='*', help='method arguments')
+    
     parser.add_argument('-f', '--file', nargs='*',
                         help='method positional arguments')
     parser.add_argument('-i', '--image', nargs='*',
