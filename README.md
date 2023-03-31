@@ -178,6 +178,26 @@ response = client({
 response = client.vectorize(description=description, image=image) 
 ```
 
+## CLI like CURL
+usage: ujrpc [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [-p [POSITIONAL ...]] method [kwargs ...]
+
+UJRPC Client CLI
+
+positional arguments:
+  method                method name
+  kwargs                method arguments
+
+options:
+  -h, --help            show this help message and exit
+  --uri URI             server uri
+  --port PORT           server port
+  -f [FILE ...], --file [FILE ...]
+                        method positional arguments
+  -i [IMAGE ...], --image [IMAGE ...]
+                        method positional arguments
+  -p [POSITIONAL ...], --positional [POSITIONAL ...]
+                        method positional arguments
+
 ## Free Tier Throughput
 
 We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
