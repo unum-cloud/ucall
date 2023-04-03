@@ -85,7 +85,7 @@ setup(
     license='Apache-2.0',
 
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
 
         'Natural Language :: English',
         'Intended Audience :: Developers',
@@ -96,16 +96,23 @@ setup(
         'Programming Language :: Python :: Implementation :: CPython',
         'Programming Language :: C',
 
-        'Operating System :: MacOS',
         'Operating System :: Unix',
-        'Operating System :: Microsoft :: Windows',
+        'Operating System :: POSIX',
+        'Operating System :: POSIX :: Linux',
+        'Operating System :: MacOS',
 
-        'Topic :: System :: Clustering',
-        'Topic :: Database :: Database Engines/Servers',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        'Programming Language :: C',
+        'Programming Language :: C++',
+        'Programming Language :: Python :: Implementation :: CPython',
+        'Programming Language :: Python :: 3 :: Only',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+
+        'Topic :: Communications :: File Sharing',
+        'Topic :: Internet :: WWW/HTTP',
+        'Topic :: System :: Networking',
     ],
 
-    # https://llllllllll.github.io/c-extension-tutorial/building-and-importing.html
     packages=['ujrpc'],
     package_dir={'': 'src/'},
     ext_modules=[
@@ -115,9 +122,15 @@ setup(
     cmdclass={
         'build_ext': CMakeBuild,
     },
+    entry_points={
+        'console_scripts': [
+            'ujrpc=ujrpc.cli:cli'
+        ]
+    },
     install_requires=[
         'numpy>=1.16',
         'pillow'
     ],
     zip_safe=False,
+    python_requires='>=3.9',
 )
