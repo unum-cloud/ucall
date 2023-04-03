@@ -82,7 +82,7 @@ def cli():
     res = getattr(client, parsed.method)(*args, **kwargs)
 
     if parsed.format == 'raw':
-        print(json.dumps(res.data, indent=2))
+        print(json.dumps(res.data, indent=4))
     else:
         try:
             print(getattr(res, parsed.format))
@@ -106,7 +106,7 @@ def get_parser():
     parser.add_argument('--positional', nargs='*',
                         help='Switch to positional arguments VALUE[:TYPE]')
 
-    parser.add_argument('-F', '--format', type=str, choices=[
+    parser.add_argument('--format', type=str, choices=[
                         'json', 'bytes', 'numpy', 'image', 'raw'], help='How to parse response', default='raw')
     return parser
 
