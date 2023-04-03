@@ -1,5 +1,6 @@
 from pydoc import locate
 from typing import Optional
+import json
 import argparse
 
 from PIL import Image
@@ -48,22 +49,24 @@ def fix_types(args, kwargs):
             args[i] = cast(val, tp)
         else:
             args[i] = cast(args[i], None)
-    for key in kwargs.keys():
-        if ':' in kwargs[key]:
-            val, tp = kwargs[key].split(':')
+    keys = list(kwargs.keys())
+    for k in keys:
+        if ':' in k:
+            key, tp = k.split(':')
+            val = kwargs.pop(k)
             kwargs[key] = cast(val, tp)
         else:
-            kwargs[key] = cast(kwargs[key], None)
+            kwargs[k] = cast(kwargs[k], None)
 
 
-def add_specials(kwargs, special: Optional[list[str]], type_name: str):
+def add_specials(kwargs: dict, special: Optional[list[str]], type_name: str):
     if special is None:
         return
     for x in special:
         if not '=' in x:
             raise KeyError(f'Missing key in {type_name} argument')
         k, v = x.split('=')
-        kwargs[k] = v + ':' + tp
+        kwargs[k + ':' + type_name] = v
 
 
 def cli():
@@ -78,23 +81,33 @@ def cli():
     client = Client(uri=parsed.uri, port=parsed.port, use_http=True)
     res = getattr(client, parsed.method)(*args, **kwargs)
 
+    if parsed.format == 'raw':
+        print(json.dumps(res.data, indent=2))
+    else:
+        try:
+            print(getattr(res, parsed.format))
+        except Exception as err:
+            print('Error:', err)
+
 
 def get_parser():
     parser = argparse.ArgumentParser(description='UJRPC Client CLI')
     parser.add_argument('method', type=str, help='method name')
-    
-    parser.add_argument('--uri', type=str,
-                        help='server uri', default='localhost')
-    parser.add_argument('--port', type=int, help='server port', default=8545)
-    parser.add_argument('kwargs', nargs='*', help='method arguments')
-    
-    parser.add_argument('-f', '--file', nargs='*',
-                        help='method positional arguments')
-    parser.add_argument('-i', '--image', nargs='*',
-                        help='method positional arguments')
 
-    parser.add_argument('-p', '--positional', nargs='*',
-                        help='method positional arguments')
+    parser.add_argument('--uri', type=str,
+                        help='Server uri', default='localhost')
+    parser.add_argument('-p', '--port', type=int,
+                        help='Server port', default=8545)
+
+    parser.add_argument('kwargs', nargs='*', help='KEY[:TYPE]=VALUE arguments')
+    parser.add_argument('-f', '--file', nargs='*', help='Binary Files')
+    parser.add_argument('-i', '--image', nargs='*', help='Image Files')
+
+    parser.add_argument('--positional', nargs='*',
+                        help='Switch to positional arguments VALUE[:TYPE]')
+
+    parser.add_argument('-F', '--format', type=str, choices=[
+                        'json', 'bytes', 'numpy', 'image', 'raw'], help='How to parse response', default='raw')
     return parser
 
 
