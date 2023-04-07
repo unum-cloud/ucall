@@ -49,6 +49,11 @@ int main(int argc, char** argv) {
     config.max_lifetime_exchanges = UINT32_MAX;
     config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : STDOUT_FILENO;
     config.logs_format = "human";
+    config.use_ssl = true;
+    config.ssl_pk_path = "./examples/login/certs/main.key";
+    const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
+    config.ssl_crts_path = crts;
+    config.ssl_crts_cnt = 2;
 
     ujrpc_init(&config, &server);
     if (!server) {

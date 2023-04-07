@@ -15,6 +15,10 @@
 
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/ssl.h>
 
 #include "ujrpc/ujrpc.h"
 
@@ -28,9 +32,25 @@ using namespace unum::ujrpc;
 using time_clock_t = std::chrono::steady_clock;
 using time_point_t = std::chrono::time_point<time_clock_t>;
 
+struct ujrpc_ssl_context_t {
+    ujrpc_ssl_context_t() = default;
+
+    operator bool() const noexcept { return this->ssl.private_in_buf != nullptr; }
+
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_pk_context pkey;
+    mbedtls_x509_crt srvcert;
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+};
+
 struct engine_t {
     descriptor_t socket{};
     std::size_t max_batch_size{};
+
+    /// @brief Establishes an SSL connection if SSL is enabled, otherwise the `ssl_ctx` is unused and uninitialized.
+    ujrpc_ssl_context_t ssl_ctx{};
 
     /// @brief The file descriptor of the stateful connection over TCP.
     descriptor_t connection{};
@@ -68,7 +88,15 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 }
 
 void send_message(engine_t& engine, struct msghdr& message) noexcept {
-    auto bytes_sent = sendmsg(engine.connection, &message, 0);
+    long bytes_sent = 0;
+    if (engine.ssl_ctx) {
+        size_t sz = 0;
+        for (size_t i = 0; i < message.msg_iovlen; ++i)
+            sz += message.msg_iov[i].iov_len;
+        bytes_sent = mbedtls_ssl_write(&engine.ssl_ctx.ssl, (uint8_t*)message.msg_iov->iov_base, sz);
+    } else
+        bytes_sent = sendmsg(engine.connection, &message, 0);
+
     if (bytes_sent < 0) {
         if (errno == EMSGSIZE)
             ujrpc_call_reply_error_out_of_memory(&engine);
@@ -182,6 +210,78 @@ void forward_packet(engine_t& engine) noexcept {
     return forward_call_or_calls(engine);
 }
 
+int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
+    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
+    ssize_t ret = send(conn->fd, buf, len, 0);
+    return ret;
+}
+
+int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
+    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
+    ssize_t ret = recv(conn->fd, buf, len, 0);
+    return ret;
+}
+
+int init_ssl(ujrpc_ssl_context_t* ctx, const char* pk_path, const char** crts_path, size_t crts_cnt) {
+    mbedtls_ssl_init(&ctx->ssl);
+    mbedtls_ssl_config_init(&ctx->conf);
+    // #if defined(MBEDTLS_SSL_CACHE_C)
+    //     mbedtls_ssl_cache_init(&cache);
+    // #endif
+    mbedtls_x509_crt_init(&ctx->srvcert);
+    mbedtls_pk_init(&ctx->pkey);
+    mbedtls_entropy_init(&ctx->entropy);
+    mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
+    int ret = 0;
+
+    // Seed the RNG
+    if ((ret = mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, NULL, 0)) != 0)
+        // TODO Use personalization string. Required or Optional ?
+        return ret;
+
+    // Load Private Key
+    if ((ret = mbedtls_pk_parse_keyfile(&ctx->pkey, pk_path, NULL, NULL, &ctx->ctr_drbg)) != 0)
+        // TODO Use Password. Required or Optional ?
+        return ret;
+
+    // Load Certificates
+    for (size_t i = 0; i < crts_cnt; ++i)
+        if ((ret = mbedtls_x509_crt_parse_file(&ctx->srvcert, crts_path[i])) != 0)
+            // TODO Notify which certificate was invalid ?
+            return ret;
+
+    if ((ret = mbedtls_ssl_config_defaults(&ctx->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
+                                           MBEDTLS_SSL_PRESET_DEFAULT)) != 0)
+        return ret;
+
+    mbedtls_ssl_conf_rng(&ctx->conf, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
+
+    // #if defined(MBEDTLS_SSL_CACHE_C)
+    //     mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
+    // #endif
+
+    mbedtls_ssl_conf_ca_chain(&ctx->conf, ctx->srvcert.next, NULL);
+    if ((ret = mbedtls_ssl_conf_own_cert(&ctx->conf, &ctx->srvcert, &ctx->pkey)) != 0)
+        return ret;
+
+    if ((ret = mbedtls_ssl_setup(&ctx->ssl, &ctx->conf)) != 0)
+        return ret;
+
+    return 0;
+}
+
+void ssl_free(ujrpc_ssl_context_t* ssl_ctx) {
+    mbedtls_x509_crt_free(&ssl_ctx->srvcert);
+    mbedtls_pk_free(&ssl_ctx->pkey);
+    mbedtls_ssl_free(&ssl_ctx->ssl);
+    mbedtls_ssl_config_free(&ssl_ctx->conf);
+    // #if defined(MBEDTLS_SSL_CACHE_C)
+    //     mbedtls_ssl_cache_free(&ssl_ctx->cache);
+    // #endif
+    mbedtls_ctr_drbg_free(&ssl_ctx->ctr_drbg);
+    mbedtls_entropy_free(&ssl_ctx->entropy);
+}
+
 void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     scratch_space_t& scratch = engine.scratch;
@@ -210,31 +310,52 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         errno;
         return;
     }
+    mbedtls_net_context client_ctx;
+
+    if (engine.ssl_ctx) {
+        client_ctx.fd = connection_fd;
+        mbedtls_ssl_set_bio(&engine.ssl_ctx.ssl, &client_ctx, ssl_send, ssl_recv, NULL);
+        int ret = 0;
+        while ((ret = mbedtls_ssl_handshake(&engine.ssl_ctx.ssl)) != 0)
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                mbedtls_net_free(&client_ctx);
+                mbedtls_ssl_session_reset(&engine.ssl_ctx.ssl);
+                return;
+            }
+    }
 
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
-    auto buffer_ptr = &engine.packet_buffer[0];
+    char* buffer_ptr = &engine.packet_buffer[0];
 
-    size_t bytes_expected = 0;
-    size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
-    auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
-    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - buffer_ptr);
+    size_t bytes_received = 0, bytes_expected = 0;
+    if (engine.ssl_ctx) {
+        // https://esp32.com/viewtopic.php?t=1101
+        mbedtls_ssl_read(&engine.ssl_ctx.ssl, NULL, 0);
+        bytes_expected = mbedtls_ssl_get_bytes_avail(&engine.ssl_ctx.ssl);
+    } else {
+        bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
+        auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
+        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+            return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+        bytes_expected += (request.body.begin() - buffer_ptr);
 
-    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-        if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
-            // TODO what?
-            bytes_expected = ram_page_size_k;
-
+        if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+            if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+                bytes_expected = ram_page_size_k; // TODO what?
+    }
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
-        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+        if (engine.ssl_ctx)
+            bytes_received =
+                mbedtls_ssl_read(&engine.ssl_ctx.ssl, reinterpret_cast<uint8_t*>(buffer_ptr), bytes_expected);
+        else
+            bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -249,7 +370,11 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
-        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+        if (engine.ssl_ctx)
+            bytes_received =
+                mbedtls_ssl_read(&engine.ssl_ctx.ssl, reinterpret_cast<uint8_t*>(buffer_ptr), bytes_expected);
+        else
+            bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -259,10 +384,18 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         buffer_ptr = nullptr;
     }
 
-    shutdown(engine.connection, SHUT_WR);
+    if (engine.ssl_ctx) {
+        int ret = 0;
+        while ((ret = mbedtls_ssl_close_notify(&engine.ssl_ctx.ssl)) < 0)
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
+                break;
+
+        mbedtls_ssl_session_reset(&engine.ssl_ctx.ssl);
+    }
+    shutdown(connection_fd, SHUT_WR);
     // If later on some UB is detected for client not recieving full data,
     // then it may be required to put a `recv` with timeout between `shutdown` and `close`
-    close(engine.connection);
+    close(connection_fd);
 }
 
 void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
@@ -283,6 +416,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.max_batch_size = 1024u;
     if (!config.interface)
         config.interface = "0.0.0.0";
+    if (config.use_ssl && !(config.ssl_pk_path || config.ssl_crts_cnt))
+        return;
 
     // Some limitations are hard-coded for this non-concurrent implementation
     config.max_threads = 1u;
@@ -297,6 +432,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     buffer_gt<struct iovec> embedded_iovecs;
     buffer_gt<char*> embedded_copies;
     array_gt<named_callback_t> embedded_callbacks;
+    ujrpc_ssl_context_t ssl_context;
     sjd::parser parser;
 
     // By default, let's open TCP port for IPv4.
@@ -330,6 +466,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
+    if (config.use_ssl && init_ssl(&ssl_context, config.ssl_pk_path, config.ssl_crts_path, config.ssl_crts_cnt) != 0)
+        goto cleanup;
     if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
@@ -344,6 +482,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     server_ptr->log_last_time = time_clock_t::now();
+    server_ptr->ssl_ctx = std::move(ssl_context);
     *server_out = (ujrpc_server_t)server_ptr;
     return;
 
@@ -353,6 +492,8 @@ cleanup:
         close(socket_descriptor);
     std::free(server_ptr);
     *server_out = nullptr;
+    if (config.use_ssl)
+        ssl_free(&ssl_context);
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
@@ -373,6 +514,7 @@ void ujrpc_free(ujrpc_server_t server) {
 
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     close(engine.socket);
+    ssl_free(&engine.ssl_ctx);
     engine.~engine_t();
     std::free(server);
 }
