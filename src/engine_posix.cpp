@@ -34,6 +34,7 @@ using time_point_t = std::chrono::time_point<time_clock_t>;
 
 struct ujrpc_ssl_context_t {
     ujrpc_ssl_context_t() noexcept = default;
+
     ~ujrpc_ssl_context_t() noexcept {
         mbedtls_x509_crt_free(&srvcert);
         mbedtls_pk_free(&pkey);
@@ -311,6 +312,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         errno;
         return;
     }
+
     mbedtls_net_context client_ctx;
 
     if (engine.ssl_ctx) {
@@ -332,31 +334,32 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     char* buffer_ptr = &engine.packet_buffer[0];
 
     size_t bytes_received = 0, bytes_expected = 0;
-    if (engine.ssl_ctx) {
-        // https://esp32.com/viewtopic.php?t=1101
-        mbedtls_ssl_read(&engine.ssl_ctx->ssl, NULL, 0);
-        bytes_expected = mbedtls_ssl_get_bytes_avail(&engine.ssl_ctx->ssl);
-    } else {
-        bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
-        auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
-        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-            return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
-        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-        bytes_expected += (request.body.begin() - buffer_ptr);
+    if (engine.ssl_ctx)
+        bytes_received =
+            mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buffer_ptr), http_head_max_size_k);
+    else
+        bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, 0);
 
-        if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-            if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
-                bytes_expected = ram_page_size_k; // TODO what?
-    }
+    auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
+    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+    bytes_expected += (request.body.begin() - buffer_ptr);
+
+    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+        if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+            bytes_expected = ram_page_size_k; // TODO what?
+
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
     if (bytes_expected <= ram_page_size_k) {
+        bytes_expected -= bytes_received;
         if (engine.ssl_ctx)
-            bytes_received =
-                mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buffer_ptr), bytes_expected);
+            bytes_received += mbedtls_ssl_read(&engine.ssl_ctx->ssl,
+                                               reinterpret_cast<uint8_t*>(buffer_ptr + bytes_received), bytes_expected);
         else
-            bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+            bytes_received += recv(engine.connection, buffer_ptr + bytes_received, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -371,11 +374,14 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
+        memcpy(buffer_ptr, &engine.packet_buffer[0], bytes_received);
+        bytes_expected -= bytes_received;
+
         if (engine.ssl_ctx)
-            bytes_received =
-                mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buffer_ptr), bytes_expected);
+            bytes_received += mbedtls_ssl_read(&engine.ssl_ctx->ssl,
+                                               reinterpret_cast<uint8_t*>(buffer_ptr + bytes_received), bytes_expected);
         else
-            bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+            bytes_received += recv(engine.connection, buffer_ptr + bytes_received, bytes_expected, MSG_WAITALL);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
