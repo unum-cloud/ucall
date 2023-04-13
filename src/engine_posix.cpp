@@ -124,11 +124,7 @@ struct engine_t {
     /// @brief Statically allocated memory to process small requests.
     scratch_space_t scratch;
     /// @brief For batch-requests in synchronous connections we need a place to
-    struct batch_response_t {
-        array_gt<char> buffer;
-        // buffer_gt<char*> copies;
-        // std::size_t copies_count;
-    } batch_response;
+    array_gt<char> buffer;
 
     stats_t stats;
     std::int32_t logs_file_descriptor;
@@ -167,10 +163,10 @@ void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
 }
 
 void send_reply(engine_t& engine) noexcept { // TODO Is this required?
-    if (!engine.batch_response.buffer.size())
+    if (!engine.buffer.size())
         return;
 
-    send_message(engine, engine.batch_response.buffer);
+    send_message(engine, engine.buffer);
 }
 
 void forward_call(engine_t& engine) noexcept {
@@ -208,35 +204,34 @@ void forward_call_or_calls(engine_t& engine) noexcept {
         scratch.is_batch = true;
         bool res = true;
         if (scratch.is_http)
-            res &= engine.batch_response.buffer.append_n(http_header_k, http_header_size_k);
+            res &= engine.buffer.append_n(http_header_k, http_header_size_k);
 
-        res &= engine.batch_response.buffer.append_n("[", 1);
+        res &= engine.buffer.append_n("[", 1);
 
         for (sjd::element const one : many) {
             scratch.tree = one;
             forward_call(engine);
         }
 
-        if (engine.batch_response.buffer[engine.batch_response.buffer.size() - 1] == ',')
-            engine.batch_response.buffer.pop_back();
+        if (engine.buffer[engine.buffer.size() - 1] == ',')
+            engine.buffer.pop_back();
 
-        res &= engine.batch_response.buffer.append_n("]", 1);
+        res &= engine.buffer.append_n("]", 1);
 
         if (!res)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
         if (scratch.is_http)
-            set_http_content_length(engine.batch_response.buffer.data(),
-                                    engine.batch_response.buffer.size() - http_header_size_k);
+            set_http_content_length(engine.buffer.data(), engine.buffer.size() - http_header_size_k);
 
         send_reply(engine);
 
-        engine.batch_response.buffer.reset();
+        engine.buffer.reset();
     } else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value_unsafe();
         forward_call(engine);
-        engine.batch_response.buffer.reset();
+        engine.buffer.reset();
     }
 }
 
@@ -459,7 +454,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->socket = descriptor_t{socket_descriptor};
     server_ptr->callbacks = std::move(embedded_callbacks);
     server_ptr->scratch.parser = std::move(parser);
-    server_ptr->batch_response.buffer = std::move(buffer);
+    server_ptr->buffer = std::move(buffer);
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     server_ptr->log_last_time = time_clock_t::now();
@@ -558,13 +553,13 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
 
     // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch)
-        if (fill_with_content(engine.batch_response.buffer, scratch.dynamic_id, //
+        if (fill_with_content(engine.buffer, scratch.dynamic_id, //
                               std::string_view(body, body_len), scratch.is_http))
-            send_message(engine, engine.batch_response.buffer);
+            send_message(engine, engine.buffer);
         else
             return ujrpc_call_reply_error_out_of_memory(call);
 
-    else if (!fill_with_content(engine.batch_response.buffer, scratch.dynamic_id, //
+    else if (!fill_with_content(engine.buffer, scratch.dynamic_id, //
                                 std::string_view(body, body_len), false, true))
         return ujrpc_call_reply_error_out_of_memory(call);
 }
@@ -586,14 +581,14 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
 
     // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch)
-        if (fill_with_error(engine.batch_response.buffer, scratch.dynamic_id, //
+        if (fill_with_error(engine.buffer, scratch.dynamic_id, //
                             std::string_view(code, code_len), std::string_view(note, note_len), scratch.is_http))
-            send_message(engine, engine.batch_response.buffer);
+            send_message(engine, engine.buffer);
         else
             return ujrpc_call_reply_error_out_of_memory(call);
 
-    else if (!fill_with_error(engine.batch_response.buffer, scratch.dynamic_id, //
-                              std::string_view(code, code_len),                 //
+    else if (!fill_with_error(engine.buffer, scratch.dynamic_id, //
+                              std::string_view(code, code_len),  //
                               std::string_view(note, note_len), false, true))
         return ujrpc_call_reply_error_out_of_memory(call);
 }
