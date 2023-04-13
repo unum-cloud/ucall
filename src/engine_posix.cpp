@@ -146,6 +146,9 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 }
 
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
+    if (!engine.buffer.size())
+        return;
+
     long bytes_sent = 0;
     if (engine.ssl_ctx)
         bytes_sent =
@@ -160,13 +163,6 @@ void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
     }
     engine.stats.bytes_sent += bytes_sent;
     engine.stats.packets_sent++;
-}
-
-void send_reply(engine_t& engine) noexcept { // TODO Is this required?
-    if (!engine.buffer.size())
-        return;
-
-    send_message(engine, engine.buffer);
 }
 
 void forward_call(engine_t& engine) noexcept {
@@ -224,7 +220,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
         if (scratch.is_http)
             set_http_content_length(engine.buffer.data(), engine.buffer.size() - http_header_size_k);
 
-        send_reply(engine);
+        send_message(engine, engine.buffer);
 
         engine.buffer.reset();
     } else {
