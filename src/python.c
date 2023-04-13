@@ -446,6 +446,10 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     // Initialize the server
     ujrpc_init(&self->config, &self->server);
+    if (self->server == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "Server Initialization");
+        return -1;
+    }
 
     if (!self->quiet) {
         printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
