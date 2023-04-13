@@ -403,7 +403,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.max_callbacks = 128u;
     if (!config.interface)
         config.interface = "0.0.0.0";
-    if (config.use_ssl && !(config.ssl_pk_path || config.ssl_crts_cnt))
+    if (config.use_ssl && !(config.ssl_pk_path || config.ssl_crts_path || config.ssl_crts_cnt))
         return;
 
     // Some limitations are hard-coded for this non-concurrent implementation
