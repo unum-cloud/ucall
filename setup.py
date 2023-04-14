@@ -122,6 +122,11 @@ setup(
     cmdclass={
         'build_ext': CMakeBuild,
     },
+    entry_points={
+        'console_scripts': [
+            'ujrpc=ujrpc.cli:cli'
+        ]
+    },
     install_requires=[
         'numpy>=1.16',
         'pillow'

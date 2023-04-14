@@ -178,6 +178,53 @@ response = client({
 response = client.vectorize(description=description, image=image) 
 ```
 
+## CLI like [cURL](https://curl.se/docs/manpage.html)
+
+Aside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ujrpc`.
+It allow you to call a remote server, upload files, with direct support for images and NumPy arrays.
+Translating previous example into a Bash script, to call the server on the same machine:
+
+```sh
+ujrpc vectorize description='Product description' -i image=./local/path.png
+```
+
+To address a remote server:
+
+```sh
+ujrpc vectorize description='Product description' -i image=./local/path.png --uri 0.0.0.0 -p 8545
+```
+
+To print the docs, use `ujrpc -h`:
+
+```txt
+usage: ujrpc [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [--positional [POSITIONAL ...]] method [kwargs ...]
+
+UJRPC Client CLI
+
+positional arguments:
+  method                method name
+  kwargs                method arguments
+
+options:
+  -h, --help            show this help message and exit
+  --uri URI             server uri
+  --port PORT           server port
+  -f [FILE ...], --file [FILE ...]
+                        method positional arguments
+  -i [IMAGE ...], --image [IMAGE ...]
+                        method positional arguments
+  --positional [POSITIONAL ...]
+                        method positional arguments
+```
+
+You can also explicitly annotate types, to distinguish integers, floats, and strings, to avoid ambiguity.
+
+```
+ujrpc auth id=256
+ujrpc auth id:int=256
+ujrpc auth id:str=256
+```
+
 ## Free Tier Throughput
 
 We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
