@@ -1,10 +1,9 @@
 import random
 
-import pytest
 import requests
 import numpy as np
 from PIL import Image
-from ujrpc.client import Client
+from ujrpc.client import Client, ClientTLS
 from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
 
 
@@ -83,6 +82,18 @@ def test_normal_positional():
     assert response.json == True
 
 
+def test_normal_tls():
+    client = ClientTLS(allow_self_signed=True)
+    response = client.validate_session(user_id=2, session_id=2)
+    assert response.json == True
+
+
+def test_normal_positional_tls():
+    client = ClientTLS(allow_self_signed=True)
+    response = client.validate_session(2, 2)
+    assert response.json == True
+
+
 def test_notification():
     client = ClientGeneric()
     response = client({
@@ -144,37 +155,65 @@ def test_non_uniform_batch():
 def test_numpy():
     a = np.random.randint(0, 101, size=(1, 3, 10))
     b = np.random.randint(0, 101, size=(1, 3, 10))
-    res = a * b
+    res = np.mod(np.logical_xor(a, b), 23)
     client = Client()
     response = client({
-        'method': 'mul',
-        'params': {'a': a, 'b':  b},
+        'method': 'validate_all_sessions',
+        'params': {'user_ids': a, 'session_ids':  b},
         'jsonrpc': '2.0',
         'id': 100,
     })
-    response.raise_status()
+    response.raise_for_status()
     assert np.array_equal(response.numpy, res)
 
 
 def test_pillow():
-    img = Image.open('examples/sum/original.jpg')
+    img = Image.open('examples/login/original.jpg')
     res = img.rotate(45)
     client = Client()
     response = client.rotate_avatar(image=img)
-    response.raise_status()
+    response.raise_for_status()
+    ar1 = np.asarray(res)
+    ar2 = np.asarray(response.image)
+    assert np.array_equal(ar1, ar2)
+
+
+def test_numpy_tls():
+    a = np.random.randint(0, 101, size=(1, 3, 10))
+    b = np.random.randint(0, 101, size=(1, 3, 10))
+    res = np.mod(np.logical_xor(a, b), 23)
+    client = ClientTLS(allow_self_signed=True)
+    response = client({
+        'method': 'validate_all_sessions',
+        'params': {'user_ids': a, 'session_ids':  b},
+        'jsonrpc': '2.0',
+        'id': 100,
+    })
+    response.raise_for_status()
+    assert np.array_equal(response.numpy, res)
+
+
+def test_pillow_tls():
+    img = Image.open('examples/login/original.jpg')
+    res = img.rotate(45)
+    client = ClientTLS(allow_self_signed=True)
+    response = client.rotate_avatar(image=img)
+    response.raise_for_status()
     ar1 = np.asarray(res)
     ar2 = np.asarray(response.image)
     assert np.array_equal(ar1, ar2)
 
 
 if __name__ == '__main__':
-    pytest.main()
-
     test_normal()
     test_normal_positional()
+    # test_normal_tls()
+    # test_normal_positional_tls()
     test_shuffled_tcp()
     # test_numpy()
     # test_pillow()
+    # test_numpy_tls()
+    # test_pillow_tls()
     test_uniform_batches()
     test_shuffled_http_batches()
     test_shuffled_http()
