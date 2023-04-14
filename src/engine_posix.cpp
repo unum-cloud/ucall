@@ -35,7 +35,6 @@ using time_point_t = std::chrono::time_point<time_clock_t>;
 static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
 struct ujrpc_ssl_context_t {
-    ujrpc_ssl_context_t() noexcept = default;
 
     ~ujrpc_ssl_context_t() noexcept {
         mbedtls_x509_crt_free(&srvcert);
@@ -97,39 +96,37 @@ struct ujrpc_ssl_context_t {
         return 0;
     }
 
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_pk_context pkey;
-    mbedtls_x509_crt srvcert;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ssl_context ssl{};
+    mbedtls_ssl_config conf{};
+    mbedtls_pk_context pkey{};
+    mbedtls_x509_crt srvcert{};
+    mbedtls_entropy_context entropy{};
+    mbedtls_ctr_drbg_context ctr_drbg{};
 };
 
 struct engine_t {
-    engine_t() = default;
-
     ~engine_t() noexcept { delete ssl_ctx; }
 
-    descriptor_t socket;
+    descriptor_t socket{};
 
     /// @brief Establishes an SSL connection if SSL is enabled, otherwise the `ssl_ctx` is unused and uninitialized.
     ujrpc_ssl_context_t* ssl_ctx = nullptr;
 
     /// @brief The file descriptor of the stateful connection over TCP.
-    descriptor_t connection;
+    descriptor_t connection{};
     /// @brief A small memory buffer to store small requests.
-    alignas(align_k) char packet_buffer[ram_page_size_k + sj::SIMDJSON_PADDING];
+    alignas(align_k) char packet_buffer[ram_page_size_k + sj::SIMDJSON_PADDING]{};
     /// @brief An array of function callbacks. Can be in dozens.
-    array_gt<named_callback_t> callbacks;
+    array_gt<named_callback_t> callbacks{};
     /// @brief Statically allocated memory to process small requests.
-    scratch_space_t scratch;
+    scratch_space_t scratch{};
     /// @brief For batch-requests in synchronous connections we need a place to
-    array_gt<char> buffer;
+    array_gt<char> buffer{};
 
-    stats_t stats;
-    std::int32_t logs_file_descriptor;
-    std::string_view logs_format;
-    time_point_t log_last_time;
+    stats_t stats{};
+    std::int32_t logs_file_descriptor{};
+    std::string_view logs_format{};
+    time_point_t log_last_time{};
 };
 
 sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
