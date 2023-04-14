@@ -1,3 +1,4 @@
+import ssl
 import json
 import errno
 import base64
@@ -24,12 +25,6 @@ def _socket_is_closed(sock: socket.socket) -> bool:
         if exc.errno != errno.EAGAIN:
             raise
     return False
-
-
-def _make_tcp_socket(ip: str, port: int):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip, port))
-    return sock
 
 
 def _recvall(sock, buffer_size=4096):
@@ -163,6 +158,11 @@ class Client:
 
         return call
 
+    def _make_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((self.uri, self.port))
+        return sock
+
     def _send(self, json_data: dict):
         json_data['id'] = random.randint(1, 2**16)
         req_obj = Request(json_data)
@@ -170,7 +170,7 @@ class Client:
         if self.use_http:
             request = self.http_template % (len(request)) + request
 
-        self.sock = _make_tcp_socket(self.uri, self.port) if _socket_is_closed(
+        self.sock = self._make_socket() if _socket_is_closed(
             self.sock) else self.sock
         self.sock.send(request.encode())
 
@@ -182,3 +182,22 @@ class Client:
     def __call__(self, jsonrpc: object) -> Response:
         self._send(jsonrpc)
         return self._recv()
+
+
+class ClientTLS(Client):
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545,
+                 ssl_context: ssl.SSLContext = None, allow_self_signed=False) -> None:
+        super().__init__(uri, port, use_http=True)
+
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+            if allow_self_signed:
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+        self.ssl_context = ssl_context
+
+    def _make_socket(self):
+        sock = super()._make_socket()
+        ssl_sock = self.ssl_context.wrap_socket(sock, server_hostname=self.uri)
+        return ssl_sock
