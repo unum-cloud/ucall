@@ -143,9 +143,6 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 }
 
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
-    if (!message.size())
-        return;
-
     char const* buf = message.data();
     size_t const len = message.size();
     long idx = 0;
