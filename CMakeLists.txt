@@ -126,11 +126,6 @@ FetchContent_MakeAvailable(mbedtls)
 include_directories(${mbedtls_SOURCE_DIR}/include)
 set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
 
-# add_executable(client client.cpp)
-# target_link_libraries(client ${mbedtls_LIBS})
-
-add_executable(server server.cpp)
-target_link_libraries(server ${mbedtls_LIBS})
 
 # LibUring
 if(LINUX)
