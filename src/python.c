@@ -284,6 +284,8 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
 
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
+    if (!parsed_response)
+        return ujrpc_call_reply_error_out_of_memory(call);
     size_t len = 0;
     int res = to_string(response, &parsed_response[0], &len);
     ujrpc_call_reply_content(call, &parsed_response[0], len);
