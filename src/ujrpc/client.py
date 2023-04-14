@@ -11,22 +11,6 @@ import numpy as np
 from PIL import Image
 
 
-def _socket_is_closed(sock: socket.socket) -> bool:
-    """
-    Returns True if the remote side did close the connection
-    """
-    if sock is None:
-        return True
-    try:
-        buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
-        if buf == b'':
-            return True
-    except BlockingIOError as exc:
-        if exc.errno != errno.EAGAIN:
-            raise
-    return False
-
-
 def _recvall(sock, buffer_size=4096):
     header = sock.recv(4)
     body = None
@@ -159,9 +143,25 @@ class Client:
         return call
 
     def _make_socket(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((self.uri, self.port))
-        return sock
+        if not self._socket_is_closed():
+            return
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.uri, self.port))
+
+    def _socket_is_closed(self) -> bool:
+        """
+        Returns True if the remote side did close the connection
+        """
+        if self.sock is None:
+            return True
+        try:
+            buf = self.sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+            if buf == b'':
+                return True
+        except BlockingIOError as exc:
+            if exc.errno != errno.EAGAIN:
+                raise
+        return False
 
     def _send(self, json_data: dict):
         json_data['id'] = random.randint(1, 2**16)
@@ -170,8 +170,7 @@ class Client:
         if self.use_http:
             request = self.http_template % (len(request)) + request
 
-        self.sock = self._make_socket() if _socket_is_closed(
-            self.sock) else self.sock
+        self._make_socket()
         self.sock.send(request.encode())
 
     def _recv(self) -> Response:
@@ -198,6 +197,12 @@ class ClientTLS(Client):
         self.ssl_context = ssl_context
 
     def _make_socket(self):
-        sock = super()._make_socket()
-        ssl_sock = self.ssl_context.wrap_socket(sock, server_hostname=self.uri)
-        return ssl_sock
+        super()._make_socket()
+        self.sock = self.ssl_context.wrap_socket(
+            self.sock, server_hostname=self.uri)
+
+    def _socket_is_closed(self) -> bool:
+        if self.sock is None:
+            return True
+        self.sock.read(1, None)
+        return self.sock.pending() <= 0
