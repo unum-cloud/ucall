@@ -143,22 +143,28 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 }
 
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
-    if (!engine.buffer.size())
+    if (!message.size())
         return;
 
-    long bytes_sent = 0;
-    if (engine.ssl_ctx)
-        bytes_sent =
-            mbedtls_ssl_write(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t const*>(message.data()), message.size());
-    else
-        bytes_sent = send(engine.connection, message.data(), message.size(), 0);
+    char const* buf = message.data();
+    size_t const len = message.size();
+    long idx = 0;
+    long res = 0;
 
-    if (bytes_sent < 0) {
+    if (engine.ssl_ctx)
+        while (idx < len && (res = mbedtls_ssl_write(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t const*>(buf + idx),
+                                                     (len - idx))) > 0)
+            idx += res;
+    else
+        while (idx < len && (res = send(engine.connection, buf + idx, len - idx, 0)) > 0)
+            idx += res;
+
+    if (res < 0) {
         if (errno == EMSGSIZE)
             ujrpc_call_reply_error_out_of_memory(&engine);
         return;
     }
-    engine.stats.bytes_sent += bytes_sent;
+    engine.stats.bytes_sent += idx;
     engine.stats.packets_sent++;
 }
 
@@ -248,18 +254,23 @@ int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
 
 int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = recv(conn->fd, buf, len, MSG_WAITALL);
+    ssize_t ret = recv(conn->fd, buf, len, 0);
     return ret;
 }
 
-int recv_next(engine_t& engine, char* buf, size_t len, int flags) {
-    if (len == 0)
-        return 0;
+int recv_all(engine_t& engine, char* buf, size_t len) {
+    size_t idx = 0;
+    int res = 0;
 
     if (engine.ssl_ctx)
-        return mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buf), len);
+        while (idx < len &&
+               (res = mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buf + idx), (len - idx))) > 0)
+            idx += res;
+    else
+        while (idx < len && (res = recv(engine.connection, buf + idx, len - idx, 0)) > 0)
+            idx += res;
 
-    return recv(engine.connection, buf, len, flags);
+    return idx;
 }
 
 void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
@@ -334,7 +345,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     size_t bytes_left = bytes_expected - bytes_received;
 
     if (bytes_expected <= ram_page_size_k) {
-        bytes_received += recv_next(engine, buffer_ptr + bytes_received, bytes_left, MSG_WAITALL);
+        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -351,7 +362,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
         memcpy(buffer_ptr, &engine.packet_buffer[0], bytes_received);
 
-        bytes_received += recv_next(engine, buffer_ptr + bytes_received, bytes_left, MSG_WAITALL);
+        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
