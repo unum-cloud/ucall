@@ -197,7 +197,10 @@ class ClientTLS(Client):
         self.ssl_context = ssl_context
 
     def _make_socket(self):
-        super()._make_socket()
+        if not self._socket_is_closed():
+            return
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.uri, self.port))
         self.sock = self.ssl_context.wrap_socket(
             self.sock, server_hostname=self.uri)
 
