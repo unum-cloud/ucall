@@ -21,6 +21,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/ssl.h>
+#include <mbedtls/ssl_cache.h>
 
 #include "ujrpc/ujrpc.h"
 
@@ -43,9 +44,7 @@ struct ujrpc_ssl_context_t {
         mbedtls_pk_free(&pkey);
         mbedtls_ssl_free(&ssl);
         mbedtls_ssl_config_free(&conf);
-        // #if defined(MBEDTLS_SSL_CACHE_C)
-        //     mbedtls_ssl_cache_free(&cache);
-        // #endif
+        mbedtls_ssl_cache_free(&cache);
         mbedtls_ctr_drbg_free(&ctr_drbg);
         mbedtls_entropy_free(&entropy);
     }
@@ -53,9 +52,7 @@ struct ujrpc_ssl_context_t {
     int init(const char* pk_path, const char** crts_path, size_t crts_cnt) {
         mbedtls_ssl_init(&ssl);
         mbedtls_ssl_config_init(&conf);
-        // #if defined(MBEDTLS_SSL_CACHE_C)
-        //     mbedtls_ssl_cache_init(&cache);
-        // #endif
+        mbedtls_ssl_cache_init(&cache);
         mbedtls_x509_crt_init(&srvcert);
         mbedtls_pk_init(&pkey);
         mbedtls_entropy_init(&entropy);
@@ -84,9 +81,7 @@ struct ujrpc_ssl_context_t {
 
         mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
 
-        // #if defined(MBEDTLS_SSL_CACHE_C)
-        //     mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
-        // #endif
+        mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
         mbedtls_ssl_conf_renegotiation(&conf, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
 
         mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
@@ -104,6 +99,7 @@ struct ujrpc_ssl_context_t {
     mbedtls_pk_context pkey{};
     mbedtls_x509_crt srvcert{};
     mbedtls_entropy_context entropy{};
+    mbedtls_ssl_cache_context cache{};
     mbedtls_ctr_drbg_context ctr_drbg{};
 };
 

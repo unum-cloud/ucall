@@ -185,7 +185,7 @@ class Client:
 
 class ClientTLS(Client):
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545,
-                 ssl_context: ssl.SSLContext = None, allow_self_signed=False) -> None:
+                 ssl_context: ssl.SSLContext = None, allow_self_signed=False, enable_session_resumption=True) -> None:
         super().__init__(uri, port, use_http=True)
 
         if ssl_context is None:
@@ -195,14 +195,17 @@ class ClientTLS(Client):
                 ssl_context.verify_mode = ssl.CERT_NONE
 
         self.ssl_context = ssl_context
+        self.session = None
+        self.session_resumption = enable_session_resumption
 
     def _make_socket(self):
         if not self._socket_is_closed():
             return
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = self.ssl_context.wrap_socket(self.sock, server_hostname=self.uri, session=self.session)
         self.sock.connect((self.uri, self.port))
-        self.sock = self.ssl_context.wrap_socket(
-            self.sock, server_hostname=self.uri)
+        if self.session_resumption:
+            self.session = self.sock.session
 
     def _socket_is_closed(self) -> bool:
         if self.sock is None:
