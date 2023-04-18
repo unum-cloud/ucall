@@ -15,6 +15,8 @@
 
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
+
+#include "mbedtls/config.h"
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/net_sockets.h>
@@ -85,6 +87,7 @@ struct ujrpc_ssl_context_t {
         // #if defined(MBEDTLS_SSL_CACHE_C)
         //     mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
         // #endif
+        mbedtls_ssl_conf_renegotiation(&conf, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
 
         mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
         if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0)
