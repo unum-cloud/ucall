@@ -93,7 +93,7 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
         char* code = &scratch.printed_int_id[0];
         std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, id.get_int64().value_unsafe());
         auto code_len = res.ptr - code;
-        if (res.ec != std::error_code())
+        if (res.ec != std::errc(0))
             return default_error_t{-32600, "The request ID is invalid integer."};
         scratch.dynamic_id = std::string_view(code, code_len);
     } else
