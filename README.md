@@ -1,6 +1,6 @@
-<h1 align="center">Uninterrupted JSON RPC</h1>
+<h1 align="center">UCall</h1>
 <h3 align="center">
-Remote Procedure Calls<br/>
+JSON Remote Procedure Calls Library<br/>
 Up to 100x Faster than FastAPI<br/>
 </h3>
 <br/>
