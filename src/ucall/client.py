@@ -1,3 +1,4 @@
+import ssl
 import json
 import errno
 import base64
@@ -8,28 +9,6 @@ from typing import Union
 
 import numpy as np
 from PIL import Image
-
-
-def _socket_is_closed(sock: socket.socket) -> bool:
-    """
-    Returns True if the remote side did close the connection
-    """
-    if sock is None:
-        return True
-    try:
-        buf = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
-        if buf == b'':
-            return True
-    except BlockingIOError as exc:
-        if exc.errno != errno.EAGAIN:
-            raise
-    return False
-
-
-def _make_tcp_socket(ip: str, port: int):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip, port))
-    return sock
 
 
 def _recvall(sock, buffer_size=4096):
@@ -145,7 +124,7 @@ class Client:
         self.port = port
         self.use_http = use_http
         self.sock = None
-        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ujrpc\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
+        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
     def __getattr__(self, name):
         def call(*args, **kwargs):
@@ -163,6 +142,27 @@ class Client:
 
         return call
 
+    def _make_socket(self):
+        if not self._socket_is_closed():
+            return
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.uri, self.port))
+
+    def _socket_is_closed(self) -> bool:
+        """
+        Returns True if the remote side did close the connection
+        """
+        if self.sock is None:
+            return True
+        try:
+            buf = self.sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+            if buf == b'':
+                return True
+        except BlockingIOError as exc:
+            if exc.errno != errno.EAGAIN:
+                raise
+        return False
+
     def _send(self, json_data: dict):
         json_data['id'] = random.randint(1, 2**16)
         req_obj = Request(json_data)
@@ -170,8 +170,7 @@ class Client:
         if self.use_http:
             request = self.http_template % (len(request)) + request
 
-        self.sock = _make_tcp_socket(self.uri, self.port) if _socket_is_closed(
-            self.sock) else self.sock
+        self._make_socket()
         self.sock.send(request.encode())
 
     def _recv(self) -> Response:
@@ -182,3 +181,35 @@ class Client:
     def __call__(self, jsonrpc: object) -> Response:
         self._send(jsonrpc)
         return self._recv()
+
+
+class ClientTLS(Client):
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545,
+                 ssl_context: ssl.SSLContext = None, allow_self_signed=False, enable_session_resumption=True) -> None:
+        super().__init__(uri, port, use_http=True)
+
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+            if allow_self_signed:
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+        self.ssl_context = ssl_context
+        self.session = None
+        self.session_resumption = enable_session_resumption
+
+    def _make_socket(self):
+        if not self._socket_is_closed():
+            return
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = self.ssl_context.wrap_socket(
+            self.sock, server_hostname=self.uri, session=self.session)
+        self.sock.connect((self.uri, self.port))
+        if self.session_resumption:
+            self.session = self.sock.session
+
+    def _socket_is_closed(self) -> bool:
+        if self.sock is None:
+            return True
+        self.sock.read(1, None)
+        return self.sock.pending() <= 0

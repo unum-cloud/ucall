@@ -108,7 +108,7 @@
         "SIMD",
         "simdjson",
         "tqdm",
-        "ujrpc",
+        "ucall",
         "uring",
         "uvicorn",
         "vectorize"

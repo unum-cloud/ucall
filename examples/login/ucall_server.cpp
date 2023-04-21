@@ -1,5 +1,5 @@
 /**
- * @brief Example of a web server built with UJRPC in C++.
+ * @brief Example of a web server built with UCall in C++.
  */
 #include <charconv> // `std::to_chars`
 #include <cstdio>   // `std::fprintf`
@@ -9,18 +9,18 @@
 
 #include <cxxopts.hpp>
 
-#include "ujrpc/ujrpc.h"
+#include "ucall/ucall.h"
 
-static void validate_session(ujrpc_call_t call, ujrpc_callback_tag_t) {
+static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
     int64_t a{}, b{};
     char c_str[256]{};
-    bool got_a = ujrpc_param_named_i64(call, "user_id", 0, &a);
-    bool got_b = ujrpc_param_named_i64(call, "session_id", 0, &b);
+    bool got_a = ucall_param_named_i64(call, "user_id", 0, &a);
+    bool got_b = ucall_param_named_i64(call, "session_id", 0, &b);
     if (!got_a || !got_b)
-        return ujrpc_call_reply_error_invalid_params(call);
+        return ucall_call_reply_error_invalid_params(call);
 
     const char* res = ((a ^ b) % 23 == 0) ? "true" : "false";
-    ujrpc_call_reply_content(call, res, strlen(res));
+    ucall_call_reply_content(call, res, strlen(res));
 }
 
 int main(int argc, char** argv) {
@@ -39,8 +39,8 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    ujrpc_server_t server{};
-    ujrpc_config_t config{};
+    ucall_server_t server{};
+    ucall_config_t config{};
     config.interface = result["nic"].as<std::string>().c_str();
     config.port = result["port"].as<int>();
     config.max_threads = result["threads"].as<int>();
@@ -49,8 +49,13 @@ int main(int argc, char** argv) {
     config.max_lifetime_exchanges = UINT32_MAX;
     config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : STDOUT_FILENO;
     config.logs_format = "human";
+    // config.use_ssl = true;
+    // config.ssl_private_key_path = "./examples/login/certs/main.key";
+    // const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
+    // config.ssl_certificates_paths = crts;
+    // config.ssl_certificates_count = 2;
 
-    ujrpc_init(&config, &server);
+    ucall_init(&config, &server);
     if (!server) {
         std::printf("Failed to start server: %s:%i\n", config.interface, config.port);
         return -1;
@@ -63,17 +68,17 @@ int main(int argc, char** argv) {
         std::printf("- silent\n");
 
     // Add all the callbacks we need
-    ujrpc_add_procedure(server, "validate_session", &validate_session, nullptr);
+    ucall_add_procedure(server, "validate_session", &validate_session, nullptr);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;
         for (uint16_t i = 0; i != config.max_threads; ++i)
-            threads.emplace_back(&ujrpc_take_calls, server, i);
+            threads.emplace_back(&ucall_take_calls, server, i);
         for (auto& thread : threads)
             thread.join();
     } else
-        ujrpc_take_calls(server, 0);
+        ucall_take_calls(server, 0);
 
-    ujrpc_free(server);
+    ucall_free(server);
     return 0;
 }

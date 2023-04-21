@@ -3,7 +3,7 @@
 #include "reply.hpp"  // `iovecs_length`
 #include "shared.hpp" // `array_gt`
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 struct exchange_pipe_t {
     char* embedded{};
@@ -149,4 +149,4 @@ bool exchange_pipes_t::append_outputs(struct iovec const* iovecs) noexcept {
     }
 }
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

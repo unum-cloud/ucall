@@ -1,8 +1,12 @@
 import numpy as np
 from PIL import Image
-from ujrpc.rich_posix import Server
+from ucall.rich_posix import Server
 
-server = Server(port=8545)
+server = Server(port=8545,
+                ssl_pk='./examples/login/certs/main.key',
+                ssl_certs=['./examples/login/certs/srv.crt',
+                           './examples/login/certs/cas.pem']
+                )
 
 
 @server
@@ -23,7 +27,7 @@ def rotate_avatar(image: Image.Image) -> Image.Image:
 
 @server
 def validate_all_sessions(user_ids: np.ndarray, session_ids: np.ndarray) -> bool:
-    return not np.mod(np.logical_xor(user_ids, session_ids), 23).any()
+    return np.mod(np.logical_xor(user_ids, session_ids), 23)
 
 
 if __name__ == '__main__':

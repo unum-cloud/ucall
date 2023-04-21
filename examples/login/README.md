@@ -24,16 +24,16 @@ python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
 python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
 ```
 
-### UJRPC
+### UCall
 
-UJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
-You would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.
+UCall can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
+You would either run `ucall_example_sum_posix` or `ucall_example_sum_uring`.
 
 ```sh
 sudo apt-get install cmake g++ build-essential
 cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
-./build_release/build/bin/ujrpc_example_sum_posix &
-./build_release/build/bin/ujrpc_example_sum_uring &
+./build_release/build/bin/ucall_example_sum_posix &
+./build_release/build/bin/ucall_example_sum_uring &
 python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
@@ -43,7 +43,7 @@ kill %%
 Want to customize server settings?
 
 ```sh
-./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
+./build_release/build/bin/ucall_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
 ```
 
 Want to dispatch more clients and aggregate more accurate statistics?
@@ -58,14 +58,14 @@ A lot has been said about the speed of Python code ~~or the lack of~~.
 To get more accurate numbers for mean request latency, you can use the GoLang version:
 
 ```sh
-go run ./examples/sum/ujrpc_client.go
+go run ./examples/sum/ucall_client.go
 ```
 
 Or push it even further dispatching dozens of processes with GNU `parallel` utility:
 
 ```sh
 sudo apt install parallel
-parallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}
+parallel go run ./examples/sum/ucall_client.go run ::: {1..32}
 ```
 
 ### gRPC Results

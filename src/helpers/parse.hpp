@@ -6,7 +6,7 @@
 
 #include "shared.hpp"
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
@@ -38,7 +38,7 @@ struct scratch_space_t {
     sj::simdjson_result<sjd::element> point_to_param(std::size_t position) noexcept {
         std::memcpy((void*)json_pointer, "/params/", 8u);
         std::to_chars_result res = std::to_chars(json_pointer + 8u, json_pointer + json_pointer_capacity_k, position);
-        if (res.ec != std::error_code())
+        if (res.ec != std::errc(0))
             return sj::INVALID_JSON_POINTER;
         std::size_t final_size = res.ptr - json_pointer;
         return tree.at_pointer({json_pointer, final_size});
@@ -93,7 +93,7 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
         char* code = &scratch.printed_int_id[0];
         std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, id.get_int64().value_unsafe());
         auto code_len = res.ptr - code;
-        if (res.ec != std::error_code())
+        if (res.ec != std::errc(0))
             return default_error_t{-32600, "The request ID is invalid integer."};
         scratch.dynamic_id = std::string_view(code, code_len);
     } else
@@ -172,4 +172,4 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
     return req;
 }
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

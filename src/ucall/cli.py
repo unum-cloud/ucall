@@ -5,7 +5,7 @@ import argparse
 
 from PIL import Image
 
-from ujrpc.client import Client
+from ucall.client import Client
 
 
 def get_kwargs(buffer):
@@ -91,7 +91,7 @@ def cli():
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description='UJRPC Client CLI')
+    parser = argparse.ArgumentParser(description='UCall Client CLI')
     parser.add_argument('method', type=str, help='method name')
 
     parser.add_argument('--uri', type=str,
