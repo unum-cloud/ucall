@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image
-from ujrpc.rich_posix import Server
+from ucall.rich_posix import Server
 
 server = Server(port=8545,
                 ssl_pk='./examples/login/certs/main.key',

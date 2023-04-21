@@ -93,8 +93,8 @@ jobs:
         uses: actions/configure-pages@v2
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y doxygen graphviz dia git && pip install sphinx breathe furo m2r2 sphinxcontrib-googleanalytics==0.2.dev20220708 sphinxcontrib-jquery
-      - name: Install UJRPC from PyPi
-        run: pip install ujrpc
+      - name: Install UCall from PyPi
+        run: pip install ucall
       - name: Build documentation
         run: cd docs && doxygen conf.dox && make html
       - name: Copy assets

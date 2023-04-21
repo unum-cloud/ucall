@@ -2,6 +2,6 @@ API Reference
 ===============
 
 ===============
-ujrpc
+ucall
 ===============
-.. doxygenfile:: ujrpc.h
+.. doxygenfile:: ucall.h

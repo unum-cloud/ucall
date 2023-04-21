@@ -124,7 +124,7 @@ class Client:
         self.port = port
         self.use_http = use_http
         self.sock = None
-        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ujrpc\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
+        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
     def __getattr__(self, name):
         def call(*args, **kwargs):
@@ -202,7 +202,8 @@ class ClientTLS(Client):
         if not self._socket_is_closed():
             return
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock = self.ssl_context.wrap_socket(self.sock, server_hostname=self.uri, session=self.session)
+        self.sock = self.ssl_context.wrap_socket(
+            self.sock, server_hostname=self.uri, session=self.session)
         self.sock.connect((self.uri, self.port))
         if self.session_resumption:
             self.session = self.sock.session

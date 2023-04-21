@@ -3,7 +3,7 @@
 
 #include <string_view> // `std::string_view`
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 /// @brief When preparing replies to requests, instead of allocating
 /// a new tape and joining them together, we assemble the requests
@@ -97,4 +97,4 @@ template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iove
     }
 }
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

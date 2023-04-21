@@ -4,13 +4,13 @@ Examples
 =====================
 Login Server
 =====================
-.. literalinclude:: ../../examples/login/ujrpc_server.py
+.. literalinclude:: ../../examples/login/ucall_server.py
    :language: python
 
 ==============================
 Fancy Login Server
 ==============================
-.. literalinclude:: ../../examples/login/ujrpc_server_wrapped.py
+.. literalinclude:: ../../examples/login/ucall_server_wrapped.py
    :language: python
 
 

@@ -14,7 +14,7 @@
  *
  * @section Concurrency
  * The whole class is thread safe and can be used with as many threads as
- * defined during construction with `ujrpc_init`. Some `connection_t`-s
+ * defined during construction with `ucall_init`. Some `connection_t`-s
  * can, however, be simultaneously handled by two threads, if one logical
  * operation is split into multiple physical calls:
  *
@@ -61,7 +61,7 @@
 
 #include <simdjson.h>
 
-#include "ujrpc/ujrpc.h"
+#include "ucall/ucall.h"
 
 #include "helpers/exchange.hpp"
 #include "helpers/log.hpp"
@@ -73,7 +73,7 @@
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
-using namespace unum::ujrpc;
+using namespace unum::ucall;
 
 /// @brief As we use SIMDJSON, we don't want to fill our message buffers entirely.
 /// If there is a @b padding at the end, matching the size of the largest CPU register
@@ -269,14 +269,14 @@ struct automata_t {
     void parse_and_raise_request() noexcept;
 };
 
-sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
+sj::simdjson_result<sjd::element> param_at(ucall_call_t call, ucall_str_t name, size_t name_len) noexcept {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     scratch_space_t& scratch = automata.scratch;
     name_len = string_length(name, name_len);
     return scratch.point_to_param({name, name_len});
 }
 
-sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) noexcept {
+sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) noexcept {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     scratch_space_t& scratch = automata.scratch;
     return scratch.point_to_param(position);
@@ -285,14 +285,14 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
 #pragma endregion Cpp Declaration
 #pragma region C Definitions
 
-void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
+void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
     // Simple sanity check
     if (!server_out && !config_inout)
         return;
 
     // Retrieve configs, if present
-    ujrpc_config_t& config = *config_inout;
+    ucall_config_t& config = *config_inout;
     if (!config.port)
         config.port = 8545u;
     if (!config.queue_depth)
@@ -410,7 +410,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->has_send_zc = io_check_send_zc();
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
-    *server_out = (ujrpc_server_t)server_ptr;
+    *server_out = (ucall_server_t)server_ptr;
     return;
 
 cleanup:
@@ -423,14 +423,14 @@ cleanup:
     *server_out = nullptr;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
-                         ujrpc_callback_tag_t callback_tag) {
+void ucall_add_procedure(ucall_server_t server, ucall_str_t name, ucall_callback_t callback,
+                         ucall_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
         engine.callbacks.push_back_reserved({name, callback, callback_tag});
 }
 
-void ujrpc_free(ujrpc_server_t server) {
+void ucall_free(ucall_server_t server) {
     if (!server)
         return;
 
@@ -442,16 +442,16 @@ void ujrpc_free(ujrpc_server_t server) {
     std::free(server);
 }
 
-void ujrpc_take_calls(ujrpc_server_t server, uint16_t thread_idx) {
+void ucall_take_calls(ucall_server_t server, uint16_t thread_idx) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (!thread_idx && engine.logs_file_descriptor > 0)
         engine.submit_stats_heartbeat();
     while (true) {
-        ujrpc_take_call(server, thread_idx);
+        ucall_take_call(server, thread_idx);
     }
 }
 
-void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
+void ucall_take_call(ucall_server_t server, uint16_t thread_idx) {
     // Unlike the classical synchronous interface, this implements only a part of the connection machine,
     // is responsible for checking if a specific request has been completed. All of the submitted
     // memory must be preserved until we get the confirmation.
@@ -478,7 +478,7 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t thread_idx) {
     }
 }
 
-void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
+void ucall_call_reply_content(ucall_call_t call, ucall_str_t body, size_t body_len) {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
@@ -492,7 +492,7 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
     connection.pipes.append_outputs<iovecs_for_content_k>(iovecs);
 }
 
-void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
+void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, size_t note_len) {
     automata_t& automata = *reinterpret_cast<automata_t*>(call);
     connection_t& connection = automata.connection;
     scratch_space_t& scratch = automata.scratch;
@@ -505,28 +505,28 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
-        return ujrpc_call_reply_error_unknown(call);
+        return ucall_call_reply_error_unknown(call);
 
     struct iovec iovecs[iovecs_for_error_k] {};
     fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len), std::string_view(note, note_len),
                     true);
     if (!connection.pipes.append_outputs<iovecs_for_error_k>(iovecs))
-        return ujrpc_call_reply_error_out_of_memory(call);
+        return ucall_call_reply_error_out_of_memory(call);
 }
 
-void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32602, "Invalid method param(s).", 24);
+void ucall_call_reply_error_invalid_params(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32602, "Invalid method param(s).", 24);
 }
 
-void ujrpc_call_reply_error_unknown(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32603, "Unknown error.", 14);
+void ucall_call_reply_error_unknown(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32603, "Unknown error.", 14);
 }
 
-void ujrpc_call_reply_error_out_of_memory(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
+void ucall_call_reply_error_out_of_memory(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, bool* result_ptr) {
+bool ucall_param_named_bool(ucall_call_t call, ucall_str_t name, size_t name_len, bool* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_bool()) {
         *result_ptr = value.get_bool().value_unsafe();
         return true;
@@ -534,7 +534,7 @@ bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len
         return false;
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
+bool ucall_param_named_i64(ucall_call_t call, ucall_str_t name, size_t name_len, int64_t* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
@@ -542,7 +542,7 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
+bool ucall_param_named_f64(ucall_call_t call, ucall_str_t name, size_t name_len, double* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
@@ -550,7 +550,7 @@ bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, ujrpc_str_t* result_ptr,
+bool ucall_param_named_str(ucall_call_t call, ucall_str_t name, size_t name_len, ucall_str_t* result_ptr,
                            size_t* result_len_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_string()) {
         *result_ptr = value.get_string().value_unsafe().data();
@@ -560,7 +560,7 @@ bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* result_ptr) {
+bool ucall_param_positional_bool(ucall_call_t call, size_t position, bool* result_ptr) {
     if (auto value = param_at(call, position); value.is_bool()) {
         *result_ptr = value.get_bool().value_unsafe();
         return true;
@@ -568,7 +568,7 @@ bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* resul
         return false;
 }
 
-bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* result_ptr) {
+bool ucall_param_positional_i64(ucall_call_t call, size_t position, int64_t* result_ptr) {
     if (auto value = param_at(call, position); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
@@ -576,7 +576,7 @@ bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* res
         return false;
 }
 
-bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* result_ptr) {
+bool ucall_param_positional_f64(ucall_call_t call, size_t position, double* result_ptr) {
     if (auto value = param_at(call, position); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
@@ -584,7 +584,7 @@ bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* resu
         return false;
 }
 
-bool ujrpc_param_positional_str(ujrpc_call_t call, size_t position, ujrpc_str_t* result_ptr, size_t* result_len_ptr) {
+bool ucall_param_positional_str(ucall_call_t call, size_t position, ucall_str_t* result_ptr, size_t* result_len_ptr) {
     if (auto value = param_at(call, position); value.is_string()) {
         *result_ptr = value.get_string().value_unsafe().data();
         *result_len_ptr = value.get_string_length().value_unsafe();
@@ -655,7 +655,7 @@ bool automata_t::received_full_request() const noexcept {
 void automata_t::raise_call() noexcept {
     auto callback_or_error = find_callback(engine.callbacks, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
-        return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ucall_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     named_callback_t named_callback = std::get<named_callback_t>(callback_or_error);
     return named_callback.callback(this, named_callback.callback_tag);
@@ -668,7 +668,7 @@ void automata_t::raise_call_or_calls() noexcept {
     parser.set_max_capacity(json_body.size());
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() == sj::CAPACITY)
-        return ujrpc_call_reply_error_out_of_memory(this);
+        return ucall_call_reply_error_out_of_memory(this);
 
     // We may need to prepend the response with HTTP headers.
     if (scratch.is_http)
@@ -677,7 +677,7 @@ void automata_t::raise_call_or_calls() noexcept {
     size_t body_size = pipes.output_span().size();
 
     if (one_or_many.error() != sj::SUCCESS)
-        return ujrpc_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
+        return ucall_call_reply_error(this, -32700, "Invalid JSON was received by the server.", 40);
 
     // Check if we hve received a batch request.
     else if (one_or_many.is_array()) {
@@ -715,7 +715,7 @@ void automata_t::raise_call_or_calls() noexcept {
         auto output = pipes.output_span();
         body_size = output.size() - body_size;
         if (!set_http_content_length(output.data(), body_size))
-            return ujrpc_call_reply_error_out_of_memory(this);
+            return ucall_call_reply_error_out_of_memory(this);
     }
 }
 
@@ -724,7 +724,7 @@ void automata_t::parse_and_raise_request() noexcept {
     auto parsed_request_or_error = split_body_headers(request);
     if (auto error_ptr = std::get_if<default_error_t>(&parsed_request_or_error); error_ptr)
         // TODO: This error message may have to be wrapped into an HTTP header separately
-        return ujrpc_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ucall_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     auto parsed_request = std::get<parsed_request_t>(parsed_request_or_error);
     scratch.is_http = request.size() != parsed_request.body.size();
@@ -732,7 +732,7 @@ void automata_t::parse_and_raise_request() noexcept {
     if (scratch.dynamic_packet.size() > ram_page_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
-            return ujrpc_call_reply_error_out_of_memory(this);
+            return ucall_call_reply_error_out_of_memory(this);
         else {
             scratch.dynamic_parser = &parser;
             return raise_call_or_calls();
@@ -990,7 +990,7 @@ void automata_t::operator()() noexcept {
         connection.empty_transmits = 0;
         connection.sleep_ns = 0;
         if (!connection.pipes.absorb_input(completed_result)) {
-            ujrpc_call_reply_error_out_of_memory(this);
+            ucall_call_reply_error_out_of_memory(this);
             return send_next();
         }
 
@@ -1019,7 +1019,7 @@ void automata_t::operator()() noexcept {
         }
         // We may fail to allocate memory to receive the next input
         else {
-            ujrpc_call_reply_error_out_of_memory(this);
+            ucall_call_reply_error_out_of_memory(this);
             return send_next();
         }
 
