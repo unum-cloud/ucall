@@ -72,11 +72,11 @@ typedef struct ujrpc_config_t {
     /// @brief Enable SSL.
     bool use_ssl;
     /// @brief Private Key required for SSL.
-    const char* ssl_pk_path;
+    char const* ssl_private_key_path;
     /// @brief At least one certificate is required for SSL.
-    const char** ssl_crts_path;
+    char const** ssl_certificates_paths;
     /// @brief Certificates count.
-    size_t ssl_crts_cnt;
+    size_t ssl_certificates_count;
 } ujrpc_config_t;
 
 /**

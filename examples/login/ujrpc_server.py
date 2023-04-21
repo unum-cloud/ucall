@@ -2,11 +2,13 @@ import random
 
 from ujrpc.posix import Server
 
-server = Server(port=8545,
-                # ssl_pk='./examples/login/certs/main.key',
-                # ssl_certs=['./examples/login/certs/srv.crt',
-                #            './examples/login/certs/cas.pem']
-                )
+server = Server(
+    port=8545,
+    # ssl_pk='./examples/login/certs/main.key',
+    # ssl_certs=[
+    #   './examples/login/certs/srv.crt',
+    #   './examples/login/certs/cas.pem']
+)
 
 
 @server

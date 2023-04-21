@@ -398,7 +398,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.max_callbacks = 128u;
     if (!config.interface)
         config.interface = "0.0.0.0";
-    if (config.use_ssl && !(config.ssl_pk_path || config.ssl_crts_path || config.ssl_crts_cnt))
+    if (config.use_ssl &&
+        !(config.ssl_private_key_path || config.ssl_certificates_paths || config.ssl_certificates_count))
         return;
 
     // Some limitations are hard-coded for this non-concurrent implementation
@@ -443,7 +444,8 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         goto cleanup;
     if (config.use_ssl) {
         ssl_context = new ujrpc_ssl_context_t();
-        if (ssl_context->init(config.ssl_pk_path, config.ssl_crts_path, config.ssl_crts_cnt) != 0)
+        if (ssl_context->init(config.ssl_private_key_path, config.ssl_certificates_paths,
+                              config.ssl_certificates_count) != 0)
             goto cleanup;
     }
     if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
