@@ -16,6 +16,13 @@
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
 
+#include "mbedtls/config.h"
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/ssl.h>
+#include <mbedtls/ssl_cache.h>
+
 #include "ujrpc/ujrpc.h"
 
 #include "helpers/log.hpp"
@@ -28,9 +35,81 @@ using namespace unum::ujrpc;
 using time_clock_t = std::chrono::steady_clock;
 using time_point_t = std::chrono::time_point<time_clock_t>;
 
+static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
+
+struct ujrpc_ssl_context_t {
+
+    ~ujrpc_ssl_context_t() noexcept {
+        mbedtls_x509_crt_free(&srvcert);
+        mbedtls_pk_free(&pkey);
+        mbedtls_ssl_free(&ssl);
+        mbedtls_ssl_config_free(&conf);
+        mbedtls_ssl_cache_free(&cache);
+        mbedtls_ctr_drbg_free(&ctr_drbg);
+        mbedtls_entropy_free(&entropy);
+    }
+
+    int init(const char* pk_path, const char** crts_path, size_t crts_cnt) {
+        mbedtls_ssl_init(&ssl);
+        mbedtls_ssl_config_init(&conf);
+        mbedtls_ssl_cache_init(&cache);
+        mbedtls_x509_crt_init(&srvcert);
+        mbedtls_pk_init(&pkey);
+        mbedtls_entropy_init(&entropy);
+        mbedtls_ctr_drbg_init(&ctr_drbg);
+        int ret = 0;
+
+        // Seed the RNG
+        if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0)
+            // TODO Use personalization string. Required or Optional ?
+            return ret;
+
+        // Load Private Key
+        if ((ret = mbedtls_pk_parse_keyfile(&pkey, pk_path, NULL, NULL, &ctr_drbg)) != 0)
+            // TODO Use Password. Required or Optional ?
+            return ret;
+
+        // Load Certificates
+        for (size_t i = 0; i < crts_cnt; ++i)
+            if ((ret = mbedtls_x509_crt_parse_file(&srvcert, crts_path[i])) != 0)
+                // TODO Notify which certificate was invalid ?
+                return ret;
+
+        if ((ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
+                                               MBEDTLS_SSL_PRESET_DEFAULT)) != 0)
+            return ret;
+
+        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+
+        mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
+        mbedtls_ssl_conf_renegotiation(&conf, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
+
+        mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
+        if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0)
+            return ret;
+
+        if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0)
+            return ret;
+
+        return 0;
+    }
+
+    mbedtls_ssl_context ssl{};
+    mbedtls_ssl_config conf{};
+    mbedtls_pk_context pkey{};
+    mbedtls_x509_crt srvcert{};
+    mbedtls_entropy_context entropy{};
+    mbedtls_ssl_cache_context cache{};
+    mbedtls_ctr_drbg_context ctr_drbg{};
+};
+
 struct engine_t {
+    ~engine_t() noexcept { delete ssl_ctx; }
+
     descriptor_t socket{};
-    std::size_t max_batch_size{};
+
+    /// @brief Establishes an SSL connection if SSL is enabled, otherwise the `ssl_ctx` is unused and uninitialized.
+    ujrpc_ssl_context_t* ssl_ctx = nullptr;
 
     /// @brief The file descriptor of the stateful connection over TCP.
     descriptor_t connection{};
@@ -41,12 +120,7 @@ struct engine_t {
     /// @brief Statically allocated memory to process small requests.
     scratch_space_t scratch{};
     /// @brief For batch-requests in synchronous connections we need a place to
-    struct batch_response_t {
-        buffer_gt<struct iovec> iovecs{};
-        buffer_gt<char*> copies{};
-        std::size_t iovecs_count{};
-        std::size_t copies_count{};
-    } batch_response{};
+    array_gt<char> buffer{};
 
     stats_t stats{};
     std::int32_t logs_file_descriptor{};
@@ -67,25 +141,27 @@ sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) n
     return scratch.point_to_param(position);
 }
 
-void send_message(engine_t& engine, struct msghdr& message) noexcept {
-    auto bytes_sent = sendmsg(engine.connection, &message, 0);
-    if (bytes_sent < 0) {
+void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
+    char const* buf = message.data();
+    size_t const len = message.size();
+    long idx = 0;
+    long res = 0;
+
+    if (engine.ssl_ctx)
+        while (idx < len && (res = mbedtls_ssl_write(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t const*>(buf + idx),
+                                                     (len - idx))) > 0)
+            idx += res;
+    else
+        while (idx < len && (res = send(engine.connection, buf + idx, len - idx, 0)) > 0)
+            idx += res;
+
+    if (res < 0) {
         if (errno == EMSGSIZE)
             ujrpc_call_reply_error_out_of_memory(&engine);
         return;
     }
-    engine.stats.bytes_sent += bytes_sent;
+    engine.stats.bytes_sent += idx;
     engine.stats.packets_sent++;
-}
-
-void send_reply(engine_t& engine) noexcept {
-    if (!engine.batch_response.iovecs_count)
-        return;
-
-    struct msghdr message {};
-    message.msg_iov = engine.batch_response.iovecs.data();
-    message.msg_iovlen = engine.batch_response.iovecs_count;
-    send_message(engine, message);
 }
 
 void forward_call(engine_t& engine) noexcept {
@@ -109,8 +185,6 @@ void forward_call_or_calls(engine_t& engine) noexcept {
     if (one_or_many.error() != sj::SUCCESS)
         return ujrpc_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
 
-    engine.batch_response.iovecs_count = 0;
-    engine.batch_response.copies_count = 0;
     // The major difference between batch and single-request paths is that
     // in the first case we need to keep a copy of the data somewhere,
     // until answers to all requests are accumulated and we can submit them
@@ -120,53 +194,39 @@ void forward_call_or_calls(engine_t& engine) noexcept {
     if (one_or_many.is_array()) {
         sjd::array many = one_or_many.get_array().value_unsafe();
         scratch.is_batch = false;
-        if (many.size() > engine.max_batch_size)
-            return ujrpc_call_reply_error(&engine, -32603, "Too many requests in the batch.", 31);
 
         // Start a JSON array.
         scratch.is_batch = true;
-        engine.batch_response.iovecs[scratch.is_http].iov_base = const_cast<char*>("[");
-        engine.batch_response.iovecs[scratch.is_http].iov_len = 1;
-        engine.batch_response.iovecs_count += scratch.is_http + 1;
+        bool res = true;
+        if (scratch.is_http)
+            res &= engine.buffer.append_n(http_header_k, http_header_size_k);
+
+        res &= engine.buffer.append_n("[", 1);
 
         for (sjd::element const one : many) {
             scratch.tree = one;
             forward_call(engine);
         }
 
-        // Drop the last comma. Yeah, it's ugly.
-        auto last_bucket = (char*)engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_base;
-        if (last_bucket[engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_len - 1] == ',')
-            engine.batch_response.iovecs[engine.batch_response.iovecs_count - 1].iov_len--;
+        if (engine.buffer[engine.buffer.size() - 1] == ',')
+            engine.buffer.pop_back();
 
-        // Close the last bracket of the JSON array.
-        engine.batch_response.iovecs[engine.batch_response.iovecs_count].iov_base = (void*)"]";
-        engine.batch_response.iovecs[engine.batch_response.iovecs_count].iov_len = 1;
-        engine.batch_response.iovecs_count++;
+        res &= engine.buffer.append_n("]", 1);
 
-        if (scratch.is_http) {
-            size_t body_len = 0;
-            for (size_t i = 1; i < engine.batch_response.iovecs_count; ++i)
-                body_len += engine.batch_response.iovecs[i].iov_len;
+        if (!res)
+            return ujrpc_call_reply_error_out_of_memory(&engine);
 
-            char headers[http_header_size_k] = {};
-            std::memcpy(headers, http_header_k, http_header_size_k);
-            set_http_content_length(headers, body_len);
+        if (scratch.is_http)
+            set_http_content_length(engine.buffer.data(), engine.buffer.size() - http_header_size_k);
 
-            engine.batch_response.iovecs[0].iov_base = headers;
-            engine.batch_response.iovecs[0].iov_len = http_header_size_k;
-        }
+        send_message(engine, engine.buffer);
 
-        send_reply(engine);
-
-        // Deallocate copies of received responses:
-        for (std::size_t response_idx = 0; response_idx != engine.batch_response.copies_count; ++response_idx)
-            std::free(std::exchange(engine.batch_response.copies[response_idx], nullptr));
+        engine.buffer.reset();
     } else {
         scratch.is_batch = false;
         scratch.tree = one_or_many.value_unsafe();
         forward_call(engine);
-        send_reply(engine);
+        engine.buffer.reset();
     }
 }
 
@@ -180,6 +240,33 @@ void forward_packet(engine_t& engine) noexcept {
     scratch.is_http = request.type.size();
     scratch.dynamic_packet = request.body;
     return forward_call_or_calls(engine);
+}
+
+int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
+    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
+    ssize_t ret = send(conn->fd, buf, len, 0);
+    return ret;
+}
+
+int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
+    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
+    ssize_t ret = recv(conn->fd, buf, len, 0);
+    return ret;
+}
+
+int recv_all(engine_t& engine, char* buf, size_t len) {
+    size_t idx = 0;
+    int res = 0;
+
+    if (engine.ssl_ctx)
+        while (idx < len &&
+               (res = mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buf + idx), (len - idx))) > 0)
+            idx += res;
+    else
+        while (idx < len && (res = recv(engine.connection, buf + idx, len - idx, 0)) > 0)
+            idx += res;
+
+    return idx;
 }
 
 void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
@@ -211,14 +298,33 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         return;
     }
 
+    mbedtls_net_context client_ctx;
+
+    if (engine.ssl_ctx) {
+        client_ctx.fd = connection_fd;
+        mbedtls_ssl_set_bio(&engine.ssl_ctx->ssl, &client_ctx, ssl_send, ssl_recv, NULL);
+        int ret = 0;
+        while ((ret = mbedtls_ssl_handshake(&engine.ssl_ctx->ssl)) != 0)
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                mbedtls_net_free(&client_ctx);
+                mbedtls_ssl_session_reset(&engine.ssl_ctx->ssl);
+                return;
+            }
+    }
+
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
-    auto buffer_ptr = &engine.packet_buffer[0];
+    char* buffer_ptr = &engine.packet_buffer[0];
 
-    size_t bytes_expected = 0;
-    size_t bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, MSG_PEEK);
+    size_t bytes_received = 0, bytes_expected = 0;
+    if (engine.ssl_ctx)
+        bytes_received =
+            mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buffer_ptr), http_head_max_size_k);
+    else
+        bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, 0);
+
     auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
@@ -228,13 +334,14 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
         if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
-            // TODO what?
-            bytes_expected = ram_page_size_k;
+            bytes_expected = bytes_received; // TODO what?
 
     // Either process it in the statically allocated memory,
     // or allocate dynamically, if the message is too long.
+    size_t bytes_left = bytes_expected - bytes_received;
+
     if (bytes_expected <= ram_page_size_k) {
-        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
         scratch.dynamic_parser = &scratch.parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -249,7 +356,9 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         if (!buffer_ptr)
             return ujrpc_call_reply_error_out_of_memory(&engine);
 
-        bytes_received = recv(engine.connection, buffer_ptr, bytes_expected, MSG_WAITALL);
+        memcpy(buffer_ptr, &engine.packet_buffer[0], bytes_received);
+
+        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
         scratch.dynamic_parser = &parser;
         scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
         engine.stats.bytes_received += bytes_received;
@@ -259,10 +368,18 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         buffer_ptr = nullptr;
     }
 
-    shutdown(engine.connection, SHUT_WR);
+    if (engine.ssl_ctx) {
+        int ret = 0;
+        while ((ret = mbedtls_ssl_close_notify(&engine.ssl_ctx->ssl)) < 0)
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
+                break;
+
+        mbedtls_ssl_session_reset(&engine.ssl_ctx->ssl);
+    }
+    shutdown(connection_fd, SHUT_WR);
     // If later on some UB is detected for client not recieving full data,
     // then it may be required to put a `recv` with timeout between `shutdown` and `close`
-    close(engine.connection);
+    close(connection_fd);
 }
 
 void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
@@ -279,10 +396,11 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         config.queue_depth = 128u;
     if (!config.max_callbacks)
         config.max_callbacks = 128u;
-    if (!config.max_batch_size)
-        config.max_batch_size = 1024u;
     if (!config.interface)
         config.interface = "0.0.0.0";
+    if (config.use_ssl &&
+        !(config.ssl_private_key_path || config.ssl_certificates_paths || config.ssl_certificates_count))
+        return;
 
     // Some limitations are hard-coded for this non-concurrent implementation
     config.max_threads = 1u;
@@ -294,9 +412,9 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     int socket_options{1};
     int socket_descriptor{-1};
     engine_t* server_ptr = nullptr;
-    buffer_gt<struct iovec> embedded_iovecs;
-    buffer_gt<char*> embedded_copies;
+    array_gt<char> buffer;
     array_gt<named_callback_t> embedded_callbacks;
+    ujrpc_ssl_context_t* ssl_context = nullptr;
     sjd::parser parser;
 
     // By default, let's open TCP port for IPv4.
@@ -309,13 +427,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
-    // In the worst case we may have `max_batch_size` requests, where each will
-    // need `iovecs_for_content_k` or `iovecs_for_error_k` of `iovec` structures,
-    // plus two for the opening and closing bracket of JSON.
-    if (!embedded_iovecs.resize(config.max_batch_size * std::max(iovecs_for_content_k, iovecs_for_error_k) + 2 +
-                                iovecs_for_http_response_k))
-        goto cleanup;
-    if (!embedded_copies.resize(config.max_batch_size))
+    if (!buffer.reserve(initial_buffer_size_k))
         goto cleanup;
     if (!embedded_callbacks.reserve(config.max_callbacks))
         goto cleanup;
@@ -330,20 +442,25 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
+    if (config.use_ssl) {
+        ssl_context = new ujrpc_ssl_context_t();
+        if (ssl_context->init(config.ssl_private_key_path, config.ssl_certificates_paths,
+                              config.ssl_certificates_count) != 0)
+            goto cleanup;
+    }
     if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
     // Initialize all the members.
     new (server_ptr) engine_t();
     server_ptr->socket = descriptor_t{socket_descriptor};
-    server_ptr->max_batch_size = config.max_batch_size;
     server_ptr->callbacks = std::move(embedded_callbacks);
     server_ptr->scratch.parser = std::move(parser);
-    server_ptr->batch_response.copies = std::move(embedded_copies);
-    server_ptr->batch_response.iovecs = std::move(embedded_iovecs);
+    server_ptr->buffer = std::move(buffer);
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     server_ptr->log_last_time = time_clock_t::now();
+    server_ptr->ssl_ctx = ssl_context;
     *server_out = (ujrpc_server_t)server_ptr;
     return;
 
@@ -353,6 +470,7 @@ cleanup:
         close(socket_descriptor);
     std::free(server_ptr);
     *server_out = nullptr;
+    delete ssl_context;
 }
 
 void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
@@ -371,17 +489,59 @@ void ujrpc_free(ujrpc_server_t server) {
     if (!server)
         return;
 
-    engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    close(engine.socket);
-    engine.~engine_t();
-    std::free(server);
+    engine_t* engine = reinterpret_cast<engine_t*>(server);
+    close(engine->socket);
+    delete engine;
 }
 
-void prepend_http_headers(iovec* buffers, size_t content_len, char* http_buffer) {
-    std::memcpy(http_buffer, http_header_k, http_header_size_k);
-    set_http_content_length(http_buffer, content_len);
-    buffers[0].iov_base = const_cast<char*>(http_buffer);
-    buffers[0].iov_len = http_header_size_k;
+bool fill_with_content(array_gt<char>& buffer, std::string_view request_id, std::string_view body,
+                       bool add_http = false, bool append_comma = false) {
+
+    // Communication example would be:
+    // --> {"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
+    // <-- {"jsonrpc": "2.0", "id": 1, "result": 19}
+    bool res = true;
+    if (add_http)
+        res &= buffer.append_n(http_header_k, http_header_size_k);
+
+    size_t initial_sz = buffer.size();
+    res &= buffer.append_n(R"({"jsonrpc":"2.0","id":)", 22);
+    res &= buffer.append_n(request_id.data(), request_id.size());
+    res &= buffer.append_n(R"(,"result":)", 10);
+    res &= buffer.append_n(body.data(), body.size());
+    res &= buffer.append_n(R"(},)", 1 + append_comma);
+    size_t body_len = buffer.size() - initial_sz;
+
+    if (add_http)
+        set_http_content_length(buffer.end() - (body_len + http_header_size_k), body_len);
+
+    return res;
+}
+
+bool fill_with_error(array_gt<char>& buffer, std::string_view request_id, std::string_view error_code,
+                     std::string_view error_message, bool add_http = false, bool append_comma = false) {
+
+    // Communication example would be:
+    // --> {"jsonrpc": "2.0", "method": "foobar", "id": "1"}
+    // <-- {"jsonrpc": "2.0", "id": "1", "error": {"code": -32601, "message": "Method not found"}}
+    bool res = true;
+    if (add_http)
+        res &= buffer.append_n(http_header_k, http_header_size_k);
+
+    size_t initial_sz = buffer.size();
+    res &= buffer.append_n(R"({"jsonrpc":"2.0","id":)", 22);
+    res &= buffer.append_n(request_id.data(), request_id.size());
+    res &= buffer.append_n(R"(,"error":{"code":)", 17);
+    res &= buffer.append_n(error_code.data(), error_code.size());
+    res &= buffer.append_n(R"(,"message":")", 12);
+    res &= buffer.append_n(error_message.data(), error_message.size());
+    res &= buffer.append_n(R"("}},)", 3 + append_comma);
+    size_t body_len = buffer.size() - initial_sz;
+
+    if (add_http)
+        set_http_content_length(buffer.end() - (body_len + http_header_size_k), body_len);
+
+    return res;
 }
 
 void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
@@ -394,36 +554,16 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
         body_len = std::strlen(body);
 
     // In case of a single request - immediately push into the socket.
-    if (!scratch.is_batch) {
-        struct msghdr message {};
-        if (scratch.is_http) {
-            struct iovec iovecs[iovecs_for_content_k + 1]{};
-            size_t content_len = fill_with_content(iovecs + 1, scratch.dynamic_id, std::string_view(body, body_len));
-            message.msg_iov = iovecs;
-            message.msg_iovlen = iovecs_for_content_k + 1;
-            char headers[http_header_size_k];
-            prepend_http_headers(iovecs, content_len, headers);
-            send_message(engine, message);
-        } else {
-            struct iovec iovecs[iovecs_for_content_k] {};
-            fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len));
-            message.msg_iov = iovecs;
-            message.msg_iovlen = iovecs_for_content_k;
-            send_message(engine, message);
-        }
-    }
-
-    // In case of a batch or async request, preserve a copy of data on the heap.
-    else {
-        auto body_copy = (char*)std::malloc(body_len);
-        if (!body_copy)
+    if (!scratch.is_batch)
+        if (fill_with_content(engine.buffer, scratch.dynamic_id, //
+                              std::string_view(body, body_len), scratch.is_http))
+            send_message(engine, engine.buffer);
+        else
             return ujrpc_call_reply_error_out_of_memory(call);
-        std::memcpy(body_copy, body, body_len);
-        engine.batch_response.copies[engine.batch_response.copies_count++] = body_copy;
-        fill_with_content(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count, scratch.dynamic_id,
-                          std::string_view(body_copy, body_len), true);
-        engine.batch_response.iovecs_count += iovecs_for_content_k;
-    }
+
+    else if (!fill_with_content(engine.buffer, scratch.dynamic_id, //
+                                std::string_view(body, body_len), false, true))
+        return ujrpc_call_reply_error_out_of_memory(call);
 }
 
 void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
@@ -442,45 +582,17 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
         return ujrpc_call_reply_error_unknown(call);
 
     // In case of a single request - immediately push into the socket.
-    if (!scratch.is_batch) {
-        struct msghdr message {};
-        if (scratch.is_http) {
-            struct iovec iovecs[iovecs_for_error_k + 1]{};
-            size_t content_len = fill_with_error(iovecs + 1, scratch.dynamic_id,   //
-                                                 std::string_view(code, code_len), //
-                                                 std::string_view(note, note_len));
-            message.msg_iov = iovecs;
-            message.msg_iovlen = iovecs_for_error_k + 1;
-            char headers[http_header_size_k];
-            prepend_http_headers(iovecs, content_len, headers);
-            send_message(engine, message);
-        } else {
-            struct iovec iovecs[iovecs_for_error_k] {};
-            fill_with_error(iovecs, scratch.dynamic_id,       //
-                            std::string_view(code, code_len), //
-                            std::string_view(note, note_len));
-
-            message.msg_iov = iovecs;
-            message.msg_iovlen = iovecs_for_error_k;
-            send_message(engine, message);
-        }
-
-    }
-
-    // In case of a batch or async request, preserve a copy of data on the heap.
-    else {
-        auto code_and_node = (char*)std::malloc(code_len + note_len);
-        if (!code_and_node)
+    if (!scratch.is_batch)
+        if (fill_with_error(engine.buffer, scratch.dynamic_id, //
+                            std::string_view(code, code_len), std::string_view(note, note_len), scratch.is_http))
+            send_message(engine, engine.buffer);
+        else
             return ujrpc_call_reply_error_out_of_memory(call);
-        std::memcpy(code_and_node, code, code_len);
-        std::memcpy(code_and_node + code_len, note, note_len);
-        engine.batch_response.copies[engine.batch_response.copies_count++] = code_and_node;
-        fill_with_error(engine.batch_response.iovecs.data() + engine.batch_response.iovecs_count,
-                        scratch.dynamic_id,                        //
-                        std::string_view(code_and_node, code_len), //
-                        std::string_view(code_and_node + code_len, note_len), true);
-        engine.batch_response.iovecs_count += iovecs_for_error_k;
-    }
+
+    else if (!fill_with_error(engine.buffer, scratch.dynamic_id, //
+                              std::string_view(code, code_len),  //
+                              std::string_view(note, note_len), false, true))
+        return ujrpc_call_reply_error_out_of_memory(call);
 }
 
 void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {

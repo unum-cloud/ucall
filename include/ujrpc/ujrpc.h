@@ -68,6 +68,15 @@ typedef struct ujrpc_config_t {
     uint32_t max_concurrent_connections;
     uint32_t max_lifetime_micro_seconds;
     uint32_t max_lifetime_exchanges;
+
+    /// @brief Enable SSL.
+    bool use_ssl;
+    /// @brief Private Key required for SSL.
+    char const* ssl_private_key_path;
+    /// @brief At least one certificate is required for SSL.
+    char const** ssl_certificates_paths;
+    /// @brief Certificates count.
+    size_t ssl_certificates_count;
 } ujrpc_config_t;
 
 /**

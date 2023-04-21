@@ -25,7 +25,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 endif()
@@ -62,7 +62,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(simdjson)
 include_directories(${simdjson_SOURCE_DIR}/include)
 
-if (${UJRPC_BUILD_BENCHMARKS})
+if(${UJRPC_BUILD_BENCHMARKS})
     set(BENCHMARK_ENABLE_TESTING OFF)
     set(BENCHMARK_ENABLE_INSTALL OFF)
     set(BENCHMARK_ENABLE_DOXYGEN OFF)
@@ -109,6 +109,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+FetchContent_Declare(
+    mbedtls
+    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls/
+    GIT_TAG v3.4.0
+    CMAKE_ARGS
+    -DENABLE_PROGRAMS=OFF
+    -DENABLE_TESTING=OFF
+    -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
+    -DUSE_STATIC_MBEDTLS_LIBRARY=ON
+)
+
+FetchContent_MakeAvailable(mbedtls)
+include_directories(${mbedtls_SOURCE_DIR}/include)
+set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
 
 # LibUring
 if(LINUX)
@@ -140,7 +156,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/)
 
 add_library(ujrpc_server_posix src/engine_posix.cpp)
-target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads)
+target_link_libraries(ujrpc_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
 set(PYTHON_BACKEND ujrpc_server_posix)
 
 add_executable(ujrpc_example_login_posix examples/login/ujrpc_server.cpp)
