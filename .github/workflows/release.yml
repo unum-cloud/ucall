@@ -60,6 +60,9 @@ jobs:
     name: Publish Wheels to PyPi
     runs-on: ubuntu-20.04
     needs: build_wheels
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ucall
     
     steps:
       - name: Download artifacts
@@ -70,8 +73,6 @@ jobs:
       - name: Publish to PyPi
         uses: pypa/gh-action-pypi-publish@v1.6.4
         with:
-          user: __token__
-          password: ${{ secrets.TWINE_API }}
           packages_dir: ./dist/artifact
           verbose: true
           print_hash: true
