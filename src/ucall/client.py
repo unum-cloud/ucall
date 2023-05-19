@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 
-def _recvall(sock, buffer_size=4096):
+def _receive_all(sock, buffer_size=4096):
     header = sock.recv(4)
     body = None
     content_len = -1
@@ -174,7 +174,7 @@ class Client:
         self.sock.send(request.encode())
 
     def _recv(self) -> Response:
-        response_bytes = _recvall(self.sock)
+        response_bytes = _receive_all(self.sock)
         response = json.loads(response_bytes)
         return Response(response)
 
@@ -184,8 +184,10 @@ class Client:
 
 
 class ClientTLS(Client):
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8545,
-                 ssl_context: ssl.SSLContext = None, allow_self_signed=False, enable_session_resumption=True) -> None:
+    def __init__(
+            self, uri: str = '127.0.0.1', port: int = 8545, ssl_context: ssl.SSLContext = None,
+            allow_self_signed: bool = False, enable_session_resumption: bool = True) -> None:
+
         super().__init__(uri, port, use_http=True)
 
         if ssl_context is None:

@@ -26,7 +26,7 @@
 #define stringify_m(a) #a
 #define concat_m(A, B) A##B
 #define macro_concat_m(A, B) concat_m(A, B)
-#define pyinit_f_m macro_concat_m(PyInit_, UKV_PYTHON_MODULE_NAME)
+#define pyinit_f_m macro_concat_m(PyInit_, UCALL_PYTHON_MODULE_NAME)
 
 #define get_attr_safe_m(name, obj, attr)                                                                               \
     PyObject* name = PyObject_GetAttrString(obj, attr);                                                                \
@@ -463,7 +463,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
 // Order: https://docs.python.org/3/c-api/typeobj.html#quick-reference
 static PyTypeObject ucall_type = {
-    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ucall." stringify_value_m(UKV_PYTHON_MODULE_NAME) ".Server",
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME) ".Server",
     .tp_basicsize = sizeof(py_server_t),
     .tp_itemsize = 0,
     .tp_dealloc = (destructor)server_dealloc,
@@ -482,7 +482,7 @@ static PyTypeObject ucall_type = {
 
 static PyModuleDef server_module = {
     PyModuleDef_HEAD_INIT,
-    .m_name = "ucall." stringify_value_m(UKV_PYTHON_MODULE_NAME),
+    .m_name = "ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME),
     .m_doc = "Uninterrupted JSON Remote Procedure Calls library.",
     .m_size = -1,
 };
@@ -513,7 +513,7 @@ int main(int argc, char* argv[]) {
     }
 
     /* Add a built-in module, before Py_Initialize */
-    if (PyImport_AppendInittab("ucall." stringify_value_m(UKV_PYTHON_MODULE_NAME), pyinit_f_m) == -1) {
+    if (PyImport_AppendInittab("ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME), pyinit_f_m) == -1) {
         fprintf(stderr, "Error: could not extend in-built modules table\n");
         exit(1);
     }
@@ -528,7 +528,7 @@ int main(int argc, char* argv[]) {
     /* Optionally import the module; alternatively,
        import can be deferred until the embedded script
        imports it. */
-    PyObject* pmodule = PyImport_ImportModule("ucall." stringify_value_m(UKV_PYTHON_MODULE_NAME));
+    PyObject* pmodule = PyImport_ImportModule("ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME));
     if (!pmodule) {
         PyErr_Print();
         fprintf(stderr, "Error: could not import module 'ucall'\n");

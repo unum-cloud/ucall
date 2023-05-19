@@ -4,7 +4,7 @@
  * @date Feb 3, 2023
  * @addtogroup C
  *
- * @brief Binary Interface for Uninterrupted JSON RPC.
+ * @brief Binary Interface for UCall.
  *
  * ## Basic Usage
  *

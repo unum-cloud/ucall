@@ -1,13 +1,16 @@
-import numpy as np
-from PIL import Image
-from typing import Callable, get_type_hints
 import inspect
+from typing import Callable, get_type_hints
 from functools import wraps
 from io import BytesIO
 
+import numpy as np
+from PIL import Image
+
 
 class _Server:
-    server = None
+
+    def __init__(self) -> None:
+        self.server = None
 
     def __call__(self, func: Callable):
         return self.route(func)
@@ -15,7 +18,7 @@ class _Server:
     def run(self, max_cycles: int = -1, max_seconds: float = -1):
         return self.server.run(max_cycles, max_seconds)
 
-    def unpack(self, arg: bytes, hint):
+    def unpack(self, arg: bytes, hint: type):
         if hint == bytes or hint == bytearray:
             return arg
 
@@ -36,8 +39,7 @@ class _Server:
             buf = BytesIO()
             if not res.format:
                 res.format = 'tiff'
-            res.save(buf, res.format, compression='raw',
-                     compression_level=0)
+            res.save(buf, res.format, compression='raw', compression_level=0)
 
             return buf.getvalue()
 
@@ -52,6 +54,7 @@ class _Server:
             new_kwargs = {}
 
             for arg, hint in zip(args, hints.values()):
+                assert isinstance(hint, type), 'Hint must be a type!'
                 if isinstance(arg, bytes):
                     new_args.append(self.unpack(arg, hint))
                 else:
