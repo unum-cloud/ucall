@@ -103,6 +103,7 @@
         "endregion",
         "fastapi",
         "iovecs",
+        "ndarray",
         "numpy",
         "posix",
         "SIMD",
