@@ -114,7 +114,7 @@ setup(
     ],
 
     packages=['ucall'],
-    package_dir={'': 'src/'},
+    package_dir={'': 'src'},
     ext_modules=[
         CMakeExtension('ucall.uring'),
         CMakeExtension('ucall.posix'),
