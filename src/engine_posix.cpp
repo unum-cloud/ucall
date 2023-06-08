@@ -7,7 +7,14 @@
 #define UCALL_IS_WINDOWS
 
 #include <Ws2tcpip.h>
+#include <io.h>
 #include <winsock2.h>
+
+#define SHUT_WR SD_SEND
+#define SHUT_RD SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
+// SO_REUSEPORT is not supported on Windows.
+#define SO_REUSEPORT 0
 
 #pragma comment(lib, "Ws2_32.lib")
 #define UNICODE
@@ -344,11 +351,14 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
     parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - buffer_ptr);
+    auto res = std::from_chars(request.content_length.data(),
+                               request.content_length.data() + request.content_length.size(), bytes_expected);
+    bytes_expected += (request.body.data() - buffer_ptr);
 
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+#if !defined(UCALL_IS_WINDOWS)
         if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+#endif
             bytes_expected = bytes_received; // TODO what?
 
     // Either process it in the statically allocated memory,
@@ -367,7 +377,11 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS)
             return ucall_call_reply_error_out_of_memory(&engine);
 
+#if defined(UCALL_IS_WINDOWS)
+        buffer_ptr = (char*)_aligned_malloc(round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING), align_k);
+#else
         buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
+#endif
         if (!buffer_ptr)
             return ucall_call_reply_error_out_of_memory(&engine);
 
@@ -379,7 +393,11 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         engine.stats.bytes_received += bytes_received;
         engine.stats.packets_received++;
         forward_packet(engine);
+#if defined(UCALL_IS_WINDOWS)
+        _aligned_free(buffer_ptr);
+#else
         std::free(buffer_ptr);
+#endif
         buffer_ptr = nullptr;
     }
 
@@ -450,8 +468,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     if (socket_descriptor < 0)
         goto cleanup;
     // Optionally configure the socket, but don't always expect it to succeed.
-    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &socket_options,
-                   sizeof(socket_options)) == -1)
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
         errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
