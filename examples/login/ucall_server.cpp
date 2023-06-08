@@ -4,7 +4,6 @@
 #include <charconv> // `std::to_chars`
 #include <cstdio>   // `std::fprintf`
 #include <thread>
-#include <unistd.h> // `STDOUT_FILENO`
 #include <vector>
 
 #include <cxxopts.hpp>
