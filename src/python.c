@@ -414,10 +414,10 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     static const char const* keywords_list[] = {
-        "interface",     "port",  "queue_depth", "max_callbacks", "max_threads",
+        "hostname",      "port",  "queue_depth", "max_callbacks", "max_threads",
         "count_threads", "quiet", "ssl_pk",      "ssl_certs",     NULL,
     };
-    self->config.interface = "0.0.0.0";
+    self->config.hostname = "0.0.0.0";
     self->config.port = 8545;
     self->config.queue_depth = 4096;
     self->config.max_callbacks = UINT16_MAX;
@@ -430,7 +430,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     PyObject* certs_path = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnpsO", (char**)keywords_list, //
-                                     &self->config.interface, &self->config.port, &self->config.queue_depth,
+                                     &self->config.hostname, &self->config.port, &self->config.queue_depth,
                                      &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
                                      &self->quiet, &self->config.ssl_private_key_path, &certs_path))
         return -1;
@@ -454,7 +454,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     }
 
     if (!self->quiet) {
-        printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
+        printf("Initialized server: %s:%i\n", self->config.hostname, self->config.port);
         printf("- %i threads\n", self->config.max_threads);
         printf("- %u max concurrent connections\n", self->config.max_concurrent_connections);
     }

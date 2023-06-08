@@ -396,8 +396,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         config.queue_depth = 128u;
     if (!config.max_callbacks)
         config.max_callbacks = 128u;
-    if (!config.interface)
-        config.interface = "0.0.0.0";
+    if (!config.hostname)
+        config.hostname = "0.0.0.0";
     if (config.use_ssl &&
         !(config.ssl_private_key_path || config.ssl_certificates_paths || config.ssl_certificates_count))
         return;
@@ -420,7 +420,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address;
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(config.interface);
+    address.sin_addr.s_addr = inet_addr(config.hostname);
     address.sin_port = htons(config.port);
 
     // Try allocating all the necessary memory.

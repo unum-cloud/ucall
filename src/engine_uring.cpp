@@ -307,8 +307,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         config.max_lifetime_micro_seconds = 100'000u;
     if (!config.max_lifetime_exchanges)
         config.max_lifetime_exchanges = 100u;
-    if (!config.interface)
-        config.interface = "0.0.0.0";
+    if (!config.hostname)
+        config.hostname = "0.0.0.0";
 
     // Allocate
     int socket_options{1};
@@ -334,7 +334,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(config.interface);
+    address.sin_addr.s_addr = inet_addr(config.hostname);
     address.sin_port = htons(config.port);
 
     // Initialize `io_uring` first, it is the most likely to fail.

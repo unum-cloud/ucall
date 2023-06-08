@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
 
     ucall_server_t server{};
     ucall_config_t config{};
-    config.interface = result["nic"].as<std::string>().c_str();
+    config.hostname = result["nic"].as<std::string>().c_str();
     config.port = result["port"].as<int>();
     config.max_threads = result["threads"].as<int>();
     config.max_concurrent_connections = 1024;
@@ -56,11 +56,11 @@ int main(int argc, char** argv) {
 
     ucall_init(&config, &server);
     if (!server) {
-        std::printf("Failed to start server: %s:%i\n", config.interface, config.port);
+        std::printf("Failed to start server: %s:%i\n", config.hostname, config.port);
         return -1;
     }
 
-    std::printf("Initialized server: %s:%i\n", config.interface, config.port);
+    std::printf("Initialized server: %s:%i\n", config.hostname, config.port);
     std::printf("- %zu threads\n", static_cast<std::size_t>(config.max_threads));
     std::printf("- %zu max concurrent connections\n", static_cast<std::size_t>(config.max_concurrent_connections));
     if (result["silent"].as<bool>())
