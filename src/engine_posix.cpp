@@ -2,16 +2,31 @@
  * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
  * @author Ashot Vardanian
  */
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define UCALL_IS_WINDOWS
+
+#include <Ws2tcpip.h>
+#include <winsock2.h>
+
+#pragma comment(lib, "Ws2_32.lib")
+#define UNICODE
+
+#else
 #include <arpa/inet.h>  // `inet_addr`
-#include <errno.h>      // `strerror`
-#include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
-#include <stdlib.h>     // `std::aligned_malloc`
+
 #include <sys/ioctl.h>
 #include <sys/socket.h> // `recv`, `setsockopt`
-#include <sys/types.h>
+
 #include <sys/uio.h>
 #include <unistd.h>
+#endif
+
+#include <errno.h>  // `strerror`
+#include <fcntl.h>  // `fcntl`
+#include <stdlib.h> // `std::aligned_malloc`
+#include <sys/types.h>
 
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
@@ -244,13 +259,13 @@ void forward_packet(engine_t& engine) noexcept {
 
 int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = send(conn->fd, buf, len, 0);
+    ssize_t ret = send(conn->fd, reinterpret_cast<char const*>(buf), len, 0);
     return ret;
 }
 
 int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = recv(conn->fd, buf, len, 0);
+    ssize_t ret = recv(conn->fd, reinterpret_cast<char*>(buf), len, 0);
     return ret;
 }
 
