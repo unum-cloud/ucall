@@ -63,11 +63,16 @@ jobs:
           path: ./wheelhouse/*.whl
   
   
-  publish_wheels:
-    name: Publish Wheels to PyPi
+  publish_python:
+    name: Publish Python
     runs-on: ubuntu-20.04
     needs: build_wheels
-    
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ucall
+    permissions:
+      id-token: write
+
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v3.0.2
@@ -75,10 +80,8 @@ jobs:
           path: ./dist/
 
       - name: Publish to PyPi
-        uses: pypa/gh-action-pypi-publish@v1.6.4
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: __token__
-          password: ${{ secrets.TWINE_API }}
           packages_dir: ./dist/artifact
           verbose: true
           print_hash: true
