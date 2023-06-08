@@ -2,16 +2,38 @@
  * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
  * @author Ashot Vardanian
  */
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define UCALL_IS_WINDOWS
+
+#include <Ws2tcpip.h>
+#include <io.h>
+#include <winsock2.h>
+
+#define SHUT_WR SD_SEND
+#define SHUT_RD SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
+// SO_REUSEPORT is not supported on Windows.
+#define SO_REUSEPORT 0
+
+#pragma comment(lib, "Ws2_32.lib")
+#define UNICODE
+
+#else
 #include <arpa/inet.h>  // `inet_addr`
-#include <errno.h>      // `strerror`
-#include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
-#include <stdlib.h>     // `std::aligned_malloc`
+
 #include <sys/ioctl.h>
 #include <sys/socket.h> // `recv`, `setsockopt`
-#include <sys/types.h>
+
 #include <sys/uio.h>
 #include <unistd.h>
+#endif
+
+#include <errno.h>  // `strerror`
+#include <fcntl.h>  // `fcntl`
+#include <stdlib.h> // `std::aligned_malloc`
+#include <sys/types.h>
 
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
@@ -244,13 +266,13 @@ void forward_packet(engine_t& engine) noexcept {
 
 int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = send(conn->fd, buf, len, 0);
+    ssize_t ret = send(conn->fd, reinterpret_cast<char const*>(buf), len, 0);
     return ret;
 }
 
 int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = recv(conn->fd, buf, len, 0);
+    ssize_t ret = recv(conn->fd, reinterpret_cast<char*>(buf), len, 0);
     return ret;
 }
 
@@ -329,11 +351,14 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
         return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
     parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - buffer_ptr);
+    auto res = std::from_chars(request.content_length.data(),
+                               request.content_length.data() + request.content_length.size(), bytes_expected);
+    bytes_expected += (request.body.data() - buffer_ptr);
 
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+#if !defined(UCALL_IS_WINDOWS)
         if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+#endif
             bytes_expected = bytes_received; // TODO what?
 
     // Either process it in the statically allocated memory,
@@ -352,7 +377,11 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS)
             return ucall_call_reply_error_out_of_memory(&engine);
 
+#if defined(UCALL_IS_WINDOWS)
+        buffer_ptr = (char*)_aligned_malloc(round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING), align_k);
+#else
         buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
+#endif
         if (!buffer_ptr)
             return ucall_call_reply_error_out_of_memory(&engine);
 
@@ -364,7 +393,11 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         engine.stats.bytes_received += bytes_received;
         engine.stats.packets_received++;
         forward_packet(engine);
+#if defined(UCALL_IS_WINDOWS)
+        _aligned_free(buffer_ptr);
+#else
         std::free(buffer_ptr);
+#endif
         buffer_ptr = nullptr;
     }
 
@@ -396,8 +429,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         config.queue_depth = 128u;
     if (!config.max_callbacks)
         config.max_callbacks = 128u;
-    if (!config.interface)
-        config.interface = "0.0.0.0";
+    if (!config.hostname)
+        config.hostname = "0.0.0.0";
     if (config.use_ssl &&
         !(config.ssl_private_key_path || config.ssl_certificates_paths || config.ssl_certificates_count))
         return;
@@ -420,7 +453,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address;
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(config.interface);
+    address.sin_addr.s_addr = inet_addr(config.hostname);
     address.sin_port = htons(config.port);
 
     // Try allocating all the necessary memory.
@@ -435,8 +468,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     if (socket_descriptor < 0)
         goto cleanup;
     // Optionally configure the socket, but don't always expect it to succeed.
-    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &socket_options,
-                   sizeof(socket_options)) == -1)
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
         errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
