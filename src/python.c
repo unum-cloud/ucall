@@ -439,7 +439,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
         self->config.use_ssl = true;
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
         self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
-        for (Py_ssize_t i = 0; i < self->config.ssl_certificates_count; i++)
+        for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
             self->config.ssl_certificates_paths[i] = PyUnicode_AsUTF8AndSize(PySequence_GetItem(certs_path, i), NULL);
     }
 
