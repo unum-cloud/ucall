@@ -1,5 +1,9 @@
 #pragma once
+
+#if defined(__linux__) // iovec required only for uring
+#define UCALL_IS_LINUX
 #include <sys/uio.h> // `struct iovec`
+#endif
 
 #include <numeric>     // `std::iota`
 #include <string_view> // `std::string_view`

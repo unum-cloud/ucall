@@ -58,6 +58,9 @@ class CMakeBuild(build_ext):
         # Set CMAKE_BUILD_PARALLEL_LEVEL to control the parallel build level
         # across all generators.
         build_args = []
+        if sys.platform.startswith('win32'):
+            build_args += ['--config', 'Release']
+
         if 'CMAKE_BUILD_PARALLEL_LEVEL' not in os.environ:
             # self.parallel is a Python 3 only way to set parallel jobs by hand
             # using -j in the build_ext call, not supported by pip or PyPA-build.
@@ -114,7 +117,7 @@ setup(
     ],
 
     packages=['ucall'],
-    package_dir={'': 'src/'},
+    package_dir={'': 'src'},
     ext_modules=[
         CMakeExtension('ucall.uring'),
         CMakeExtension('ucall.posix'),

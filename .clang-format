@@ -2,6 +2,7 @@ Language: Cpp
 BasedOnStyle:  LLVM
 IndentWidth: 4
 TabWidth: 4
+StatementMacros: ['PyObject_HEAD']
 NamespaceIndentation: None
 ColumnLimit: 120
 ReflowComments: true

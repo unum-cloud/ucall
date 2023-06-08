@@ -49,7 +49,7 @@ typedef void (*ucall_callback_t)(ucall_call_t, ucall_callback_tag_t);
  * @brief Configuration parameters for `ucall_init()`.
  */
 typedef struct ucall_config_t {
-    char const* interface;
+    char const* hostname;
     uint16_t port;
     uint16_t queue_depth;
     uint16_t max_callbacks;

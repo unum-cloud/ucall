@@ -1,5 +1,9 @@
 #pragma once
+
+#if defined(__linux__) // iovec required only for uring
+#define UCALL_IS_LINUX
 #include <sys/uio.h> // `struct iovec`
+#endif
 
 #include <string_view> // `std::string_view`
 
@@ -23,6 +27,17 @@ static constexpr std::size_t http_header_size_k = 78;
 static constexpr std::size_t http_header_length_offset_k = 33;
 static constexpr std::size_t http_header_length_capacity_k = 9;
 
+bool set_http_content_length(char* headers, size_t content_len) {
+    auto res = std::to_chars(headers + http_header_length_offset_k,
+                             headers + http_header_length_offset_k + http_header_length_capacity_k, content_len);
+
+    if (res.ec != std::errc())
+        return false;
+    return true;
+}
+
+#if defined(UCALL_IS_LINUX)
+
 size_t fill_with_content(struct iovec* buffers, std::string_view request_id, std::string_view body,
                          bool append_comma = false) {
 
@@ -43,15 +58,6 @@ size_t fill_with_content(struct iovec* buffers, std::string_view request_id, std
     buffers[4].iov_base = (char*)protocol_suffix;
     buffers[4].iov_len = 1 + append_comma;
     return buffers[0].iov_len + buffers[1].iov_len + buffers[2].iov_len + buffers[3].iov_len + buffers[4].iov_len;
-}
-
-bool set_http_content_length(char* headers, size_t content_len) {
-    auto res = std::to_chars(headers + http_header_length_offset_k,
-                             headers + http_header_length_offset_k + http_header_length_capacity_k, content_len);
-
-    if (res.ec != std::errc())
-        return false;
-    return true;
 }
 
 size_t fill_with_error(struct iovec* buffers, std::string_view request_id, std::string_view error_code,
@@ -97,4 +103,5 @@ template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iove
     }
 }
 
+#endif
 } // namespace unum::ucall
