@@ -131,7 +131,7 @@ setup(
         ]
     },
     install_requires=[
-        'numpy>=1.16',
+        'numpy',
         'pillow'
     ],
     zip_safe=False,

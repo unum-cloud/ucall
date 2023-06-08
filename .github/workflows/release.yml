@@ -94,7 +94,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-22.04
     if: ${{ always() }}
-    needs: publish_wheels
+    needs: publish_python
     steps:
       - name: Checkout
         uses: actions/checkout@v3
