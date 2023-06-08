@@ -58,7 +58,7 @@ typedef struct {
 } py_wrapper_t;
 
 typedef struct {
-    PyObject_HEAD;
+    PyObject_HEAD
     ucall_config_t config;
     ucall_server_t server;
     size_t count_threads;
