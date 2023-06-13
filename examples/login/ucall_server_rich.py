@@ -1,8 +1,9 @@
 import numpy as np
 from PIL import Image
-from ucall.rich_posix import Server
+from ucall.server import Server
 
-server = Server(port=8545,
+server = Server(uring_if_possible=True,
+                port=8545,
                 ssl_pk='./examples/login/certs/main.key',
                 ssl_certs=['./examples/login/certs/srv.crt',
                            './examples/login/certs/cas.pem']

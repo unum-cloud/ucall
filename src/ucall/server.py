@@ -28,8 +28,8 @@ def only_native_types(hints: dict[str, type]) -> bool:
 
 class Server:
 
-    def __init__(self, **kwargs) -> None:
-        if supports_io_uring():
+    def __init__(self, uring_if_possible=True, **kwargs) -> None:
+        if uring_if_possible and supports_io_uring():
             from ucall import uring
             self.native = uring.Server(**kwargs)
         else:
