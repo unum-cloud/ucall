@@ -2,16 +2,38 @@
  * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
  * @author Ashot Vardanian
  */
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define UCALL_IS_WINDOWS
+
+#include <Ws2tcpip.h>
+#include <io.h>
+#include <winsock2.h>
+
+#define SHUT_WR SD_SEND
+#define SHUT_RD SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
+// SO_REUSEPORT is not supported on Windows.
+#define SO_REUSEPORT 0
+
+#pragma comment(lib, "Ws2_32.lib")
+#define UNICODE
+
+#else
 #include <arpa/inet.h>  // `inet_addr`
-#include <errno.h>      // `strerror`
-#include <fcntl.h>      // `fcntl`
 #include <netinet/in.h> // `sockaddr_in`
-#include <stdlib.h>     // `std::aligned_malloc`
+
 #include <sys/ioctl.h>
 #include <sys/socket.h> // `recv`, `setsockopt`
-#include <sys/types.h>
+
 #include <sys/uio.h>
 #include <unistd.h>
+#endif
+
+#include <errno.h>  // `strerror`
+#include <fcntl.h>  // `fcntl`
+#include <stdlib.h> // `std::aligned_malloc`
+#include <sys/types.h>
 
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
@@ -23,23 +45,23 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/ssl_cache.h>
 
-#include "ujrpc/ujrpc.h"
+#include "ucall/ucall.h"
 
 #include "helpers/log.hpp"
 #include "helpers/parse.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
 
-using namespace unum::ujrpc;
+using namespace unum::ucall;
 
 using time_clock_t = std::chrono::steady_clock;
 using time_point_t = std::chrono::time_point<time_clock_t>;
 
 static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
-struct ujrpc_ssl_context_t {
+struct ucall_ssl_context_t {
 
-    ~ujrpc_ssl_context_t() noexcept {
+    ~ucall_ssl_context_t() noexcept {
         mbedtls_x509_crt_free(&srvcert);
         mbedtls_pk_free(&pkey);
         mbedtls_ssl_free(&ssl);
@@ -109,7 +131,7 @@ struct engine_t {
     descriptor_t socket{};
 
     /// @brief Establishes an SSL connection if SSL is enabled, otherwise the `ssl_ctx` is unused and uninitialized.
-    ujrpc_ssl_context_t* ssl_ctx = nullptr;
+    ucall_ssl_context_t* ssl_ctx = nullptr;
 
     /// @brief The file descriptor of the stateful connection over TCP.
     descriptor_t connection{};
@@ -128,14 +150,14 @@ struct engine_t {
     time_point_t log_last_time{};
 };
 
-sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, ujrpc_str_t name, size_t name_len) noexcept {
+sj::simdjson_result<sjd::element> param_at(ucall_call_t call, ucall_str_t name, size_t name_len) noexcept {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
     name_len = string_length(name, name_len);
     return scratch.point_to_param({name, name_len});
 }
 
-sj::simdjson_result<sjd::element> param_at(ujrpc_call_t call, size_t position) noexcept {
+sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) noexcept {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
     return scratch.point_to_param(position);
@@ -157,7 +179,7 @@ void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
 
     if (res < 0) {
         if (errno == EMSGSIZE)
-            ujrpc_call_reply_error_out_of_memory(&engine);
+            ucall_call_reply_error_out_of_memory(&engine);
         return;
     }
     engine.stats.bytes_sent += idx;
@@ -168,7 +190,7 @@ void forward_call(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     auto callback_or_error = find_callback(engine.callbacks, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
-        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     named_callback_t call_data = std::get<named_callback_t>(callback_or_error);
     return call_data.callback(&engine, call_data.callback_tag);
@@ -183,7 +205,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
     std::string_view json_body = scratch.dynamic_packet;
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
     if (one_or_many.error() != sj::SUCCESS)
-        return ujrpc_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
+        return ucall_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
 
     // The major difference between batch and single-request paths is that
     // in the first case we need to keep a copy of the data somewhere,
@@ -214,7 +236,7 @@ void forward_call_or_calls(engine_t& engine) noexcept {
         res &= engine.buffer.append_n("]", 1);
 
         if (!res)
-            return ujrpc_call_reply_error_out_of_memory(&engine);
+            return ucall_call_reply_error_out_of_memory(&engine);
 
         if (scratch.is_http)
             set_http_content_length(engine.buffer.data(), engine.buffer.size() - http_header_size_k);
@@ -234,7 +256,7 @@ void forward_packet(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     auto json_or_error = split_body_headers(scratch.dynamic_packet);
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     auto request = std::get<parsed_request_t>(json_or_error);
     scratch.is_http = request.type.size();
@@ -244,13 +266,13 @@ void forward_packet(engine_t& engine) noexcept {
 
 int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = send(conn->fd, buf, len, 0);
+    ssize_t ret = send(conn->fd, reinterpret_cast<char const*>(buf), len, 0);
     return ret;
 }
 
 int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
     mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = recv(conn->fd, buf, len, 0);
+    ssize_t ret = recv(conn->fd, reinterpret_cast<char*>(buf), len, 0);
     return ret;
 }
 
@@ -269,7 +291,7 @@ int recv_all(engine_t& engine, char* buf, size_t len) {
     return idx;
 }
 
-void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
+void ucall_take_call(ucall_server_t server, uint16_t) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     scratch_space_t& scratch = engine.scratch;
 
@@ -327,13 +349,16 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
 
     auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
     if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ujrpc_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+        return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
     parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - buffer_ptr);
+    auto res = std::from_chars(request.content_length.data(),
+                               request.content_length.data() + request.content_length.size(), bytes_expected);
+    bytes_expected += (request.body.data() - buffer_ptr);
 
     if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
+#if !defined(UCALL_IS_WINDOWS)
         if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
+#endif
             bytes_expected = bytes_received; // TODO what?
 
     // Either process it in the statically allocated memory,
@@ -350,11 +375,15 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     } else {
         sjd::parser parser;
         if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS)
-            return ujrpc_call_reply_error_out_of_memory(&engine);
+            return ucall_call_reply_error_out_of_memory(&engine);
 
+#if defined(UCALL_IS_WINDOWS)
+        buffer_ptr = (char*)_aligned_malloc(round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING), align_k);
+#else
         buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
+#endif
         if (!buffer_ptr)
-            return ujrpc_call_reply_error_out_of_memory(&engine);
+            return ucall_call_reply_error_out_of_memory(&engine);
 
         memcpy(buffer_ptr, &engine.packet_buffer[0], bytes_received);
 
@@ -364,7 +393,11 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
         engine.stats.bytes_received += bytes_received;
         engine.stats.packets_received++;
         forward_packet(engine);
+#if defined(UCALL_IS_WINDOWS)
+        _aligned_free(buffer_ptr);
+#else
         std::free(buffer_ptr);
+#endif
         buffer_ptr = nullptr;
     }
 
@@ -382,22 +415,22 @@ void ujrpc_take_call(ujrpc_server_t server, uint16_t) {
     close(connection_fd);
 }
 
-void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
+void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
     // Simple sanity check
     if (!server_out || !config_inout)
         return;
 
     // Retrieve configs, if present
-    ujrpc_config_t& config = *config_inout;
+    ucall_config_t& config = *config_inout;
     if (!config.port)
         config.port = 8545u;
     if (!config.queue_depth)
         config.queue_depth = 128u;
     if (!config.max_callbacks)
         config.max_callbacks = 128u;
-    if (!config.interface)
-        config.interface = "0.0.0.0";
+    if (!config.hostname)
+        config.hostname = "0.0.0.0";
     if (config.use_ssl &&
         !(config.ssl_private_key_path || config.ssl_certificates_paths || config.ssl_certificates_count))
         return;
@@ -414,13 +447,13 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     engine_t* server_ptr = nullptr;
     array_gt<char> buffer;
     array_gt<named_callback_t> embedded_callbacks;
-    ujrpc_ssl_context_t* ssl_context = nullptr;
+    ucall_ssl_context_t* ssl_context = nullptr;
     sjd::parser parser;
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address;
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(config.interface);
+    address.sin_addr.s_addr = inet_addr(config.hostname);
     address.sin_port = htons(config.port);
 
     // Try allocating all the necessary memory.
@@ -435,15 +468,15 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     if (socket_descriptor < 0)
         goto cleanup;
     // Optionally configure the socket, but don't always expect it to succeed.
-    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &socket_options,
-                   sizeof(socket_options)) == -1)
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
         errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
     if (config.use_ssl) {
-        ssl_context = new ujrpc_ssl_context_t();
+        ssl_context = new ucall_ssl_context_t();
         if (ssl_context->init(config.ssl_private_key_path, config.ssl_certificates_paths,
                               config.ssl_certificates_count) != 0)
             goto cleanup;
@@ -461,7 +494,7 @@ void ujrpc_init(ujrpc_config_t* config_inout, ujrpc_server_t* server_out) {
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     server_ptr->log_last_time = time_clock_t::now();
     server_ptr->ssl_ctx = ssl_context;
-    *server_out = (ujrpc_server_t)server_ptr;
+    *server_out = (ucall_server_t)server_ptr;
     return;
 
 cleanup:
@@ -473,19 +506,19 @@ cleanup:
     delete ssl_context;
 }
 
-void ujrpc_add_procedure(ujrpc_server_t server, ujrpc_str_t name, ujrpc_callback_t callback,
-                         ujrpc_callback_tag_t callback_tag) {
+void ucall_add_procedure(ucall_server_t server, ucall_str_t name, ucall_callback_t callback,
+                         ucall_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
     if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
         engine.callbacks.push_back_reserved({name, callback, callback_tag});
 }
 
-void ujrpc_take_calls(ujrpc_server_t server, uint16_t) {
+void ucall_take_calls(ucall_server_t server, uint16_t) {
     while (true)
-        ujrpc_take_call(server, 0);
+        ucall_take_call(server, 0);
 }
 
-void ujrpc_free(ujrpc_server_t server) {
+void ucall_free(ucall_server_t server) {
     if (!server)
         return;
 
@@ -544,7 +577,7 @@ bool fill_with_error(array_gt<char>& buffer, std::string_view request_id, std::s
     return res;
 }
 
-void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_len) {
+void ucall_call_reply_content(ucall_call_t call, ucall_str_t body, size_t body_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
     // No response is needed for "id"-less notifications.
@@ -559,14 +592,14 @@ void ujrpc_call_reply_content(ujrpc_call_t call, ujrpc_str_t body, size_t body_l
                               std::string_view(body, body_len), scratch.is_http))
             send_message(engine, engine.buffer);
         else
-            return ujrpc_call_reply_error_out_of_memory(call);
+            return ucall_call_reply_error_out_of_memory(call);
 
     else if (!fill_with_content(engine.buffer, scratch.dynamic_id, //
                                 std::string_view(body, body_len), false, true))
-        return ujrpc_call_reply_error_out_of_memory(call);
+        return ucall_call_reply_error_out_of_memory(call);
 }
 
-void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, size_t note_len) {
+void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, size_t note_len) {
     engine_t& engine = *reinterpret_cast<engine_t*>(call);
     scratch_space_t& scratch = engine.scratch;
     // No response is needed for "id"-less notifications.
@@ -579,7 +612,7 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
     std::to_chars_result res = std::to_chars(code, code + max_integer_length_k, code_int);
     auto code_len = res.ptr - code;
     if (res.ec != std::error_code())
-        return ujrpc_call_reply_error_unknown(call);
+        return ucall_call_reply_error_unknown(call);
 
     // In case of a single request - immediately push into the socket.
     if (!scratch.is_batch)
@@ -587,27 +620,27 @@ void ujrpc_call_reply_error(ujrpc_call_t call, int code_int, ujrpc_str_t note, s
                             std::string_view(code, code_len), std::string_view(note, note_len), scratch.is_http))
             send_message(engine, engine.buffer);
         else
-            return ujrpc_call_reply_error_out_of_memory(call);
+            return ucall_call_reply_error_out_of_memory(call);
 
     else if (!fill_with_error(engine.buffer, scratch.dynamic_id, //
                               std::string_view(code, code_len),  //
                               std::string_view(note, note_len), false, true))
-        return ujrpc_call_reply_error_out_of_memory(call);
+        return ucall_call_reply_error_out_of_memory(call);
 }
 
-void ujrpc_call_reply_error_invalid_params(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32602, "Invalid method param(s).", 24);
+void ucall_call_reply_error_invalid_params(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32602, "Invalid method param(s).", 24);
 }
 
-void ujrpc_call_reply_error_unknown(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32603, "Unknown error.", 14);
+void ucall_call_reply_error_unknown(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32603, "Unknown error.", 14);
 }
 
-void ujrpc_call_reply_error_out_of_memory(ujrpc_call_t call) {
-    return ujrpc_call_reply_error(call, -32000, "Out of memory.", 14);
+void ucall_call_reply_error_out_of_memory(ucall_call_t call) {
+    return ucall_call_reply_error(call, -32000, "Out of memory.", 14);
 }
 
-bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, bool* result_ptr) {
+bool ucall_param_named_bool(ucall_call_t call, ucall_str_t name, size_t name_len, bool* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_bool()) {
         *result_ptr = value.get_bool().value_unsafe();
         return true;
@@ -615,7 +648,7 @@ bool ujrpc_param_named_bool(ujrpc_call_t call, ujrpc_str_t name, size_t name_len
         return false;
 }
 
-bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, int64_t* result_ptr) {
+bool ucall_param_named_i64(ucall_call_t call, ucall_str_t name, size_t name_len, int64_t* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
@@ -623,7 +656,7 @@ bool ujrpc_param_named_i64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, double* result_ptr) {
+bool ucall_param_named_f64(ucall_call_t call, ucall_str_t name, size_t name_len, double* result_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
@@ -631,7 +664,7 @@ bool ujrpc_param_named_f64(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len, ujrpc_str_t* result_ptr,
+bool ucall_param_named_str(ucall_call_t call, ucall_str_t name, size_t name_len, ucall_str_t* result_ptr,
                            size_t* result_len_ptr) {
     if (auto value = param_at(call, name, name_len); value.is_string()) {
         *result_ptr = value.get_string().value_unsafe().data();
@@ -641,7 +674,7 @@ bool ujrpc_param_named_str(ujrpc_call_t call, ujrpc_str_t name, size_t name_len,
         return false;
 }
 
-bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* result_ptr) {
+bool ucall_param_positional_bool(ucall_call_t call, size_t position, bool* result_ptr) {
     if (auto value = param_at(call, position); value.is_bool()) {
         *result_ptr = value.get_bool().value_unsafe();
         return true;
@@ -649,7 +682,7 @@ bool ujrpc_param_positional_bool(ujrpc_call_t call, size_t position, bool* resul
         return false;
 }
 
-bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* result_ptr) {
+bool ucall_param_positional_i64(ucall_call_t call, size_t position, int64_t* result_ptr) {
     if (auto value = param_at(call, position); value.is_int64()) {
         *result_ptr = value.get_int64().value_unsafe();
         return true;
@@ -657,7 +690,7 @@ bool ujrpc_param_positional_i64(ujrpc_call_t call, size_t position, int64_t* res
         return false;
 }
 
-bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* result_ptr) {
+bool ucall_param_positional_f64(ucall_call_t call, size_t position, double* result_ptr) {
     if (auto value = param_at(call, position); value.is_double()) {
         *result_ptr = value.get_double().value_unsafe();
         return true;
@@ -665,7 +698,7 @@ bool ujrpc_param_positional_f64(ujrpc_call_t call, size_t position, double* resu
         return false;
 }
 
-bool ujrpc_param_positional_str(ujrpc_call_t call, size_t position, ujrpc_str_t* result_ptr, size_t* result_len_ptr) {
+bool ucall_param_positional_str(ucall_call_t call, size_t position, ucall_str_t* result_ptr, size_t* result_len_ptr) {
     if (auto value = param_at(call, position); value.is_string()) {
         *result_ptr = value.get_string().value_unsafe().data();
         *result_len_ptr = value.get_string_length().value_unsafe();

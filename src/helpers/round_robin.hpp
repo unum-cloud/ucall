@@ -1,7 +1,7 @@
 #pragma once
 #include <memory> // `std::malloc`
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 /**
  * @brief Round-Robin construct for reusable connection states.
@@ -69,4 +69,4 @@ template <typename element_at> class round_robin_gt {
     inline std::size_t capacity() const noexcept { return capacity_; }
 };
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

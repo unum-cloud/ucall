@@ -5,7 +5,7 @@ import argparse
 
 from PIL import Image
 
-from ujrpc.client import Client
+from ucall.client import Client
 
 
 def get_kwargs(buffer):
@@ -91,23 +91,24 @@ def cli():
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description='UJRPC Client CLI')
-    parser.add_argument('method', type=str, help='method name')
+    parser = argparse.ArgumentParser(description='UCall Client CLI')
+    parser.add_argument('method', type=str, help='Method name')
 
-    parser.add_argument('--uri', type=str,
-                        help='Server uri', default='localhost')
-    parser.add_argument('-p', '--port', type=int,
-                        help='Server port', default=8545)
+    parser.add_argument('--uri', type=str, default='localhost',
+                        help='Server URI')
+    parser.add_argument('-p', '--port', type=int, default=8545,
+                        help='Server port')
 
     parser.add_argument('kwargs', nargs='*', help='KEY[:TYPE]=VALUE arguments')
-    parser.add_argument('-f', '--file', nargs='*', help='Binary Files')
-    parser.add_argument('-i', '--image', nargs='*', help='Image Files')
+    parser.add_argument('-f', '--file', nargs='*', help='Binary files')
+    parser.add_argument('-i', '--image', nargs='*', help='Image files')
 
     parser.add_argument('--positional', nargs='*',
                         help='Switch to positional arguments VALUE[:TYPE]')
 
-    parser.add_argument('--format', type=str, choices=[
-                        'json', 'bytes', 'numpy', 'image', 'raw'], help='How to parse response', default='raw')
+    parser.add_argument('--format', type=str,
+                        choices=['json', 'bytes', 'numpy', 'image', 'raw'], default='raw',
+                        help='How to parse and format the response')
     return parser
 
 

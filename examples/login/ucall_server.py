@@ -1,6 +1,6 @@
 import random
 
-from ujrpc.posix import Server
+from ucall.posix import Server
 
 server = Server(
     port=8545,

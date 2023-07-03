@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Unum · UJRPC'
+project = 'Unum · UCall'
 copyright = '2023, Unum'
 author = 'Unum'
 release = open('../VERSION', 'r').read().strip()
@@ -43,5 +43,5 @@ html_css_files = ['custom.css']
 html_js_files = ['custom.js']
 
 
-breathe_projects = {'UJRPC': '../build/xml'}
-breathe_default_project = 'UJRPC'
+breathe_projects = {'UCall': '../build/xml'}
+breathe_default_project = 'UCall'

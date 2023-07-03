@@ -4,7 +4,7 @@
  * @date 2023-01-30
  * @copyright Copyright (c) 2023
  *
- * @brief Pure CPython bindings for UJRPC.
+ * @brief Pure CPython bindings for UCall.
  *
  * @see Reading Materials
  * https://pythoncapi.readthedocs.io/type_object.html
@@ -20,13 +20,13 @@
 #include <turbob64.h>
 
 #include "helpers/py_to_json.h"
-#include "ujrpc/ujrpc.h"
+#include "ucall/ucall.h"
 
 #define stringify_value_m(a) stringify_m(a)
 #define stringify_m(a) #a
 #define concat_m(A, B) A##B
 #define macro_concat_m(A, B) concat_m(A, B)
-#define pyinit_f_m macro_concat_m(PyInit_, UKV_PYTHON_MODULE_NAME)
+#define pyinit_f_m macro_concat_m(PyInit_, UCALL_PYTHON_MODULE_NAME)
 
 #define get_attr_safe_m(name, obj, attr)                                                                               \
     PyObject* name = PyObject_GetAttrString(obj, attr);                                                                \
@@ -58,9 +58,9 @@ typedef struct {
 } py_wrapper_t;
 
 typedef struct {
-    PyObject_HEAD;
-    ujrpc_config_t config;
-    ujrpc_server_t server;
+    PyObject_HEAD
+    ucall_config_t config;
+    ucall_server_t server;
     size_t count_threads;
     py_wrapper_t* wrappers;
     size_t wrapper_capacity;
@@ -194,7 +194,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     return 0;
 }
 
-static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
+static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
     py_wrapper_t* wrap = (py_wrapper_t*)(callback_tag);
     PyObject* args = PyTuple_New(wrap->params_cnt);
 
@@ -205,59 +205,59 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
         bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
         bool got_named = false;
         Py_ssize_t name_len = wrap->u_params[i].name_len;
-        ujrpc_str_t name = wrap->u_params[i].name;
+        ucall_str_t name = wrap->u_params[i].name;
 
         if (PyType_IsSubtype(type, &PyBool_Type)) {
             bool res;
             if (may_have_name && name_len > 0)
-                got_named = ujrpc_param_named_bool(call, name, name_len, &res);
+                got_named = ucall_param_named_bool(call, name, name_len, &res);
 
             if ((may_have_pos && !got_named) && //
-                !ujrpc_param_positional_bool(call, i, &res))
-                return ujrpc_call_reply_error_invalid_params(call);
+                !ucall_param_positional_bool(call, i, &res))
+                return ucall_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
             Py_ssize_t res;
             if (may_have_name && name_len > 0)
-                got_named = ujrpc_param_named_i64(call, name, name_len, &res);
+                got_named = ucall_param_named_i64(call, name, name_len, &res);
 
             if ((may_have_pos && !got_named) && //
-                !ujrpc_param_positional_i64(call, i, &res))
-                return ujrpc_call_reply_error_invalid_params(call);
+                !ucall_param_positional_i64(call, i, &res))
+                return ucall_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
             double res;
             if (may_have_name && name_len > 0)
-                got_named = ujrpc_param_named_f64(call, name, name_len, &res);
+                got_named = ucall_param_named_f64(call, name, name_len, &res);
 
             if ((may_have_pos && !got_named) && //
-                !ujrpc_param_positional_f64(call, i, &res))
-                return ujrpc_call_reply_error_invalid_params(call);
+                !ucall_param_positional_f64(call, i, &res))
+                return ucall_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyFloat_FromDouble(res));
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
-            ujrpc_str_t res;
+            ucall_str_t res;
             size_t len;
             if (may_have_name && name_len > 0)
-                got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
+                got_named = ucall_param_named_str(call, name, name_len, &res, &len);
 
             if ((may_have_pos && !got_named) && //
-                !ujrpc_param_positional_str(call, i, &res, &len))
-                return ujrpc_call_reply_error_invalid_params(call);
+                !ucall_param_positional_str(call, i, &res, &len))
+                return ucall_call_reply_error_invalid_params(call);
 
             PyTuple_SetItem(args, i, PyUnicode_FromStringAndSize(res, len));
         } else {
             // For non native type, assume binary.
-            ujrpc_str_t res;
+            ucall_str_t res;
             size_t len;
             if (may_have_name && name_len > 0)
-                got_named = ujrpc_param_named_str(call, name, name_len, &res, &len);
+                got_named = ucall_param_named_str(call, name, name_len, &res, &len);
 
             if ((may_have_pos && !got_named) && //
-                !ujrpc_param_positional_str(call, i, &res, &len))
-                return ujrpc_call_reply_error_invalid_params(call);
+                !ucall_param_positional_str(call, i, &res, &len))
+                return ucall_call_reply_error_invalid_params(call);
 
             len = tb64dec((unsigned char const*)res, len, (unsigned char*)res);
             PyTuple_SetItem(args, i, PyBytes_FromStringAndSize(res, len));
@@ -271,11 +271,11 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
         if (ptype != NULL) {
             PyObject* pvalue_str = PyObject_Str(pvalue);
             size_t sz = 0;
-            ujrpc_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
-            ujrpc_call_reply_error(call, 500, error_str, sz);
+            ucall_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
+            ucall_call_reply_error(call, 500, error_str, sz);
             Py_DECREF(pvalue_str);
         } else
-            ujrpc_call_reply_error_unknown(call);
+            ucall_call_reply_error_unknown(call);
         Py_XDECREF(ptype);
         Py_XDECREF(pvalue);
         Py_XDECREF(ptraceback);
@@ -285,20 +285,20 @@ static void wrapper(ujrpc_call_t call, ujrpc_callback_tag_t callback_tag) {
     size_t sz = calculate_size_as_str(response);
     char* parsed_response = (char*)(malloc(sz * sizeof(char)));
     if (!parsed_response)
-        return ujrpc_call_reply_error_out_of_memory(call);
+        return ucall_call_reply_error_out_of_memory(call);
     size_t len = 0;
     int res = to_string(response, &parsed_response[0], &len);
-    ujrpc_call_reply_content(call, &parsed_response[0], len);
+    ucall_call_reply_content(call, &parsed_response[0], len);
 }
 
 static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     // Take a function object, introspect its arguments,
     // register them inside of a higher-level function,
-    // which on every call requests them via `ujrpc_param_named_...`
-    // from the `ujrpc_call_t` context, then wraps them into native
+    // which on every call requests them via `ucall_param_named_...`
+    // from the `ucall_call_t` context, then wraps them into native
     // Python objects and passes to the original function.
     // The result of that function call must then be returned via
-    // the `ujrpc_call_send_content` call.
+    // the `ucall_call_send_content` call.
     py_wrapper_t wrap;
     if (!PyArg_ParseTuple(args, "O", &wrap.callable) || !PyCallable_Check(wrap.callable)) {
         PyErr_SetString(PyExc_TypeError, "Need a callable object!");
@@ -315,7 +315,7 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
 
     self->wrappers[self->count_added] = wrap;
 
-    ujrpc_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
+    ucall_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
                         &self->wrappers[self->count_added]);
 
     ++self->count_added;
@@ -330,14 +330,14 @@ static bool pycheck_take_call(py_server_t* self, uint16_t thread_idx) {
         PyGILState_Release(gstate);
         return false;
     }
-    ujrpc_take_call(self->server, thread_idx);
+    ucall_take_call(self->server, thread_idx);
     return true;
 }
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
     Py_ssize_t max_cycles = -1;
     double max_seconds = -1;
-    // If none are provided, it is wiser to use the `ujrpc_take_calls`,
+    // If none are provided, it is wiser to use the `ucall_take_calls`,
     // as it has a more efficient busy-waiting loop implementation.
     if (!PyArg_ParseTuple(args, "|nd", &max_cycles, &max_seconds)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
@@ -403,7 +403,7 @@ static PyMappingMethods server_mapping_methods = {
 static void server_dealloc(py_server_t* self) {
     free(self->wrappers);
     free(self->config.ssl_certificates_paths);
-    ujrpc_free(self->server);
+    ucall_free(self->server);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -414,10 +414,10 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     static const char const* keywords_list[] = {
-        "interface",     "port",  "queue_depth", "max_callbacks", "max_threads",
+        "hostname",      "port",  "queue_depth", "max_callbacks", "max_threads",
         "count_threads", "quiet", "ssl_pk",      "ssl_certs",     NULL,
     };
-    self->config.interface = "0.0.0.0";
+    self->config.hostname = "0.0.0.0";
     self->config.port = 8545;
     self->config.queue_depth = 4096;
     self->config.max_callbacks = UINT16_MAX;
@@ -430,7 +430,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     PyObject* certs_path = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnpsO", (char**)keywords_list, //
-                                     &self->config.interface, &self->config.port, &self->config.queue_depth,
+                                     &self->config.hostname, &self->config.port, &self->config.queue_depth,
                                      &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
                                      &self->quiet, &self->config.ssl_private_key_path, &certs_path))
         return -1;
@@ -439,7 +439,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
         self->config.use_ssl = true;
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
         self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
-        for (Py_ssize_t i = 0; i < self->config.ssl_certificates_count; i++)
+        for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
             self->config.ssl_certificates_paths[i] = PyUnicode_AsUTF8AndSize(PySequence_GetItem(certs_path, i), NULL);
     }
 
@@ -447,14 +447,14 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
 
     // Initialize the server
-    ujrpc_init(&self->config, &self->server);
+    ucall_init(&self->config, &self->server);
     if (self->server == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "Server Initialization");
         return -1;
     }
 
     if (!self->quiet) {
-        printf("Initialized server: %s:%i\n", self->config.interface, self->config.port);
+        printf("Initialized server: %s:%i\n", self->config.hostname, self->config.port);
         printf("- %i threads\n", self->config.max_threads);
         printf("- %u max concurrent connections\n", self->config.max_concurrent_connections);
     }
@@ -462,8 +462,8 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 }
 
 // Order: https://docs.python.org/3/c-api/typeobj.html#quick-reference
-static PyTypeObject ujrpc_type = {
-    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ujrpc." stringify_value_m(UKV_PYTHON_MODULE_NAME) ".Server",
+static PyTypeObject ucall_type = {
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME) ".Server",
     .tp_basicsize = sizeof(py_server_t),
     .tp_itemsize = 0,
     .tp_dealloc = (destructor)server_dealloc,
@@ -482,22 +482,22 @@ static PyTypeObject ujrpc_type = {
 
 static PyModuleDef server_module = {
     PyModuleDef_HEAD_INIT,
-    .m_name = "ujrpc." stringify_value_m(UKV_PYTHON_MODULE_NAME),
+    .m_name = "ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME),
     .m_doc = "Uninterrupted JSON Remote Procedure Calls library.",
     .m_size = -1,
 };
 
 PyMODINIT_FUNC pyinit_f_m(void) {
-    if (PyType_Ready(&ujrpc_type) < 0)
+    if (PyType_Ready(&ucall_type) < 0)
         return NULL;
 
     PyObject* m = PyModule_Create(&server_module);
     if (!m)
         return NULL;
 
-    Py_INCREF(&ujrpc_type);
-    if (PyModule_AddObject(m, "Server", (PyObject*)&ujrpc_type) < 0) {
-        Py_DECREF(&ujrpc_type);
+    Py_INCREF(&ucall_type);
+    if (PyModule_AddObject(m, "Server", (PyObject*)&ucall_type) < 0) {
+        Py_DECREF(&ucall_type);
         Py_DECREF(m);
         return NULL;
     }
@@ -513,7 +513,7 @@ int main(int argc, char* argv[]) {
     }
 
     /* Add a built-in module, before Py_Initialize */
-    if (PyImport_AppendInittab("ujrpc." stringify_value_m(UKV_PYTHON_MODULE_NAME), pyinit_f_m) == -1) {
+    if (PyImport_AppendInittab("ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME), pyinit_f_m) == -1) {
         fprintf(stderr, "Error: could not extend in-built modules table\n");
         exit(1);
     }
@@ -528,10 +528,10 @@ int main(int argc, char* argv[]) {
     /* Optionally import the module; alternatively,
        import can be deferred until the embedded script
        imports it. */
-    PyObject* pmodule = PyImport_ImportModule("ujrpc." stringify_value_m(UKV_PYTHON_MODULE_NAME));
+    PyObject* pmodule = PyImport_ImportModule("ucall." stringify_value_m(UCALL_PYTHON_MODULE_NAME));
     if (!pmodule) {
         PyErr_Print();
-        fprintf(stderr, "Error: could not import module 'ujrpc'\n");
+        fprintf(stderr, "Error: could not import module 'ucall'\n");
     }
     PyMem_RawFree(program);
     return 0;

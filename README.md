@@ -1,6 +1,6 @@
-<h1 align="center">Uninterrupted JSON RPC</h1>
+<h1 align="center">UCall</h1>
 <h3 align="center">
-Remote Procedure Calls<br/>
+JSON Remote Procedure Calls Library<br/>
 Up to 100x Faster than FastAPI<br/>
 </h3>
 <br/>
@@ -14,7 +14,7 @@ Up to 100x Faster than FastAPI<br/>
 &nbsp;&nbsp;&nbsp;
 <a href="https://unum.cloud/post"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg" alt="Blog"></a>
 &nbsp;&nbsp;&nbsp;
-<a href="https://github.com/unum-cloud/ujrpc"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg" alt="GitHub"></a>
+<a href="https://github.com/unum-cloud/ucall"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg" alt="GitHub"></a>
 </p>
 
 ---
@@ -25,7 +25,7 @@ We aim to be equally or even simpler to use.
 
 <table width="100%">
 <tr>
-<th width="50%">FastAPI</th><th width="50%">UJRPC</th>
+<th width="50%">FastAPI</th><th width="50%">UCall</th>
 </tr>
 <tr>
 <td>
@@ -38,7 +38,7 @@ pip install fastapi uvicorn
 <td>
 
 ```sh
-pip install ujrpc
+pip install ucall
 ```
 
 </td>
@@ -63,8 +63,8 @@ uvicorn.run(...)
 <td>
 
 ```python
-from ujrpc.posix import Server
-# from ujrpc.uring import Server on 5.19+
+from ucall.posix import Server
+# from ucall.uring import Server on 5.19+
 
 server = Server()
 
@@ -81,7 +81,7 @@ server.run()
 
 It takes over a millisecond to handle a trivial FastAPI call on a recent 8-core CPU.
 In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
-How does UJRPC compare to FastAPI and gRPC?
+How does UCall compare to FastAPI and gRPC?
 
 | Setup                   |   🔁   | Server | Latency w 1 client | Throughput w 32 clients |
 | :---------------------- | :---: | :----: | -----------------: | ----------------------: |
@@ -89,9 +89,9 @@ How does UJRPC compare to FastAPI and gRPC?
 | Fast API over WebSocket |   ✅   |   🐍    |              86 μs |            11'356 rps ¹ |
 | gRPC ²                  |   ✅   |   🐍    |             164 μs |               9'849 rps |
 |                         |       |        |                    |                         |
-| UJRPC with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
-| UJRPC with io_uring     |   ✅   |   🐍    |             40 μs |            210'000 rps |
-| UJRPC with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
+| UCall with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
+| UCall with io_uring     |   ✅   |   🐍    |              40 μs |             210'000 rps |
+| UCall with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
 <details>
   <summary>Table legend</summary>
@@ -111,10 +111,10 @@ These specific numbers were obtained on `c7g.metal` beefy instances with Gravito
 
 </details>
 
-## How is that possible?!
+## How is that possible?
 
 How can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?
-**UJRPC stands on the shoulders of Giants**:
+**UCall stands on the shoulders of Giants**:
 
 - `io_uring` for interrupt-less IO.
   - `io_uring_prep_read_fixed` on 5.1+.
@@ -139,11 +139,11 @@ def echo(data: bytes):
 
 ## More Functionality than FastAPI
 
-FastAPI supports native type, while UJRPC supports `numpy.ndarray`, `PIL.Image` and other custom types.
+FastAPI supports native type, while UCall supports `numpy.ndarray`, `PIL.Image` and other custom types.
 This comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).
 
 ```python
-from ujrpc.rich_posix import Server
+from ucall.server import Server
 import ufrom
 
 server = Server()
@@ -161,7 +161,7 @@ def vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:
 We also have our own optional `Client` class that helps with those custom types.
 
 ```python
-from ujrpc.client import Client
+from ucall.client import Client
 
 client = Client()
 # Explicit JSON-RPC call:
@@ -180,26 +180,26 @@ response = client.vectorize(description=description, image=image)
 
 ## CLI like [cURL](https://curl.se/docs/manpage.html)
 
-Aside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ujrpc`.
+Aside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ucall`.
 It allow you to call a remote server, upload files, with direct support for images and NumPy arrays.
 Translating previous example into a Bash script, to call the server on the same machine:
 
 ```sh
-ujrpc vectorize description='Product description' -i image=./local/path.png
+ucall vectorize description='Product description' -i image=./local/path.png
 ```
 
 To address a remote server:
 
 ```sh
-ujrpc vectorize description='Product description' -i image=./local/path.png --uri 0.0.0.0 -p 8545
+ucall vectorize description='Product description' -i image=./local/path.png --uri 0.0.0.0 -p 8545
 ```
 
-To print the docs, use `ujrpc -h`:
+To print the docs, use `ucall -h`:
 
 ```txt
-usage: ujrpc [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [--positional [POSITIONAL ...]] method [kwargs ...]
+usage: ucall [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [--positional [POSITIONAL ...]] method [kwargs ...]
 
-UJRPC Client CLI
+UCall Client CLI
 
 positional arguments:
   method                method name
@@ -220,9 +220,9 @@ options:
 You can also explicitly annotate types, to distinguish integers, floats, and strings, to avoid ambiguity.
 
 ```
-ujrpc auth id=256
-ujrpc auth id:int=256
-ujrpc auth id:str=256
+ucall auth id=256
+ucall auth id:int=256
+ucall auth id:str=256
 ```
 
 ## Free Tier Throughput
@@ -238,10 +238,10 @@ This library is so fast, that it doesn't need more than 1 core, so you can run a
 | Fast API over WebSocket |   ✅   |   🐍    |    1    |  1'504 rps |   3'051 rps |
 | gRPC                    |   ✅   |   🐍    |    1    |  1'169 rps |   1'974 rps |
 |                         |       |        |         |            |             |
-| UJRPC with POSIX        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
-| UJRPC with io_uring     |   ✅   |   C    |    1    |          - |   5'864 rps |
-| UJRPC with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
-| UJRPC with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
+| UCall with POSIX        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
+| UCall with io_uring     |   ✅   |   C    |    1    |          - |   5'864 rps |
+| UCall with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
+| UCall with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
 In this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.
 If you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].
@@ -251,7 +251,7 @@ If you want to reproduce those benchmarks, check out the [`sum` examples on GitH
 For Python:
 
 ```sh
-pip install ujrpc
+pip install ucall
 ```
 
 For CMake projects:
@@ -259,43 +259,43 @@ For CMake projects:
 ```cmake
 include(FetchContent)
 FetchContent_Declare(
-    ujrpc
-    GIT_REPOSITORY https://github.com/unum-cloud/ujrpc
+    ucall
+    GIT_REPOSITORY https://github.com/unum-cloud/ucall
     GIT_SHALLOW TRUE
 )
-FetchContent_MakeAvailable(ujrpc)
-include_directories(${ujrpc_SOURCE_DIR}/include)
+FetchContent_MakeAvailable(ucall)
+include_directories(${ucall_SOURCE_DIR}/include)
 ```
 
 The C usage example is mouthful compared to Python.
 We wanted to make it as lightweight as possible and to allow optional arguments without dynamic allocations and named lookups.
-So unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ujrpc_param_named_i64()`, and its siblings.
+So unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ucall_param_named_i64()`, and its siblings.
 
 ```c
 #include <cstdio.h>
-#include <ujrpc/ujrpc.h>
+#include <ucall/ucall.h>
 
-static void sum(ujrpc_call_t call, ujrpc_callback_tag_t) {
+static void sum(ucall_call_t call, ucall_callback_tag_t) {
     int64_t a{}, b{};
     char printed_sum[256]{};
-    bool got_a = ujrpc_param_named_i64(call, "a", 0, &a);
-    bool got_b = ujrpc_param_named_i64(call, "b", 0, &b);
+    bool got_a = ucall_param_named_i64(call, "a", 0, &a);
+    bool got_b = ucall_param_named_i64(call, "b", 0, &b);
     if (!got_a || !got_b)
-        return ujrpc_call_reply_error_invalid_params(call);
+        return ucall_call_reply_error_invalid_params(call);
 
     int len = snprintf(printed_sum, 256, "%ll", a + b);
-    ujrpc_call_reply_content(call, printed_sum, len);
+    ucall_call_reply_content(call, printed_sum, len);
 }
 
 int main(int argc, char** argv) {
 
-    ujrpc_server_t server{};
-    ujrpc_config_t config{};
+    ucall_server_t server{};
+    ucall_config_t config{};
 
-    ujrpc_init(&config, &server);
-    ujrpc_add_procedure(server, "sum", &sum, NULL);
-    ujrpc_take_calls(server, 0);
-    ujrpc_free(server);
+    ucall_init(&config, &server);
+    ucall_add_procedure(server, "sum", &sum, NULL);
+    ucall_take_calls(server, 0);
+    ucall_free(server);
     return 0;
 }
 ```
@@ -325,5 +325,5 @@ int main(int argc, char** argv) {
 [simdjson]: https://github.com/simdjson/simdjson
 [base64]: https://github.com/powturbo/Turbo-Base64
 [picohttpparser]: https://github.com/h2o/picohttpparser
-[sum-examples]: https://github.com/unum-cloud/ujrpc/tree/dev/examples/sum
+[sum-examples]: https://github.com/unum-cloud/ucall/tree/dev/examples/sum
 [ukv]: https://github.com/unum-cloud/ukv

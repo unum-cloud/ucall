@@ -1,5 +1,9 @@
 #pragma once
+
+#if defined(__linux__) // iovec required only for uring
+#define UCALL_IS_LINUX
 #include <sys/uio.h> // `struct iovec`
+#endif
 
 #include <numeric>     // `std::iota`
 #include <string_view> // `std::string_view`
@@ -12,9 +16,9 @@
 #endif
 #endif
 
-#include "ujrpc/ujrpc.h" // `ujrpc_callback_t`
+#include "ucall/ucall.h" // `ucall_callback_t`
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
@@ -39,9 +43,9 @@ enum descriptor_t : int {};
 static constexpr descriptor_t bad_descriptor_k{-1};
 
 struct named_callback_t {
-    ujrpc_str_t name{};
-    ujrpc_callback_t callback{};
-    ujrpc_callback_tag_t callback_tag{};
+    ucall_str_t name{};
+    ucall_callback_t callback{};
+    ucall_callback_tag_t callback_tag{};
 };
 
 template <typename element_at> class span_gt {
@@ -238,4 +242,4 @@ std::size_t string_length(char const* c_str, std::size_t optional_length) noexce
     return c_str && !optional_length ? std::strlen(c_str) : optional_length;
 }
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

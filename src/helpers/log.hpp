@@ -2,7 +2,7 @@
 #include <atomic>
 #include <stdio.h> // `std::snprintf`
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 struct number_and_suffix_t {
     float number{};
@@ -83,4 +83,4 @@ struct stats_t {
     }
 };
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

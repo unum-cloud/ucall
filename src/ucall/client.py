@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 
-def _recvall(sock, buffer_size=4096):
+def _receive_all(sock, buffer_size=4096):
     header = sock.recv(4)
     body = None
     content_len = -1
@@ -124,7 +124,7 @@ class Client:
         self.port = port
         self.use_http = use_http
         self.sock = None
-        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ujrpc\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
+        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
 
     def __getattr__(self, name):
         def call(*args, **kwargs):
@@ -174,7 +174,7 @@ class Client:
         self.sock.send(request.encode())
 
     def _recv(self) -> Response:
-        response_bytes = _recvall(self.sock)
+        response_bytes = _receive_all(self.sock)
         response = json.loads(response_bytes)
         return Response(response)
 
@@ -184,8 +184,10 @@ class Client:
 
 
 class ClientTLS(Client):
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8545,
-                 ssl_context: ssl.SSLContext = None, allow_self_signed=False, enable_session_resumption=True) -> None:
+    def __init__(
+            self, uri: str = '127.0.0.1', port: int = 8545, ssl_context: ssl.SSLContext = None,
+            allow_self_signed: bool = False, enable_session_resumption: bool = True) -> None:
+
         super().__init__(uri, port, use_http=True)
 
         if ssl_context is None:
@@ -202,7 +204,8 @@ class ClientTLS(Client):
         if not self._socket_is_closed():
             return
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock = self.ssl_context.wrap_socket(self.sock, server_hostname=self.uri, session=self.session)
+        self.sock = self.ssl_context.wrap_socket(
+            self.sock, server_hostname=self.uri, session=self.session)
         self.sock.connect((self.uri, self.port))
         if self.session_resumption:
             self.session = self.sock.session

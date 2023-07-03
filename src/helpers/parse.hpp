@@ -6,7 +6,7 @@
 
 #include "shared.hpp"
 
-namespace unum::ujrpc {
+namespace unum::ucall {
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
@@ -172,4 +172,4 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
     return req;
 }
 
-} // namespace unum::ujrpc
+} // namespace unum::ucall

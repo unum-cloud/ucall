@@ -4,18 +4,18 @@ Examples
 ==============================
 Login Server
 ==============================
-.. literalinclude:: ../../examples/login/ujrpc_server.cpp
+.. literalinclude:: ../../examples/login/ucall_server.cpp
    :language: cpp
 
 =====================
 PyTorch Server
 =====================
-.. literalinclude:: ../../examples/pytorch/ujrpc_server.cpp
+.. literalinclude:: ../../examples/pytorch/ucall_server.cpp
    :language: cpp
 
 ==============================
 Redis Server
 ==============================
-.. literalinclude:: ../../examples/redis/ujrpc_server.cpp
+.. literalinclude:: ../../examples/redis/ucall_server.cpp
    :language: cpp
 

@@ -3,7 +3,7 @@ import random
 import requests
 import numpy as np
 from PIL import Image
-from ujrpc.client import Client, ClientTLS
+from ucall.client import Client, ClientTLS
 from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
 
 

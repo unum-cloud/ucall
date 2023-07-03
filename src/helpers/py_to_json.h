@@ -145,7 +145,7 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
     return 0;
 }
 
-static int calculate_size_as_str(PyObject* obj) {
+static Py_ssize_t calculate_size_as_str(PyObject* obj) {
     if (obj == Py_None)
         return 4;
     else if (PyBool_Check(obj))

@@ -8,7 +8,7 @@ import string
 from typing import Optional, List
 
 import requests
-from ujrpc.client import Client
+from ucall.client import Client
 
 
 # Using such strings is much faster than JSON package

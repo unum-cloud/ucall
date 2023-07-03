@@ -4,7 +4,7 @@ API Reference
 =================
 Regular Server
 =================
-.. automodule:: ujrpc.posix
+.. automodule:: ucall.posix
     :members:
     :undoc-members:
 
@@ -13,6 +13,6 @@ Regular Server
 =================
 Rich Server
 =================
-.. automodule:: ujrpc.rich_posix
+.. automodule:: ucall.server
     :members:
     :undoc-members:

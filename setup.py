@@ -9,7 +9,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
 __version__ = open('VERSION', 'r').read().strip()
-__lib_name__ = 'ujrpc'
+__lib_name__ = 'ucall'
 
 
 this_directory = os.path.abspath(dirname(__file__))
@@ -58,6 +58,9 @@ class CMakeBuild(build_ext):
         # Set CMAKE_BUILD_PARALLEL_LEVEL to control the parallel build level
         # across all generators.
         build_args = []
+        if sys.platform.startswith('win32'):
+            build_args += ['--config', 'Release']
+
         if 'CMAKE_BUILD_PARALLEL_LEVEL' not in os.environ:
             # self.parallel is a Python 3 only way to set parallel jobs by hand
             # using -j in the build_ext call, not supported by pip or PyPA-build.
@@ -78,7 +81,7 @@ setup(
 
     author='Ashot Vardanian',
     author_email='info@unum.cloud',
-    url='https://github.com/unum-cloud/ujrpc',
+    url='https://github.com/unum-cloud/ucall',
     description='Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -113,22 +116,22 @@ setup(
         'Topic :: System :: Networking',
     ],
 
-    packages=['ujrpc'],
-    package_dir={'': 'src/'},
+    packages=['ucall'],
+    package_dir={'': 'src'},
     ext_modules=[
-        CMakeExtension('ujrpc.uring'),
-        CMakeExtension('ujrpc.posix'),
+        CMakeExtension('ucall.uring'),
+        CMakeExtension('ucall.posix'),
     ],
     cmdclass={
         'build_ext': CMakeBuild,
     },
     entry_points={
         'console_scripts': [
-            'ujrpc=ujrpc.cli:cli'
+            'ucall=ucall.cli:cli'
         ]
     },
     install_requires=[
-        'numpy>=1.16',
+        'numpy',
         'pillow'
     ],
     zip_safe=False,
