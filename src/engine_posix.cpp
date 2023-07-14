@@ -38,12 +38,11 @@
 #include <charconv> // `std::to_chars`
 #include <chrono>   // `std::chrono`
 
-#include "mbedtls/config.h"
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/net_sockets.h>
-#include <mbedtls/ssl.h>
-#include <mbedtls/ssl_cache.h>
+#include <openssl/engine.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <picotls.h>
+#include <picotls/openssl.h>
 
 #include "ucall/ucall.h"
 
@@ -61,68 +60,61 @@ static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
 struct ucall_ssl_context_t {
 
-    ~ucall_ssl_context_t() noexcept {
-        mbedtls_x509_crt_free(&srvcert);
-        mbedtls_pk_free(&pkey);
-        mbedtls_ssl_free(&ssl);
-        mbedtls_ssl_config_free(&conf);
-        mbedtls_ssl_cache_free(&cache);
-        mbedtls_ctr_drbg_free(&ctr_drbg);
-        mbedtls_entropy_free(&entropy);
-    }
+    constexpr ucall_ssl_context_t() noexcept
+        : certs{{nullptr}}, sign_certificate({{nullptr}}), verify_certificate({{nullptr}}), hand_props({{{nullptr}}}),
+          tls(nullptr), ssl({.random_bytes = ptls_openssl_random_bytes,
+                             .get_time = &ptls_get_time,
+                             .key_exchanges = ptls_openssl_key_exchanges,
+                             .cipher_suites = ptls_openssl_cipher_suites,
+                             .certificates = {certs, 0},
+                             .sign_certificate = &sign_certificate.super}){};
 
-    int init(const char* pk_path, const char** crts_path, size_t crts_cnt) {
-        mbedtls_ssl_init(&ssl);
-        mbedtls_ssl_config_init(&conf);
-        mbedtls_ssl_cache_init(&cache);
-        mbedtls_x509_crt_init(&srvcert);
-        mbedtls_pk_init(&pkey);
-        mbedtls_entropy_init(&entropy);
-        mbedtls_ctr_drbg_init(&ctr_drbg);
-        int ret = 0;
+    int init(const char* pk_path, const char** crts_path, size_t crts_cnt) noexcept {
+        FILE* fp;
+        X509* cert;
 
-        // Seed the RNG
-        if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0)
-            // TODO Use personalization string. Required or Optional ?
-            return ret;
+        // Read Certificates
+        for (size_t i = 0; i < crts_cnt; ++i) {
+            if ((fp = fopen(crts_path[i], "r")) == nullptr)
+                return -1;
 
-        // Load Private Key
-        if ((ret = mbedtls_pk_parse_keyfile(&pkey, pk_path, NULL, NULL, &ctr_drbg)) != 0)
-            // TODO Use Password. Required or Optional ?
-            return ret;
+            while ((cert = PEM_read_X509(fp, nullptr, nullptr, nullptr)) != nullptr) {
+                ptls_iovec_t* dst = ssl.certificates.list + ssl.certificates.count++;
+                dst->len = i2d_X509(cert, &dst->base);
+            }
 
-        // Load Certificates
-        for (size_t i = 0; i < crts_cnt; ++i)
-            if ((ret = mbedtls_x509_crt_parse_file(&srvcert, crts_path[i])) != 0)
-                // TODO Notify which certificate was invalid ?
-                return ret;
+            fclose(fp);
+        }
+        if (ptls_openssl_init_verify_certificate(&verify_certificate, nullptr) != 0)
+            return -1;
 
-        if ((ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
-                                               MBEDTLS_SSL_PRESET_DEFAULT)) != 0)
-            return ret;
+        if (ssl.certificates.count == 0)
+            return -1;
+        ssl.verify_certificate = &verify_certificate.super;
 
-        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+        if ((fp = fopen(pk_path, "r")) == nullptr)
+            return -1;
 
-        mbedtls_ssl_conf_session_cache(&conf, &cache, mbedtls_ssl_cache_get, mbedtls_ssl_cache_set);
-        mbedtls_ssl_conf_renegotiation(&conf, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
+        EVP_PKEY* pkey = PEM_read_PrivateKey(fp, nullptr, nullptr, nullptr);
+        fclose(fp);
 
-        mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
-        if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0)
-            return ret;
+        if (pkey == nullptr)
+            return -1;
 
-        if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0)
-            return ret;
+        int rv = ptls_openssl_init_sign_certificate(&sign_certificate, pkey);
+        EVP_PKEY_free(pkey);
+        if (rv)
+            return -1;
 
         return 0;
     }
 
-    mbedtls_ssl_context ssl{};
-    mbedtls_ssl_config conf{};
-    mbedtls_pk_context pkey{};
-    mbedtls_x509_crt srvcert{};
-    mbedtls_entropy_context entropy{};
-    mbedtls_ssl_cache_context cache{};
-    mbedtls_ctr_drbg_context ctr_drbg{};
+    ptls_iovec_t certs[16];
+    ptls_openssl_sign_certificate_t sign_certificate;
+    ptls_openssl_verify_certificate_t verify_certificate;
+    ptls_handshake_properties_t hand_props;
+    ptls_t* tls;
+    ptls_context_t ssl;
 };
 
 struct engine_t {
@@ -163,6 +155,31 @@ sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) n
     return scratch.point_to_param(position);
 }
 
+ssize_t send_all(int fd, uint8_t const* data, size_t len) {
+    ssize_t ret;
+    while (len != 0) {
+        while ((ret = send(fd, data, len, 0)) == -1 && errno == EINTR)
+            ;
+        if (ret <= 0)
+            return -1;
+        data += ret;
+        len -= ret;
+    }
+    return 0;
+}
+
+ssize_t send_ssl(engine_t& engine, char const* buf, size_t len) {
+    ptls_buffer_t encrypt_buf;
+    uint8_t sm_buf[ram_page_size_k];
+    ssize_t ret = -1;
+
+    ptls_buffer_init(&encrypt_buf, sm_buf, ram_page_size_k);
+    if (ptls_send(engine.ssl_ctx->tls, &encrypt_buf, buf, len) == 0)
+        ret = send_all(engine.connection, encrypt_buf.base, encrypt_buf.off);
+
+    ptls_buffer_dispose(&encrypt_buf);
+    return ret;
+}
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
     char const* buf = message.data();
     size_t const len = message.size();
@@ -170,9 +187,7 @@ void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
     long res = 0;
 
     if (engine.ssl_ctx)
-        while (idx < len && (res = mbedtls_ssl_write(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t const*>(buf + idx),
-                                                     (len - idx))) > 0)
-            idx += res;
+        idx = send_ssl(engine, buf, len);
     else
         while (idx < len && (res = send(engine.connection, buf + idx, len - idx, 0)) > 0)
             idx += res;
@@ -264,26 +279,82 @@ void forward_packet(engine_t& engine) noexcept {
     return forward_call_or_calls(engine);
 }
 
-int ssl_send(void* ctx, const unsigned char* buf, size_t len) {
-    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = send(conn->fd, reinterpret_cast<char const*>(buf), len, 0);
+int do_handshake(engine_t& engine, char* rbuf, size_t* rbuf_len) {
+    size_t const sm_buff_len = 4096;
+    uint8_t sm_buf[sm_buff_len];
+    ptls_buffer_t wbuf;
+    ptls_buffer_init(&wbuf, sm_buf, sm_buff_len);
+
+    int ret;
+    ssize_t read_ret;
+
+    do {
+
+        if (send_all(engine.connection, wbuf.base, wbuf.off) != 0)
+            goto closed;
+        wbuf.off = 0;
+
+        while ((read_ret = read(engine.connection, rbuf, *rbuf_len)) == -1 && errno == EINTR)
+            ;
+
+        if (read_ret < 0)
+            goto closed;
+        *rbuf_len = read_ret;
+    } while ((ret = ptls_handshake(engine.ssl_ctx->tls, &wbuf, rbuf, rbuf_len, &engine.ssl_ctx->hand_props)) ==
+             PTLS_ERROR_IN_PROGRESS);
+
+    if (ret != PTLS_ALERT_CLOSE_NOTIFY)
+        goto closed;
+
+    if (send_all(engine.connection, wbuf.base, wbuf.off) != 0)
+        goto closed;
+
+    if (read_ret != *rbuf_len)
+        memmove(rbuf, rbuf + *rbuf_len, read_ret - *rbuf_len);
+    *rbuf_len = read_ret - *rbuf_len;
+    return 0;
+
+closed:
+    ptls_buffer_dispose(&wbuf);
+    return -1;
+}
+
+ssize_t recv_ssl(engine_t& engine, char* buf, size_t len) {
+    ptls_buffer_t decrpyt_buf;
+    uint8_t step_buf[ram_page_size_k];
+    ssize_t ret;
+
+    ptls_buffer_init(&decrpyt_buf, buf, len);
+    while (len != decrpyt_buf.off) {
+        while ((ret = recv(engine.connection, step_buf, ram_page_size_k, MSG_DONTWAIT)) == -1 && errno == EINTR)
+            ;
+        if (ret <= 0)
+            break;
+
+        size_t inlen = ret;
+        uint8_t* input = step_buf;
+        while (inlen != 0) {
+            size_t consumed = inlen;
+            if ((ret = ptls_receive(engine.ssl_ctx->tls, &decrpyt_buf, input, &consumed)) != 0) {
+                ptls_buffer_dispose(&decrpyt_buf);
+                return -1;
+            }
+            input += consumed;
+            inlen -= consumed;
+        }
+    }
+
+    ret = decrpyt_buf.off;
+    // ptls_buffer_dispose(&decrpyt_buf);
     return ret;
 }
 
-int ssl_recv(void* ctx, unsigned char* buf, size_t len) {
-    mbedtls_net_context* conn = reinterpret_cast<mbedtls_net_context*>(ctx);
-    ssize_t ret = recv(conn->fd, reinterpret_cast<char*>(buf), len, 0);
-    return ret;
-}
-
-int recv_all(engine_t& engine, char* buf, size_t len) {
+size_t recv_all(engine_t& engine, char* buf, size_t len) {
     size_t idx = 0;
     int res = 0;
 
     if (engine.ssl_ctx)
-        while (idx < len &&
-               (res = mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buf + idx), (len - idx))) > 0)
-            idx += res;
+        idx = recv_ssl(engine, buf, len);
     else
         while (idx < len && (res = recv(engine.connection, buf + idx, len - idx, 0)) > 0)
             idx += res;
@@ -320,31 +391,27 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         return;
     }
 
-    mbedtls_net_context client_ctx;
-
-    if (engine.ssl_ctx) {
-        client_ctx.fd = connection_fd;
-        mbedtls_ssl_set_bio(&engine.ssl_ctx->ssl, &client_ctx, ssl_send, ssl_recv, NULL);
-        int ret = 0;
-        while ((ret = mbedtls_ssl_handshake(&engine.ssl_ctx->ssl)) != 0)
-            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-                mbedtls_net_free(&client_ctx);
-                mbedtls_ssl_session_reset(&engine.ssl_ctx->ssl);
-                return;
-            }
-    }
-
     // Wait until we have input.
     engine.connection = descriptor_t{connection_fd};
     engine.stats.added_connections++;
     engine.stats.closed_connections++;
     char* buffer_ptr = &engine.packet_buffer[0];
-
     size_t bytes_received = 0, bytes_expected = 0;
-    if (engine.ssl_ctx)
-        bytes_received =
-            mbedtls_ssl_read(&engine.ssl_ctx->ssl, reinterpret_cast<uint8_t*>(buffer_ptr), http_head_max_size_k);
-    else
+
+    if (engine.ssl_ctx) {
+        engine.ssl_ctx->tls = ptls_new(&engine.ssl_ctx->ssl, 1);
+        bytes_received = 4160;
+        if (do_handshake(engine, buffer_ptr, &bytes_received) != 0) {
+            ptls_free(engine.ssl_ctx->tls);
+            close(engine.connection);
+            engine.ssl_ctx->tls = nullptr;
+            return;
+        }
+        // TODO In what case will this be required?
+        if (http_head_max_size_k > bytes_received)
+            bytes_received += recv_ssl(engine, buffer_ptr + bytes_received, http_head_max_size_k - bytes_received);
+
+    } else
         bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, 0);
 
     auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
@@ -402,13 +469,10 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
     }
 
     if (engine.ssl_ctx) {
-        int ret = 0;
-        while ((ret = mbedtls_ssl_close_notify(&engine.ssl_ctx->ssl)) < 0)
-            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
-                break;
-
-        mbedtls_ssl_session_reset(&engine.ssl_ctx->ssl);
+        ptls_free(engine.ssl_ctx->tls);
+        engine.ssl_ctx->tls = nullptr;
     }
+
     shutdown(connection_fd, SHUT_WR);
     // If later on some UB is detected for client not recieving full data,
     // then it may be required to put a `recv` with timeout between `shutdown` and `close`
@@ -476,6 +540,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
     if (config.use_ssl) {
+
         ssl_context = new ucall_ssl_context_t();
         if (ssl_context->init(config.ssl_private_key_path, config.ssl_certificates_paths,
                               config.ssl_certificates_count) != 0)

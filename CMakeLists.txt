@@ -21,6 +21,7 @@ set(CMAKE_CACHEFILE_DIR ${CMAKE_BINARY_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to static libs")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to shared libs")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
@@ -119,22 +120,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 FetchContent_Declare(
-    mbedtls
-    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls/
-    GIT_TAG v3.4.0
-    CMAKE_ARGS
-    -DENABLE_PROGRAMS=OFF
-    -DENABLE_TESTING=OFF
-    -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
-    -DUSE_STATIC_MBEDTLS_LIBRARY=ON
+    OpenSSL
+    URL https://cloudflare.cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
+    OVERRIDE_FIND_PACKAGE
 )
 
-FetchContent_MakeAvailable(mbedtls)
-include_directories(${mbedtls_SOURCE_DIR}/include)
-set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
+FetchContent_MakeAvailable(OpenSSL)
+set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
+set(OPENSSL_VERSION "1.1.1")
+set(OPENSSL_FOUND true)
+include_directories(${OPENSSL_INCLUDE_DIR})
+LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
+GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
+
+FetchContent_Declare(
+  picotls
+  GIT_REPOSITORY https://github.com/h2o/picotls.git
+  GIT_TAG master
+)
+
+FetchContent_MakeAvailable(picotls)
+include_directories(${picotls_SOURCE_DIR}/include)
+set(picotls_LIBS picotls-core picotls-openssl)
 
 # LibUring
 if(LINUX)
@@ -166,7 +175,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${picotls_LIBS} crypto )
 set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
