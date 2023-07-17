@@ -25,6 +25,7 @@ namespace unum::ucall {
 static constexpr std::size_t ram_page_size_k = 4096;
 /// @brief  Expected max length of http headers
 static constexpr std::size_t http_head_max_size_k = 1024;
+static constexpr std::size_t http_head_min_size_k = 16;
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.

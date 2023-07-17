@@ -156,16 +156,16 @@ sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) n
 }
 
 ssize_t send_all(int fd, uint8_t const* data, size_t len) {
-    ssize_t ret;
-    while (len != 0) {
-        while ((ret = send(fd, data, len, 0)) == -1 && errno == EINTR)
-            ;
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t ret = send(fd, data + sent, len - sent, 0);
+        if (ret == -1 && errno == EINTR)
+            continue;
         if (ret <= 0)
             return -1;
-        data += ret;
-        len -= ret;
+        sent += ret;
     }
-    return 0;
+    return sent;
 }
 
 ssize_t send_ssl(engine_t& engine, char const* buf, size_t len) {
@@ -176,10 +176,11 @@ ssize_t send_ssl(engine_t& engine, char const* buf, size_t len) {
     ptls_buffer_init(&encrypt_buf, sm_buf, ram_page_size_k);
     if (ptls_send(engine.ssl_ctx->tls, &encrypt_buf, buf, len) == 0)
         ret = send_all(engine.connection, encrypt_buf.base, encrypt_buf.off);
-
     ptls_buffer_dispose(&encrypt_buf);
+
     return ret;
 }
+
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
     char const* buf = message.data();
     size_t const len = message.size();
@@ -289,8 +290,7 @@ int do_handshake(engine_t& engine, char* rbuf, size_t* rbuf_len) {
     ssize_t read_ret;
 
     do {
-
-        if (send_all(engine.connection, wbuf.base, wbuf.off) != 0)
+        if (send_all(engine.connection, wbuf.base, wbuf.off) < 0)
             goto closed;
         wbuf.off = 0;
 
@@ -306,7 +306,7 @@ int do_handshake(engine_t& engine, char* rbuf, size_t* rbuf_len) {
     if (ret != PTLS_ALERT_CLOSE_NOTIFY)
         goto closed;
 
-    if (send_all(engine.connection, wbuf.base, wbuf.off) != 0)
+    if (send_all(engine.connection, wbuf.base, wbuf.off) < 0)
         goto closed;
 
     if (read_ret != *rbuf_len)
@@ -319,14 +319,14 @@ closed:
     return -1;
 }
 
-ssize_t recv_ssl(engine_t& engine, char* buf, size_t len) {
+ssize_t recv_ssl(engine_t& engine, char* buf, size_t len, bool recv_one_packet = false) {
     ptls_buffer_t decrpyt_buf;
     uint8_t step_buf[ram_page_size_k];
     ssize_t ret;
 
     ptls_buffer_init(&decrpyt_buf, buf, len);
     while (len != decrpyt_buf.off) {
-        while ((ret = recv(engine.connection, step_buf, ram_page_size_k, MSG_DONTWAIT)) == -1 && errno == EINTR)
+        while ((ret = recv(engine.connection, step_buf, ram_page_size_k, 0)) == -1 && errno == EINTR)
             ;
         if (ret <= 0)
             break;
@@ -342,6 +342,8 @@ ssize_t recv_ssl(engine_t& engine, char* buf, size_t len) {
             input += consumed;
             inlen -= consumed;
         }
+        if (recv_one_packet)
+            break;
     }
 
     ret = decrpyt_buf.off;
@@ -408,8 +410,9 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
             return;
         }
         // TODO In what case will this be required?
-        if (http_head_max_size_k > bytes_received)
-            bytes_received += recv_ssl(engine, buffer_ptr + bytes_received, http_head_max_size_k - bytes_received);
+        while (bytes_received < http_head_min_size_k)
+            bytes_received +=
+                recv_ssl(engine, buffer_ptr + bytes_received, http_head_max_size_k - bytes_received, true);
 
     } else
         bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, 0);
