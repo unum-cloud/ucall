@@ -1,9 +1,26 @@
 #pragma once
 
-#include "reply.hpp"  // `iovecs_length`
-#include "shared.hpp" // `array_gt`
+#include "helpers/contain/array.hpp"
+#include "helpers/contain/span.hpp"
+#include "helpers/globals.hpp"
 
 namespace unum::ucall {
+
+template <std::size_t iovecs_len_ak> std::size_t iovecs_length(struct iovec const* iovecs) noexcept {
+    std::size_t added_length = 0;
+#pragma unroll
+    for (std::size_t i = 0; i != iovecs_len_ak; ++i)
+        added_length += iovecs[i].iov_len;
+    return added_length;
+}
+
+template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iovecs, char* output) noexcept {
+#pragma unroll
+    for (std::size_t i = 0; i != iovecs_len_ak; ++i) {
+        std::memcpy(output, iovecs[i].iov_base, iovecs[i].iov_len);
+        output += iovecs[i].iov_len;
+    }
+}
 
 struct exchange_pipe_t {
     char* embedded{};

@@ -48,7 +48,8 @@
 #include "ucall/ucall.h"
 
 #include "helpers/log.hpp"
-#include "helpers/parse.hpp"
+#include "helpers/parse/http.hpp"
+#include "helpers/parse/json.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
 
