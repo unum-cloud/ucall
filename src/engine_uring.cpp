@@ -55,6 +55,7 @@
 
 #include "ucall/ucall.h"
 
+#include "network.hpp"
 #include "server.hpp"
 
 #pragma region Cpp Declaration
@@ -103,7 +104,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     int socket_options{1};
     int socket_descriptor{-1};
     int uring_result{-1};
-    struct io_uring uring {};
+    struct io_uring* uring = new io_uring();
     struct io_uring_params uring_params {};
     struct io_uring_sqe* uring_sqe{};
     struct io_uring_cqe* uring_cqe{};
@@ -127,7 +128,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     address.sin_port = htons(config.port);
 
     // Initialize `io_uring` first, it is the most likely to fail.
-    uring_result = io_uring_queue_init_params(config.queue_depth, &uring, &uring_params);
+    uring_result = io_uring_queue_init_params(config.queue_depth, uring, &uring_params);
     if (uring_result != 0)
         goto cleanup;
 
@@ -161,21 +162,21 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         registered_buffers[i * 2u + 1u].iov_base = outputs;
         registered_buffers[i * 2u + 1u].iov_len = ram_page_size_k;
     }
-    uring_result = io_uring_register_files_sparse(&uring, config.max_concurrent_connections);
+    uring_result = io_uring_register_files_sparse(uring, config.max_concurrent_connections);
     if (uring_result != 0)
         goto cleanup;
     uring_result =
-        io_uring_register_buffers(&uring, registered_buffers.data(), static_cast<unsigned>(registered_buffers.size()));
+        io_uring_register_buffers(uring, registered_buffers.data(), static_cast<unsigned>(registered_buffers.size()));
     if (uring_result != 0)
         goto cleanup;
 
     // Configure the socket.
     // In the past we would use the normal POSIX call, but we should prefer direct descriptors over it.
     // socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
-    uring_sqe = io_uring_get_sqe(&uring);
+    uring_sqe = io_uring_get_sqe(uring);
     io_uring_prep_socket_direct(uring_sqe, AF_INET, SOCK_STREAM, 0, IORING_FILE_INDEX_ALLOC, 0);
-    uring_result = io_uring_submit_and_wait(&uring, 1);
-    uring_result = io_uring_wait_cqe(&uring, &uring_cqe);
+    uring_result = io_uring_submit_and_wait(uring, 1);
+    uring_result = io_uring_wait_cqe(uring, &uring_cqe);
     socket_descriptor = uring_cqe->res;
     if (socket_descriptor < 0)
         goto cleanup;
@@ -189,13 +190,13 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
     // Initialize all the members.
     new (server_ptr) engine_t();
+    server_ptr->network_engine = uring;
     server_ptr->socket = descriptor_t{socket_descriptor};
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
     server_ptr->callbacks = std::move(callbacks);
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
-    server_ptr->uring = uring;
     server_ptr->has_send_zc = io_check_send_zc();
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
@@ -204,8 +205,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
 cleanup:
     errno;
-    if (uring.ring_fd)
-        io_uring_queue_exit(&uring);
+    if (uring->ring_fd)
+        io_uring_queue_exit(uring);
     if (socket_descriptor >= 0)
         close(socket_descriptor);
     std::free(server_ptr);
@@ -217,9 +218,128 @@ void ucall_free(ucall_server_t server) {
         return;
 
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    io_uring_unregister_buffers(&engine.uring);
-    io_uring_queue_exit(&engine.uring);
+    io_uring* uring = reinterpret_cast<io_uring*>(engine.network_engine);
+    io_uring_unregister_buffers(uring);
+    io_uring_queue_exit(uring);
     close(engine.socket);
     engine.~engine_t();
     std::free(server);
+    delete uring;
+}
+
+int try_accept(network_engine_t engine, descriptor_t socket, connection_t& connection) {
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+    io_uring_sqe* uring_sqe{};
+    uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_accept_direct(uring_sqe, socket, &connection.client_address, &connection.client_address_len, 0,
+                                IORING_FILE_INDEX_ALLOC);
+    io_uring_sqe_set_data(uring_sqe, &connection);
+
+    // Accepting new connections can be time-less.
+    // io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
+    // uring_sqe = io_uring_get_sqe(uring);
+    // io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
+    // io_uring_sqe_set_data(uring_sqe, NULL);
+
+    return io_uring_submit(uring);
+}
+
+void set_stats_heartbeat(network_engine_t engine, connection_t& connection) {
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+    io_uring_sqe* uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_timeout(uring_sqe, &connection.next_wakeup, 0, 0);
+    io_uring_sqe_set_data(uring_sqe, &connection);
+    io_uring_submit(uring);
+}
+
+std::size_t pop_completed_events(network_engine_t engine, completed_event_t* events) {
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+    unsigned uring_head = 0;
+    unsigned completed = 0;
+    unsigned passed = 0;
+    io_uring_cqe* uring_cqe{};
+
+    io_uring_for_each_cqe(uring, uring_head, uring_cqe) {
+        ++passed;
+        if (!uring_cqe->user_data)
+            continue;
+        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
+        events[completed].stage = events[completed].connection_ptr->stage;
+        events[completed].result = uring_cqe->res;
+        ++completed;
+        // if (completed == max_count_ak)
+        //     break;
+    }
+
+    io_uring_cq_advance(uring, passed);
+    return completed;
+}
+
+void close_connection_gracefully(network_engine_t engine, connection_t& connection) {
+
+    // The operations are not expected to complete in exactly the same order
+    // as their submissions. So to stop all existing communication on the
+    // socket, we can cancel everything related to its "file descriptor",
+    // and then close.
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+    io_uring_sqe* uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_cancel_fd(uring_sqe, int(connection.descriptor), 0);
+    io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
+
+    uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_shutdown(uring_sqe, int(connection.descriptor), SHUT_WR);
+    io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
+
+    uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_close(uring_sqe, int(connection.descriptor));
+    io_uring_sqe_set_data(uring_sqe, &connection);
+    io_uring_sqe_set_flags(uring_sqe, 0);
+
+    io_uring_submit(uring);
+}
+
+void send_packet(network_engine_t engine, connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+    io_uring_sqe* uring_sqe = io_uring_get_sqe(uring);
+
+    // TODO: Test and benchmark the `send_zc option`.
+    if (io_check_send_zc()) {
+        io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), buffer, buf_len, 0, 0, buf_index);
+    } else {
+        io_uring_prep_send(uring_sqe, int(connection.descriptor), buffer, buf_len, 0);
+        uring_sqe->flags |= IOSQE_FIXED_FILE;
+        uring_sqe->buf_index = buf_index;
+    }
+    io_uring_sqe_set_data(uring_sqe, &connection);
+    io_uring_sqe_set_flags(uring_sqe, 0);
+    io_uring_submit(uring);
+}
+
+void recv_packet(network_engine_t engine, connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+    io_uring* uring = reinterpret_cast<io_uring*>(engine);
+
+    // Choosing between `recv` and `read` system calls:
+    // > If a zero-length datagram is pending, read(2) and recv() with a
+    // > flags argument of zero provide different behavior. In this
+    // > circumstance, read(2) has no effect (the datagram remains
+    // > pending), while recv() consumes the pending datagram.
+    // https://man7.org/linux/man-pages/man2/recv.2.html
+    //
+    // In this case we are waiting for an actual data, not some artificial wakeup.
+    io_uring_sqe* uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_read_fixed(uring_sqe, int(connection.descriptor), buffer, buf_len, 0, buf_index);
+    io_uring_sqe_set_data(uring_sqe, &connection);
+    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
+
+    // More than other operations this depends on the information coming from the client.
+    // We can't afford to keep connections alive indefinitely, so we need to set a timeout
+    // on this operation.
+    // The `io_uring_prep_link_timeout` is a convenience method for poorly documented `IORING_OP_LINK_TIMEOUT`.
+    uring_sqe = io_uring_get_sqe(uring);
+    io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
+    io_uring_sqe_set_data(uring_sqe, NULL);
+    io_uring_sqe_set_flags(uring_sqe, 0);
+    io_uring_submit(uring);
 }

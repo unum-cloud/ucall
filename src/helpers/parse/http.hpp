@@ -1,5 +1,11 @@
 #pragma once
+
+#include <string_view>
+#include <variant>
+
 #include <picohttpparser.h>
+
+#include "helpers/shared.hpp"
 
 namespace unum::ucall {
 

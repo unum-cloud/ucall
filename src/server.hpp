@@ -11,6 +11,7 @@
 #include "helpers/parse/json.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
+#include "network.hpp"
 
 namespace unum::ucall {
 
@@ -29,7 +30,6 @@ struct automata_t {
     bool received_full_request() const noexcept;
     bool should_release() const noexcept;
 
-    // Submitting to io_uring:
     void send_next() noexcept;
     void receive_next() noexcept;
     void close_gracefully() noexcept;
@@ -163,93 +163,31 @@ void automata_t::parse_and_raise_request() noexcept {
 }
 
 void automata_t::close_gracefully() noexcept {
-    int uring_result{};
-    struct io_uring_sqe* uring_sqe{};
     connection.stage = stage_t::waiting_to_close_k;
-
-    // The operations are not expected to complete in exactly the same order
-    // as their submissions. So to stop all existing communication on the
-    // socket, we can cancel everything related to its "file descriptor",
-    // and then close.
     engine.submission_mutex.lock();
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_cancel_fd(uring_sqe, int(connection.descriptor), 0);
-    io_uring_sqe_set_data(uring_sqe, NULL);
-    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
-
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_shutdown(uring_sqe, int(connection.descriptor), SHUT_WR);
-    io_uring_sqe_set_data(uring_sqe, NULL);
-    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_HARDLINK);
-
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_close(uring_sqe, int(connection.descriptor));
-    io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, 0);
-
-    uring_result = io_uring_submit(&engine.uring);
+    close_connection_gracefully(engine.network_engine, connection);
     engine.submission_mutex.unlock();
 }
 
 void automata_t::send_next() noexcept {
     exchange_pipes_t& pipes = connection.pipes;
-    int uring_result{};
-    struct io_uring_sqe* uring_sqe{};
     connection.stage = stage_t::responding_in_progress_k;
     pipes.release_inputs();
 
-    // TODO: Test and benchmark the `send_zc option`.
     engine.submission_mutex.lock();
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    if (engine.has_send_zc) {
-        io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-                                    pipes.next_output_length(), 0, 0,
-                                    engine.connections.offset_of(connection) * 2u + 1u);
-    } else {
-        io_uring_prep_send(uring_sqe, int(connection.descriptor), (void*)pipes.next_output_address(),
-                           pipes.next_output_length(), 0);
-        uring_sqe->flags |= IOSQE_FIXED_FILE;
-        uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u;
-    }
-    io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, 0);
-    uring_result = io_uring_submit(&engine.uring);
+    send_packet(engine.network_engine, connection, (void*)pipes.next_output_address(), pipes.next_output_length(),
+                engine.connections.offset_of(connection) * 2u + 1u);
     engine.submission_mutex.unlock();
 }
 
 void automata_t::receive_next() noexcept {
     exchange_pipes_t& pipes = connection.pipes;
-    int uring_result{};
-    struct io_uring_sqe* uring_sqe{};
     connection.stage = stage_t::expecting_reception_k;
     pipes.release_outputs();
 
     engine.submission_mutex.lock();
-
-    // Choosing between `recv` and `read` system calls:
-    // > If a zero-length datagram is pending, read(2) and recv() with a
-    // > flags argument of zero provide different behavior. In this
-    // > circumstance, read(2) has no effect (the datagram remains
-    // > pending), while recv() consumes the pending datagram.
-    // https://man7.org/linux/man-pages/man2/recv.2.html
-    //
-    // In this case we are waiting for an actual data, not some artificial wakeup.
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_read_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_input_address(),
-                             pipes.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
-    io_uring_sqe_set_data(uring_sqe, &connection);
-    io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
-
-    // More than other operations this depends on the information coming from the client.
-    // We can't afford to keep connections alive indefinitely, so we need to set a timeout
-    // on this operation.
-    // The `io_uring_prep_link_timeout` is a convenience method for poorly documented `IORING_OP_LINK_TIMEOUT`.
-    uring_sqe = io_uring_get_sqe(&engine.uring);
-    io_uring_prep_link_timeout(uring_sqe, &connection.next_wakeup, 0);
-    io_uring_sqe_set_data(uring_sqe, NULL);
-    io_uring_sqe_set_flags(uring_sqe, 0);
-    uring_result = io_uring_submit(&engine.uring);
-
+    recv_packet(engine.network_engine, connection, (void*)pipes.next_input_address(), pipes.next_input_length(),
+                engine.connections.offset_of(connection) * 2u);
     engine.submission_mutex.unlock();
 }
 
@@ -523,7 +461,11 @@ void ucall_take_call(ucall_server_t server, uint16_t thread_idx) {
 
     constexpr std::size_t completed_max_k{16};
     unum::ucall::completed_event_t completed_events[completed_max_k]{};
-    std::size_t completed_count = engine.pop_completed<completed_max_k>(completed_events);
+
+    engine.submission_mutex.lock();
+    // std::size_t completed_count = pop_completed_events<completed_max_k>(completed_events); // TODO template argument
+    std::size_t completed_count = pop_completed_events(engine.network_engine, completed_events);
+    engine.submission_mutex.unlock();
 
     for (std::size_t i = 0; i != completed_count; ++i) {
         unum::ucall::completed_event_t& completed = completed_events[i];

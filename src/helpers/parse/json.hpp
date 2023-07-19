@@ -46,17 +46,6 @@ struct scratch_space_t {
     }
 };
 
-struct default_error_t {
-    int code{};
-    std::string_view note;
-};
-
-struct named_callback_t {
-    ucall_str_t name{};
-    ucall_callback_t callback{};
-    ucall_callback_tag_t callback_tag{};
-};
-
 /**
  * @brief Validates the contents of the JSON call DOM, and finds a matching callback.
  */

@@ -25,9 +25,19 @@
 #include "ucall/ucall.h" // `ucall_callback_t`
 
 #include "helpers/globals.hpp"
-#include "helpers/parse/json.hpp"
 
 namespace unum::ucall {
+
+struct default_error_t {
+    int code{};
+    std::string_view note;
+};
+
+struct named_callback_t {
+    ucall_str_t name{};
+    ucall_callback_t callback{};
+    ucall_callback_tag_t callback_tag{};
+};
 
 inline timestamp_t cpu_cycle() noexcept {
     timestamp_t result;

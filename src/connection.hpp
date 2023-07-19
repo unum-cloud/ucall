@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "helpers/contain/pipe.hpp"
 #include "helpers/globals.hpp"
 #include "helpers/shared.hpp"
