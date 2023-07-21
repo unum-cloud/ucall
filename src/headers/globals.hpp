@@ -4,7 +4,8 @@
 namespace unum::ucall {
 
 enum descriptor_t : int {};
-using network_engine_t = void*;
+using connectino_data_t = void*;
+using network_data_t = void*;
 
 /// @brief When preparing replies to requests, instead of allocating
 /// a new tape and joining them together, we assemble the requests

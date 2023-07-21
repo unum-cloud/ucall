@@ -5,6 +5,7 @@
 #include <sys/uio.h> // `struct iovec`
 #endif
 
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <memory>
@@ -24,7 +25,7 @@
 
 #include "ucall/ucall.h" // `ucall_callback_t`
 
-#include "helpers/globals.hpp"
+#include "globals.hpp"
 
 namespace unum::ucall {
 
@@ -56,7 +57,7 @@ inline timestamp_t cpu_cycle() noexcept {
     return result;
 }
 
-std::size_t string_length(char const* c_str, std::size_t optional_length) noexcept {
+inline std::size_t string_length(char const* c_str, std::size_t optional_length) noexcept {
     return c_str && !optional_length ? std::strlen(c_str) : optional_length;
 }
 

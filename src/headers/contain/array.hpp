@@ -1,5 +1,11 @@
 #pragma once
 
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <stdlib.h>
+#include <type_traits>
+
 template <typename element_at> class array_gt {
     element_at* elements_{};
     std::size_t count_{};

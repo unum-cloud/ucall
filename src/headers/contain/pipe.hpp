@@ -1,8 +1,8 @@
 #pragma once
 
-#include "helpers/contain/array.hpp"
-#include "helpers/contain/span.hpp"
-#include "helpers/globals.hpp"
+#include "contain/array.hpp"
+#include "contain/span.hpp"
+#include "globals.hpp"
 
 namespace unum::ucall {
 

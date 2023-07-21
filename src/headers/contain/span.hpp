@@ -1,4 +1,5 @@
 #pragma once
+#include <string_view>
 
 template <typename element_at> class span_gt {
     element_at* begin_{};

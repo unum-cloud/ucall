@@ -160,7 +160,7 @@ if(LINUX)
 endif()
 
 find_package(Threads REQUIRED)
-include_directories(include/ src/)
+include_directories(include/ src/headers)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
 target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
