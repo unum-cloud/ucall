@@ -12,5 +12,6 @@ struct network_engine_t {
     void send_packet(unum::ucall::connection_t&, void*, std::size_t, std::size_t);
     void recv_packet(unum::ucall::connection_t&, void*, std::size_t, std::size_t);
     void close_connection_gracefully(unum::ucall::connection_t&);
-    std::size_t pop_completed_events(unum::ucall::completed_event_t*);
+
+    template <size_t max_count_ak> std::size_t pop_completed_events(unum::ucall::completed_event_t*);
 };

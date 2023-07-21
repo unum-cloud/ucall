@@ -219,8 +219,7 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
     constexpr std::size_t completed_max_k{16};
     unum::ucall::completed_event_t completed_events[completed_max_k]{};
 
-    // std::size_t completed_count = pop_completed_events<completed_max_k>(completed_events); // TODO template argument
-    std::size_t completed_count = server->network_engine.pop_completed_events(completed_events);
+    std::size_t completed_count = server->network_engine.pop_completed_events<completed_max_k>(completed_events);
 
     for (std::size_t i = 0; i != completed_count; ++i) {
         unum::ucall::completed_event_t& completed = completed_events[i];

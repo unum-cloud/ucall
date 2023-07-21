@@ -267,7 +267,7 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
     ctx->submission_mutex.unlock();
 }
 
-std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
+template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     io_uring* uring = &ctx->uring;
     unsigned uring_head = 0;
@@ -283,8 +283,8 @@ std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
         events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
         events[completed].result = uring_cqe->res;
         ++completed;
-        // if (completed == max_count_ak)
-        //     break;
+        if (completed == max_count_ak)
+            break;
     }
 
     io_uring_cq_advance(uring, passed);
