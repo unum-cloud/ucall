@@ -188,6 +188,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     new (server_ptr) server_t();
     server_ptr->network_engine.network_data = uctx;
     server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->protocol_type = config.protocol;
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
     server_ptr->engine.callbacks = std::move(callbacks);

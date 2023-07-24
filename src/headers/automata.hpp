@@ -1,8 +1,8 @@
 #pragma once
 
 #include "connection.hpp"
-#include "parse/http.hpp"
 #include "parse/json.hpp"
+#include "parse/protocol.hpp"
 #include "reply.hpp"
 #include "server.hpp"
 #include "shared.hpp"
@@ -14,7 +14,7 @@ struct automata_t {
     scratch_space_t& scratch;
     connection_t& connection;
     int completed_result{};
-    http_protocol_t protocol{}; // TODO Make polymorphic
+    protocol_t protocol;
 
     void operator()() noexcept;
 
@@ -117,7 +117,7 @@ void automata_t::operator()() noexcept {
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
-        if (protocol.received_full_request(connection.pipes.input_span())) {
+        if (protocol.is_input_complete(connection.pipes.input_span())) {
             server.engine.raise_request(scratch, connection.pipes, protocol, this);
 
             connection.pipes.release_inputs();
@@ -225,10 +225,8 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
         unum::ucall::completed_event_t& completed = completed_events[i];
 
         unum::ucall::automata_t automata{*server, //
-                                         server->spaces[thread_idx],
-                                         *completed.connection_ptr,
-                                         completed.result,
-                                         {}};
+                                         server->spaces[thread_idx], *completed.connection_ptr, completed.result,
+                                         unum::ucall::protocol_t(server->protocol_type)};
 
         // If everything is fine, let automata work in its normal regime.
         automata();

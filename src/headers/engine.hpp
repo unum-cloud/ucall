@@ -7,11 +7,17 @@
 #include "contain/array.hpp"
 #include "log.hpp"
 #include "network.hpp"
-#include "parse/http.hpp"
 #include "parse/json.hpp"
+#include "parse/protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
+
+struct named_callback_t {
+    ucall_str_t name{};
+    ucall_callback_t callback{};
+    ucall_callback_tag_t callback_tag{};
+};
 
 struct engine_t {
 
@@ -21,11 +27,11 @@ struct engine_t {
     std::variant<named_callback_t, default_error_t> find_callback(scratch_space_t&) const noexcept;
 
     bool find_and_call(scratch_space_t&, ucall_call_t) const noexcept;
-    void raise_calls(scratch_space_t&, exchange_pipes_t&, http_protocol_t&, ucall_call_t) const noexcept;
-    void raise_request(scratch_space_t&, exchange_pipes_t&, http_protocol_t&, ucall_call_t) const noexcept;
+    void raise_calls(scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
+    void raise_request(scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
 };
 
-void engine_t::raise_request(scratch_space_t& scratch, exchange_pipes_t& pipes, http_protocol_t& protocol,
+void engine_t::raise_request(scratch_space_t& scratch, exchange_pipes_t& pipes, protocol_t& protocol,
                              ucall_call_t call) const noexcept {
     auto parsed_request_or_error = protocol.parse(pipes.input_span());
     if (auto error_ptr = std::get_if<default_error_t>(&parsed_request_or_error); error_ptr)
@@ -46,7 +52,7 @@ void engine_t::raise_request(scratch_space_t& scratch, exchange_pipes_t& pipes, 
     return raise_calls(scratch, pipes, protocol, call);
 }
 
-void engine_t::raise_calls(scratch_space_t& scratch, exchange_pipes_t& pipes, http_protocol_t& protocol,
+void engine_t::raise_calls(scratch_space_t& scratch, exchange_pipes_t& pipes, protocol_t& protocol,
                            ucall_call_t call) const noexcept {
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;

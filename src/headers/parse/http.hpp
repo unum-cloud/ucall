@@ -11,14 +11,6 @@
 
 namespace unum::ucall {
 
-struct parsed_request_t {
-    std::string_view type{};
-    std::string_view keep_alive{};
-    std::string_view content_type{};
-    std::string_view content_length{};
-    std::string_view body{};
-};
-
 struct http_protocol_t {
     size_t body_size;
     /// @brief Expected reception length extracted from HTTP headers.
@@ -28,34 +20,35 @@ struct http_protocol_t {
     /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
     std::optional<std::string_view> content_type{};
 
-    inline void prepare_response(exchange_pipes_t& pipes);
+    inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
-    inline void finalize_response(exchange_pipes_t& pipes);
+    inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
-    bool received_full_request(span_gt<char> input) const noexcept;
+    bool is_input_complete(span_gt<char> const& input) noexcept;
 
     /**
      * @brief Analyzes the contents of the packet, bifurcating pure JSON-RPC from HTTP1-based.
      * @warning This doesn't check the headers for validity or additional metadata.
      */
     inline std::variant<parsed_request_t, default_error_t> parse(std::string_view body) const noexcept;
-
-    bool set_http_content_length(char* headers, size_t content_len);
 };
 
-inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) {
+inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
     pipes.append_reserved(http_header_k, http_header_size_k);
     body_size = pipes.output_span().size();
 }
 
-inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) {
+inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     auto output = pipes.output_span();
     body_size = output.size() - body_size;
-    if (!set_http_content_length(output.data(), body_size))
+    auto res = std::to_chars(output.data() + http_header_length_offset_k,
+                             output.data() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
+
+    if (res.ec != std::errc())
         return ucall_call_reply_error_out_of_memory(this);
 }
 
-bool http_protocol_t::received_full_request(span_gt<char> input) const noexcept {
+bool http_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
 
     // if (!connection.content_length) {
     size_t bytes_expected = 0;
@@ -133,12 +126,4 @@ inline std::variant<parsed_request_t, default_error_t> http_protocol_t::parse(st
     return req;
 }
 
-bool http_protocol_t::set_http_content_length(char* headers, size_t content_len) {
-    auto res = std::to_chars(headers + http_header_length_offset_k,
-                             headers + http_header_length_offset_k + http_header_length_capacity_k, content_len);
-
-    if (res.ec != std::errc())
-        return false;
-    return true;
-}
 } // namespace unum::ucall

@@ -13,6 +13,7 @@ struct server_t {
     descriptor_t socket{};
     network_engine_t network_engine{};
     engine_t engine{};
+    protocol_type_t protocol_type;
 
     std::atomic<std::size_t> active_connections{};
     std::atomic<std::size_t> reserved_connections{};

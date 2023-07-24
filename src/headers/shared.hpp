@@ -34,12 +34,6 @@ struct default_error_t {
     std::string_view note;
 };
 
-struct named_callback_t {
-    ucall_str_t name{};
-    ucall_callback_t callback{};
-    ucall_callback_tag_t callback_tag{};
-};
-
 inline timestamp_t cpu_cycle() noexcept {
     timestamp_t result;
 #ifdef __aarch64__
@@ -67,6 +61,14 @@ inline std::size_t string_length(char const* c_str, std::size_t optional_length)
 template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) noexcept {
     return ((n + step_ak - 1) / step_ak) * step_ak;
 }
+
+struct parsed_request_t {
+    std::string_view type{};
+    std::string_view keep_alive{};
+    std::string_view content_type{};
+    std::string_view content_length{};
+    std::string_view body{};
+};
 
 enum class stage_t {
     waiting_to_accept_k = 0,
