@@ -81,7 +81,7 @@ bool server_t::consider_accepting_new_connection() noexcept {
     }
 
     connection_t& connection = *con_ptr;
-
+    connection.stage = stage_t::waiting_to_accept_k;
     int result = network_engine.try_accept(socket, connection);
 
     if (result < 0) {
