@@ -50,27 +50,21 @@ inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept
 
 bool http_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
 
-    // if (!connection.content_length) {
-    size_t bytes_expected = 0;
+    if (!content_length) {
+        size_t bytes_expected = 0;
 
-    auto json_or_error = parse(std::string_view(input.data(), input.size()));
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return true;
-    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+        auto json_or_error = parse(std::string_view(input.data(), input.size()));
+        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+            return false;
+        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
-    auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-    bytes_expected += (request.body.begin() - input.data());
+        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
+        bytes_expected += (request.body.begin() - input.data());
 
-    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-        // TODO: Maybe not a HTTP request, What to do?
-        return true;
+        content_length = bytes_expected;
+    }
 
-    // }
-
-    if (input.size() < bytes_expected)
-        return false;
-
-    return true;
+    return input.size() >= content_length;
 }
 
 /**
