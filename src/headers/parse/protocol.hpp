@@ -13,15 +13,22 @@ struct protocol_t {
     } sp_proto;
     protocol_type_t type;
 
-    explicit protocol_t(protocol_type_t p_type) : type(p_type), sp_proto({}) {
+    explicit protocol_t(protocol_type_t p_type = protocol_type_t::TCP) noexcept : sp_proto({}), type(p_type) {
+        reset();
+    }
+
+    void reset_protocol(protocol_type_t p_type) noexcept {
+        type = p_type;
+        reset();
+    }
+
+    void reset() noexcept {
         switch (type) {
         case protocol_type_t::TCP:
             sp_proto.tcp = tcp_protocol_t();
             break;
         case protocol_type_t::HTTP:
             sp_proto.http = http_protocol_t();
-            break;
-        default:
             break;
         }
     }
@@ -32,8 +39,6 @@ struct protocol_t {
             return sp_proto.tcp.prepare_response(pipes);
         case protocol_type_t::HTTP:
             return sp_proto.http.prepare_response(pipes);
-        default:
-            break;
         }
     }
 
@@ -43,8 +48,6 @@ struct protocol_t {
             return sp_proto.tcp.finalize_response(pipes);
         case protocol_type_t::HTTP:
             return sp_proto.http.finalize_response(pipes);
-        default:
-            break;
         }
     };
 

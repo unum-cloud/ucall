@@ -73,6 +73,7 @@ bool server_t::consider_accepting_new_connection() noexcept {
 
     connections_mutex.lock();
     connection_t* con_ptr = connections.alloc();
+    con_ptr->protocol.reset_protocol(protocol_type);
     connections_mutex.unlock();
 
     if (!con_ptr) {

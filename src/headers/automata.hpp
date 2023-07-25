@@ -2,7 +2,6 @@
 
 #include "connection.hpp"
 #include "parse/json.hpp"
-#include "parse/protocol.hpp"
 #include "reply.hpp"
 #include "server.hpp"
 #include "shared.hpp"
@@ -14,7 +13,6 @@ struct automata_t {
     scratch_space_t& scratch;
     connection_t& connection;
     int completed_result{};
-    protocol_t protocol;
 
     void operator()() noexcept;
 
@@ -39,6 +37,7 @@ void automata_t::close_gracefully() noexcept {
 void automata_t::send_next() noexcept {
     exchange_pipes_t& pipes = connection.pipes;
     connection.stage = stage_t::responding_in_progress_k;
+    connection.protocol.reset();
     pipes.release_inputs();
 
     server.network_engine.send_packet(connection, (void*)pipes.next_output_address(), pipes.next_output_length(),
@@ -117,8 +116,8 @@ void automata_t::operator()() noexcept {
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
-        if (protocol.is_input_complete(connection.pipes.input_span())) {
-            server.engine.raise_request(scratch, connection.pipes, protocol, this);
+        if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
+            server.engine.raise_request(scratch, connection.pipes, connection.protocol, this);
 
             connection.pipes.release_inputs();
             // Some requests require no response at all,
@@ -224,9 +223,12 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
     for (std::size_t i = 0; i != completed_count; ++i) {
         unum::ucall::completed_event_t& completed = completed_events[i];
 
-        unum::ucall::automata_t automata{*server, //
-                                         server->spaces[thread_idx], *completed.connection_ptr, completed.result,
-                                         unum::ucall::protocol_t(server->protocol_type)};
+        unum::ucall::automata_t automata{
+            *server, //
+            server->spaces[thread_idx],
+            *completed.connection_ptr,
+            completed.result,
+        };
 
         // If everything is fine, let automata work in its normal regime.
         automata();

@@ -4,6 +4,7 @@
 
 #include "contain/pipe.hpp"
 #include "globals.hpp"
+#include "parse/protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
@@ -17,6 +18,7 @@ struct connection_t {
     descriptor_t descriptor{invalid_descriptor_k};
     /// @brief Current state at which the automata has arrived.
     stage_t stage{};
+    protocol_t protocol{};
 
     struct sockaddr client_address {};
     socklen_t client_address_len{sizeof(struct sockaddr)};
