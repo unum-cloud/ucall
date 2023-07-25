@@ -12,24 +12,11 @@ using network_data_t = void*;
 /// `iovec`-s to pass to the kernel.
 static constexpr std::size_t iovecs_for_content_k = 5;
 static constexpr std::size_t iovecs_for_error_k = 7;
-/// @brief JSON-RPC can be transmitted over HTTP, meaning that we
-/// must return headers with the Status Code, Content Type, and,
-/// most importantly, the Content Length, as well as some padding
-/// afterwards. Expected response headers are:
-/// https://stackoverflow.com/a/25586633/2766161
-static constexpr std::size_t iovecs_for_http_response_k = 1;
-
-static constexpr char const* http_header_k =
-    "HTTP/1.1 200 OK\r\nContent-Length:          \r\nContent-Type: application/json\r\n\r\n";
-static constexpr std::size_t http_header_size_k = 78;
-static constexpr std::size_t http_header_length_offset_k = 33;
-static constexpr std::size_t http_header_length_capacity_k = 9;
 
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
 static constexpr std::size_t ram_page_size_k = 4096;
-/// @brief  Expected max length of http headers
-static constexpr std::size_t http_head_max_size_k = 1024;
+
 /// @brief The maximum length of JSON-Pointer, we will use
 /// to lookup parameters in heavily nested requests.
 /// A performance-oriented API will have maximum depth of 1 token.

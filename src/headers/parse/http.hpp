@@ -11,6 +11,12 @@
 
 namespace unum::ucall {
 
+static constexpr char const* http_header_k =
+    "HTTP/1.1 200 OK\r\nContent-Length:          \r\nContent-Type: application/json\r\n\r\n";
+static constexpr std::size_t http_header_size_k = 78;
+static constexpr std::size_t http_header_length_offset_k = 33;
+static constexpr std::size_t http_header_length_capacity_k = 9;
+
 struct http_protocol_t {
     size_t body_size;
     /// @brief Expected reception length extracted from HTTP headers.
