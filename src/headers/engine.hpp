@@ -63,7 +63,7 @@ void engine_t::raise_calls(scratch_space_t& scratch, exchange_pipes_t& pipes, pr
         return ucall_call_reply_error_out_of_memory(call);
 
     if (one_or_many.error() != sj::SUCCESS)
-        return ucall_call_reply_error(call, -32700, "Invalid JSON was received by the server.", 41);
+        return ucall_call_reply_error(call, -32700, "Invalid JSON was received by the server.", 40);
 
     protocol.prepare_response(pipes);
 

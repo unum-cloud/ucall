@@ -266,9 +266,12 @@ void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, s
 
     struct iovec iovecs[unum::ucall::iovecs_for_error_k] {};
     unum::ucall::fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len),
-                                 std::string_view(note, note_len), true);
+                                 std::string_view(note, note_len), false);
+
+    automata.connection.protocol.prepare_response(connection.pipes);
     if (!connection.pipes.append_outputs<unum::ucall::iovecs_for_error_k>(iovecs))
         return ucall_call_reply_error_out_of_memory(call);
+    automata.connection.protocol.finalize_response(connection.pipes);
 }
 
 void ucall_call_reply_error_invalid_params(ucall_call_t call) {
