@@ -21,14 +21,16 @@ struct http_protocol_t {
     size_t body_size;
     /// @brief Expected reception length extracted from HTTP headers.
     std::optional<std::size_t> content_length{};
-    /// @brief Absolute time extracted from HTTP headers, for the requested lifetime of this channel.
-    std::optional<ssize_t> keep_alive{};
-    /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
-    std::optional<std::string_view> content_type{};
+    // /// @brief Absolute time extracted from HTTP headers, for the requested lifetime of this channel.
+    // std::optional<ssize_t> keep_alive{};
+    // /// @brief Expected MIME type of payload extracted from HTTP headers. Generally "application/json".
+    // std::optional<std::string_view> content_type{};
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
+
+    inline void reset() noexcept;
 
     bool is_input_complete(span_gt<char> const& input) noexcept;
 
@@ -50,9 +52,12 @@ inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept
     auto res = std::to_chars(output.data() + http_header_length_offset_k,
                              output.data() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
 
-    if (res.ec != std::errc())
-        return ucall_call_reply_error_out_of_memory(this);
+    if (res.ec != std::errc()) {
+        // TODO Return error
+    }
 }
+
+void http_protocol_t::reset() noexcept { content_length.reset(); }
 
 bool http_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
 

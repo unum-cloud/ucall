@@ -8,7 +8,7 @@
 #include "log.hpp"
 #include "network.hpp"
 #include "parse/json.hpp"
-#include "parse/protocol.hpp"
+#include "parse/protocol/protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {

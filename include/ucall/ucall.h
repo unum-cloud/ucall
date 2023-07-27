@@ -45,7 +45,7 @@ typedef char const* ucall_str_t;
 
 typedef void (*ucall_callback_t)(ucall_call_t, ucall_callback_tag_t);
 
-typedef enum protocol_type_t { TCP, HTTP } protocol_type_t;
+typedef enum protocol_type_t { TCP, HTTP, JSONRPC_TCP, JSONRPC_HTTP } protocol_type_t;
 
 /**
  * @brief Configuration parameters for `ucall_init()`.

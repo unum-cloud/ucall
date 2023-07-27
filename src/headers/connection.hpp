@@ -4,7 +4,7 @@
 
 #include "contain/pipe.hpp"
 #include "globals.hpp"
-#include "parse/protocol.hpp"
+#include "parse/protocol/protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
