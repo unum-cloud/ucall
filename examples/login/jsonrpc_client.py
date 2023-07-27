@@ -107,37 +107,24 @@ class CaseTCP:
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
         self.expected = -1
-        self.uri = uri
-        self.port = port
-        self.sock = None
-        self.payload = ''.join(random.choices(
-            string.ascii_uppercase, k=80))
+        self.client = Client(uri, port, use_http=False)
+        self.response = None
 
-    def __call__(self, **kwargs) -> int:
-        self.send(**kwargs)
+    def __call__(self) -> str:
+        self.send()
         return self.recv()
 
-    def send(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+    def send(self):
+        user_id = random.randint(1, 1000)
+        session_id = random.randint(1, 1000)
+        self.expected = ((user_id ^ session_id) % 23) == 0
 
-        a = random.randint(1, 1000) if a is None else a
-        b = random.randint(1, 1000) if b is None else b
-        jsonrpc = REQUEST_BIG_PATTERN % (self.identity, a, b, self.payload)
-        self.expected = (a ^ b) % 23 == 0
-        self.sock = make_tcp_socket(self.uri, self.port) if socket_is_closed(
-            self.sock) else self.sock
-        self.sock.send(jsonrpc.encode())
+        self.response = self.client.validate_session(
+            user_id=user_id, session_id=session_id)
 
-    def recv(self) -> int:
-        # self.sock.settimeout(0.01)
-        response_bytes = recvall(self.sock).decode()
-        self.sock.settimeout(None)
-        response = json.loads(response_bytes)
-        assert 'error' not in response, response['error']
-        received = response['result']
-        assert response['jsonrpc']
-        assert response.get('id', None) == self.identity
-        assert self.expected == received, 'Wrong Answer'
-        return received
+    def recv(self):
+        assert self.response.json == self.expected
+        return self.response.json
 
 
 class CaseTCPHTTP:

@@ -9,10 +9,9 @@
 #include "shared.hpp"
 
 namespace unum::ucall {
+static constexpr char tcp_termination_symbol = '\0';
 
 struct tcp_protocol_t {
-    /// @brief Expected reception length
-    std::optional<std::size_t> content_length{};
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -25,19 +24,17 @@ struct tcp_protocol_t {
 
 inline void tcp_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {}
 
-inline void tcp_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {}
+inline void tcp_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
+    pipes.push_back_reserved(tcp_termination_symbol);
+}
 
 bool tcp_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
-    if (!content_length) {
-        content_length = input.size();
-        return false;
-    }
-    return content_length == input.size();
+    return input[input.size() - 1] == tcp_termination_symbol;
 }
 
 inline std::variant<parsed_request_t, default_error_t> tcp_protocol_t::parse(std::string_view body) const noexcept {
     parsed_request_t req{};
-    req.body = body;
+    req.body = {body.begin(), body.size() - 1};
     return req;
 }
 
