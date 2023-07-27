@@ -179,6 +179,9 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // Not sure if this is required, after we have a kernel with `IORING_OP_SENDMSG_ZC` support, we can check.
     // if (setsockopt(socket_descriptor, SOL_SOCKET, SO_ZEROCOPY, &socket_options, sizeof(socket_options)) == -1)
     //     goto cleanup;
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
+        errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
@@ -327,13 +330,13 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
     io_uring_sqe* uring_sqe = io_uring_get_sqe(uring);
 
     // TODO: Test and benchmark the `send_zc option`.
-    if (io_check_send_zc()) {
-        io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), buffer, buf_len, 0, 0, buf_index);
-    } else {
-        io_uring_prep_send(uring_sqe, int(connection.descriptor), buffer, buf_len, 0);
-        uring_sqe->flags |= IOSQE_FIXED_FILE;
-        uring_sqe->buf_index = buf_index;
-    }
+    // if (io_check_send_zc()) {
+    //     io_uring_prep_send_zc_fixed(uring_sqe, int(connection.descriptor), buffer, buf_len, 0, 0, buf_index);
+    // } else {
+    io_uring_prep_send(uring_sqe, int(connection.descriptor), buffer, buf_len, 0);
+    uring_sqe->flags |= IOSQE_FIXED_FILE;
+    uring_sqe->buf_index = buf_index;
+    // }
     io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_flags(uring_sqe, 0);
     io_uring_submit(uring);
