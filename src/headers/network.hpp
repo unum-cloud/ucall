@@ -13,5 +13,7 @@ struct network_engine_t {
     void recv_packet(unum::ucall::connection_t&, void*, std::size_t, std::size_t);
     void close_connection_gracefully(unum::ucall::connection_t&);
 
+    bool is_canceled(ssize_t, unum::ucall::connection_t const&);
+
     template <size_t max_count_ak> std::size_t pop_completed_events(unum::ucall::completed_event_t*);
 };

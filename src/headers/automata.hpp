@@ -12,7 +12,7 @@ struct automata_t {
     server_t& server;
     scratch_space_t& scratch;
     connection_t& connection;
-    int completed_result{};
+    ssize_t completed_result{};
 
     void operator()() noexcept;
 
@@ -62,7 +62,7 @@ void automata_t::operator()() noexcept {
 
     case stage_t::waiting_to_accept_k:
 
-        if (completed_result == -ECANCELED) {
+        if (server.network_engine.is_canceled(completed_result, connection)) {
             server.release_connection(connection);
             server.reserved_connections--;
             server.consider_accepting_new_connection();
@@ -91,7 +91,7 @@ void automata_t::operator()() noexcept {
         // If the following timeout request has happened,
         // we don't want to do anything here. Let's leave the faith of
         // this connection to the subsequent timer to decide.
-        if (completed_result == -ECANCELED) {
+        if (server.network_engine.is_canceled(completed_result, connection)) {
             connection.sleep_ns += connection.next_wakeup;
             connection.next_wakeup *= sleep_growth_factor_k;
             completed_result = 0;
@@ -146,6 +146,12 @@ void automata_t::operator()() noexcept {
     case stage_t::responding_in_progress_k:
 
         connection.empty_transmits = completed_result == 0 ? ++connection.empty_transmits : 0;
+
+        if (server.network_engine.is_canceled(completed_result, connection)) {
+            connection.sleep_ns += connection.next_wakeup;
+            connection.next_wakeup *= sleep_growth_factor_k;
+            completed_result = 0;
+        }
 
         if (should_release())
             return close_gracefully();

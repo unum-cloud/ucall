@@ -271,31 +271,6 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
     ctx->submission_mutex.unlock();
 }
 
-template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
-    uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
-    io_uring* uring = &ctx->uring;
-    unsigned uring_head = 0;
-    unsigned completed = 0;
-    unsigned passed = 0;
-    io_uring_cqe* uring_cqe{};
-
-    ctx->submission_mutex.lock();
-    io_uring_for_each_cqe(uring, uring_head, uring_cqe) {
-        ++passed;
-        if (!uring_cqe->user_data)
-            continue;
-        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
-        events[completed].result = uring_cqe->res;
-        ++completed;
-        if (completed == max_count_ak)
-            break;
-    }
-
-    io_uring_cq_advance(uring, passed);
-    ctx->submission_mutex.unlock();
-    return completed;
-}
-
 void network_engine_t::close_connection_gracefully(connection_t& connection) {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     // The operations are not expected to complete in exactly the same order
@@ -372,4 +347,31 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
     io_uring_sqe_set_flags(uring_sqe, 0);
     io_uring_submit(uring);
     ctx->submission_mutex.unlock();
+}
+
+bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) { return res == -ECANCELED; };
+
+template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
+    uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
+    io_uring* uring = &ctx->uring;
+    unsigned uring_head = 0;
+    unsigned completed = 0;
+    unsigned passed = 0;
+    io_uring_cqe* uring_cqe{};
+
+    ctx->submission_mutex.lock();
+    io_uring_for_each_cqe(uring, uring_head, uring_cqe) {
+        ++passed;
+        if (!uring_cqe->user_data)
+            continue;
+        events[completed].connection_ptr = (connection_t*)uring_cqe->user_data;
+        events[completed].result = uring_cqe->res;
+        ++completed;
+        if (completed == max_count_ak)
+            break;
+    }
+
+    io_uring_cq_advance(uring, passed);
+    ctx->submission_mutex.unlock();
+    return completed;
 }
