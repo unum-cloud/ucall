@@ -33,8 +33,8 @@ class Server:
             from ucall import uring
             self.native = uring.Server(**kwargs)
         else:
-            from ucall import posix
-            self.native = posix.Server(**kwargs)
+            from ucall import synced
+            self.native = synced.Server(**kwargs)
 
     def __call__(self, func: Callable):
         return self.route(func)

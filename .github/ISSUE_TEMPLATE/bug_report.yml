@@ -68,7 +68,7 @@ body:
     attributes:
       label: Which implementation are you using?
       options:
-        - POSIX
+        - synced
         - io_uring
     validations:
       required: true

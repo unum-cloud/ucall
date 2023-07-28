@@ -4,7 +4,7 @@ API Reference
 =================
 Regular Server
 =================
-.. automodule:: ucall.posix
+.. automodule:: ucall.synced
     :members:
     :undoc-members:
 

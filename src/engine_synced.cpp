@@ -1,5 +1,5 @@
 /**
- * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
+ * @brief JSON-RPC implementation for TCP/IP stack with SYNCED calls.
  * @author Ashot Vardanian
  */
 
@@ -51,7 +51,7 @@ struct conn_ctx_t {
     ssize_t res;
 };
 
-struct posix_ctx_t {
+struct synced_ctx_t {
     std::queue<conn_ctx_t> res_queue; // TODO replace with custom
     mutex_t queue_mutex;
 };
@@ -85,7 +85,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     int socket_options{1};
     int socket_descriptor{-1};
     int uring_result{-1};
-    posix_ctx_t* uctx = new posix_ctx_t();
+    synced_ctx_t* uctx = new synced_ctx_t();
     server_t* server_ptr{};
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
@@ -170,7 +170,7 @@ void ucall_free(ucall_server_t punned_server) {
         return;
 
     server_t& server = *reinterpret_cast<server_t*>(punned_server);
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(server.network_engine.network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(server.network_engine.network_data);
     close(server.socket);
     server.~server_t();
     std::free(punned_server);
@@ -178,7 +178,7 @@ void ucall_free(ucall_server_t punned_server) {
 }
 
 int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -209,7 +209,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
 }
 
 void network_engine_t::set_stats_heartbeat(connection_t& connection) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     conn_ctx_t coctx{.conn_ptr = &connection, .res = 0};
     // TODO what?
@@ -220,7 +220,7 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
 }
 
 void network_engine_t::close_connection_gracefully(connection_t& connection) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     conn_ctx_t coctx{.conn_ptr = &connection, .res = close(connection.descriptor)};
     if (coctx.res == -1)
@@ -232,7 +232,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
 }
 
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     conn_ctx_t coctx{.conn_ptr = &connection,
                      .res = send(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
@@ -245,7 +245,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 }
 
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     conn_ctx_t coctx{.conn_ptr = &connection,
                      .res = recv(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
@@ -262,7 +262,7 @@ bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const&
 };
 
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
-    posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
     size_t completed = 0;
 

@@ -167,8 +167,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
 
     // Configure the socket.
-    // In the past we would use the normal POSIX call, but we should prefer direct descriptors over it.
-    // socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+
     uring_sqe = io_uring_get_sqe(uring);
     io_uring_prep_socket_direct(uring_sqe, AF_INET, SOCK_STREAM, 0, IORING_FILE_INDEX_ALLOC, 0);
     uring_result = io_uring_submit_and_wait(uring, 1);
