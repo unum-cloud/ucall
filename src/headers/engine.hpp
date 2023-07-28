@@ -27,7 +27,7 @@ struct engine_t {
     std::variant<named_callback_t, default_error_t> find_callback(scratch_space_t&) const noexcept;
 
     bool find_and_call(scratch_space_t&, ucall_call_t) const noexcept;
-    void raise_calls(scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
+    void raise_calls(sjd::parser&, scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
     void raise_request(scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
 };
 
@@ -44,17 +44,13 @@ void engine_t::raise_request(scratch_space_t& scratch, exchange_pipes_t& pipes, 
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
             return ucall_call_reply_error_out_of_memory(call);
-        scratch.dynamic_parser = &parser;
-    } else {
-        scratch.dynamic_parser = &scratch.parser;
-    }
-
-    return raise_calls(scratch, pipes, protocol, call);
+        return raise_calls(parser, scratch, pipes, protocol, call);
+    } else
+        return raise_calls(scratch.parser, scratch, pipes, protocol, call);
 }
 
-void engine_t::raise_calls(scratch_space_t& scratch, exchange_pipes_t& pipes, protocol_t& protocol,
+void engine_t::raise_calls(sjd::parser& parser, scratch_space_t& scratch, exchange_pipes_t& pipes, protocol_t& protocol,
                            ucall_call_t call) const noexcept {
-    sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
     parser.set_max_capacity(json_body.size());
     auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
