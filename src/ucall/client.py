@@ -146,6 +146,7 @@ class Client:
     def _receive_all_http(self, buffer_size=4096):
         body = None
         content_len = -1
+        header = b''
 
         while b'\r\n\r\n' not in header:
             chunk = self.sock.recv(1024)
