@@ -67,6 +67,7 @@ using namespace unum::ucall;
 
 struct uring_ctx_t {
     mutex_t submission_mutex{};
+    memory_map_t fixed_buffers{};
     io_uring uring{};
 };
 
@@ -115,7 +116,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
     buffer_gt<struct iovec> registered_buffers{};
-    memory_map_t fixed_buffers{};
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -134,7 +134,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (!callbacks.reserve(config.max_callbacks))
         goto cleanup;
-    if (!fixed_buffers.reserve(ram_page_size_k * 2u * config.max_concurrent_connections))
+    if (!uctx->fixed_buffers.reserve(ram_page_size_k * 2u * config.max_concurrent_connections))
         goto cleanup;
     if (!connections.reserve(config.max_concurrent_connections))
         goto cleanup;
@@ -149,7 +149,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     for (std::size_t i = 0; i != config.max_concurrent_connections; ++i) {
         auto& connection = connections.at_offset(i);
-        auto inputs = fixed_buffers.ptr + ram_page_size_k * 2u * i;
+        auto inputs = uctx->fixed_buffers.ptr + ram_page_size_k * 2u * i;
         auto outputs = inputs + ram_page_size_k;
         connection.pipes.mount(inputs, outputs);
 
