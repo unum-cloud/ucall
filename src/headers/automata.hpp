@@ -211,9 +211,8 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
     // is responsible for checking if a specific request has been completed. All of the submitted
     // memory must be preserved until we get the confirmation.
     unum::ucall::server_t* server = reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    bool waiting_new_connection = false;
-    if (!thread_idx)
-        waiting_new_connection = server->consider_accepting_new_connection();
+    if (thread_idx == 0)
+        server->consider_accepting_new_connection();
 
     constexpr std::size_t completed_max_k{16};
     unum::ucall::completed_event_t completed_events[completed_max_k]{};
