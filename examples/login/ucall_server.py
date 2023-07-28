@@ -1,6 +1,6 @@
 import random
 
-from ucall.synced import Server
+from ucall.posix import Server
 
 server = Server(
     port=8545,

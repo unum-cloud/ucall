@@ -59,10 +59,10 @@
             "miDebuggerPath": "/usr/bin/gdb"
         },
         {
-            "name": "C++: Test SYNCED Server",
+            "name": "C++: Test POSIX Server",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build_debug/build/bin/ucall_example_login_synced",
+            "program": "${workspaceFolder}/build_debug/build/bin/ucall_example_login_posix",
             "cwd": "${workspaceFolder}",
             "showDisplayString": true,
             "stopAtEntry": false,

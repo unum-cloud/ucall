@@ -26,13 +26,13 @@ python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
 
 ### UCall
 
-UCall can produce both a SYNCED compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
-You would either run `ucall_example_sum_synced` or `ucall_example_sum_uring`.
+UCall can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
+You would either run `ucall_example_sum_posix` or `ucall_example_sum_uring`.
 
 ```sh
 sudo apt-get install cmake g++ build-essential
 cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
-./build_release/build/bin/ucall_example_sum_synced &
+./build_release/build/bin/ucall_example_sum_posix &
 ./build_release/build/bin/ucall_example_sum_uring &
 python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
 python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress

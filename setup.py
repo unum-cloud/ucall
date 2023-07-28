@@ -120,7 +120,7 @@ setup(
     package_dir={'': 'src'},
     ext_modules=[
         CMakeExtension('ucall.uring'),
-        CMakeExtension('ucall.synced'),
+        CMakeExtension('ucall.posix'),
     ],
     cmdclass={
         'build_ext': CMakeBuild,

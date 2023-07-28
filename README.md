@@ -63,7 +63,7 @@ uvicorn.run(...)
 <td>
 
 ```python
-from ucall.synced import Server
+from ucall.posix import Server
 # from ucall.uring import Server on 5.19+
 
 server = Server()
@@ -89,7 +89,7 @@ How does UCall compare to FastAPI and gRPC?
 | Fast API over WebSocket |   ✅   |   🐍    |              86 μs |            11'356 rps ¹ |
 | gRPC ²                  |   ✅   |   🐍    |             164 μs |               9'849 rps |
 |                         |       |        |                    |                         |
-| UCall with SYNCED        |   ❌   |   C    |              62 μs |              79'000 rps |
+| UCall with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
 | UCall with io_uring     |   ✅   |   🐍    |              40 μs |             210'000 rps |
 | UCall with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
 
@@ -238,9 +238,9 @@ This library is so fast, that it doesn't need more than 1 core, so you can run a
 | Fast API over WebSocket |   ✅   |   🐍    |    1    |  1'504 rps |   3'051 rps |
 | gRPC                    |   ✅   |   🐍    |    1    |  1'169 rps |   1'974 rps |
 |                         |       |        |         |            |             |
-| UCall with SYNCED        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
+| UCall with POSIX        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
 | UCall with io_uring     |   ✅   |   C    |    1    |          - |   5'864 rps |
-| UCall with SYNCED        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
+| UCall with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
 | UCall with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
 In this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.
