@@ -28,6 +28,9 @@ struct http_protocol_t {
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
+    inline bool append_response(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
+    inline bool append_error(exchange_pipes_t&, std::string_view, std::string_view, std::string_view) noexcept;
+
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
     inline void reset() noexcept;
@@ -45,6 +48,16 @@ inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept 
     pipes.append_reserved(http_header_k, http_header_size_k);
     body_size = pipes.output_span().size();
 }
+
+inline bool http_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view,
+                                             std::string_view response) noexcept {
+    return pipes.append_outputs(response);
+};
+
+inline bool http_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code, std::string_view,
+                                          std::string_view message) noexcept {
+    return pipes.append_outputs(error_code);
+};
 
 inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     auto output = pipes.output_span();

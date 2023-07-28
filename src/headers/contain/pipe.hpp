@@ -6,22 +6,6 @@
 
 namespace unum::ucall {
 
-template <std::size_t iovecs_len_ak> std::size_t iovecs_length(struct iovec const* iovecs) noexcept {
-    std::size_t added_length = 0;
-#pragma unroll
-    for (std::size_t i = 0; i != iovecs_len_ak; ++i)
-        added_length += iovecs[i].iov_len;
-    return added_length;
-}
-
-template <std::size_t iovecs_len_ak> void iovecs_memcpy(struct iovec const* iovecs, char* output) noexcept {
-#pragma unroll
-    for (std::size_t i = 0; i != iovecs_len_ak; ++i) {
-        std::memcpy(output, iovecs[i].iov_base, iovecs[i].iov_len);
-        output += iovecs[i].iov_len;
-    }
-}
-
 struct exchange_pipe_t {
     char* embedded{};
     std::size_t embedded_used{};
@@ -111,7 +95,7 @@ class exchange_pipes_t {
         return output_.dynamic.size() ? output_.embedded_used : output_.embedded_used - output_submitted_;
     }
 
-    template <std::size_t> bool append_outputs(struct iovec const*) noexcept;
+    bool append_outputs(std::string_view) noexcept;
 
 #pragma endregion
 
@@ -141,27 +125,24 @@ class exchange_pipes_t {
 #pragma endregion
 };
 
-template <std::size_t iovecs_count_ak> //
-bool exchange_pipes_t::append_outputs(struct iovec const* iovecs) noexcept {
-    std::size_t added_length = iovecs_length<iovecs_count_ak>(iovecs);
+bool exchange_pipes_t::append_outputs(std::string_view body) noexcept {
     bool was_in_embedded = !output_.dynamic.size();
-    bool fit_into_embedded = output_.embedded_used + added_length < ram_page_size_k;
+    bool fit_into_embedded = output_.embedded_used + body.size() < ram_page_size_k;
 
     if (was_in_embedded && fit_into_embedded) {
-        iovecs_memcpy<iovecs_count_ak>(iovecs, output_.embedded + output_.embedded_used);
-        output_.embedded_used += added_length;
+        memcpy(output_.embedded + output_.embedded_used, body.data(), body.size());
+        output_.embedded_used += body.size();
         return true;
     } else {
-        if (!output_.dynamic.reserve(output_.dynamic.size() + output_.embedded_used + added_length))
+        if (!output_.dynamic.reserve(output_.dynamic.size() + output_.embedded_used + body.size()))
             return false;
         if (was_in_embedded) {
             if (!output_.dynamic.append_n(output_.embedded, output_.embedded_used))
                 return false;
             output_.embedded_used = 0;
         }
-        for (std::size_t i = 0; i != iovecs_count_ak; ++i)
-            if (!output_.dynamic.append_n((char const*)iovecs[i].iov_base, iovecs[i].iov_len))
-                return false;
+        if (!output_.dynamic.append_n(body.data(), body.size()))
+            return false;
         return true;
     }
 }

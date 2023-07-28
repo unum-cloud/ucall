@@ -59,6 +59,34 @@ void protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
     }
 }
 
+bool protocol_t::append_response(exchange_pipes_t& pipes, std::string_view request_id,
+                                 std::string_view response) noexcept {
+    switch (type) {
+    case protocol_type_t::TCP:
+        return std::any_cast<tcp_protocol_t&>(sp_proto).append_response(pipes, request_id, response);
+    case protocol_type_t::HTTP:
+        return std::any_cast<http_protocol_t&>(sp_proto).append_response(pipes, request_id, response);
+    case protocol_type_t::JSONRPC_TCP:
+    case protocol_type_t::JSONRPC_HTTP:
+        return std::any_cast<jsonrpc_protocol_t&>(sp_proto).append_response(pipes, request_id, response);
+    }
+    return false;
+};
+
+bool protocol_t::append_error(exchange_pipes_t& pipes, std::string_view request_id, std::string_view error_code,
+                              std::string_view response) noexcept {
+    switch (type) {
+    case protocol_type_t::TCP:
+        return std::any_cast<tcp_protocol_t&>(sp_proto).append_error(pipes, request_id, error_code, response);
+    case protocol_type_t::HTTP:
+        return std::any_cast<http_protocol_t&>(sp_proto).append_error(pipes, request_id, error_code, response);
+    case protocol_type_t::JSONRPC_TCP:
+    case protocol_type_t::JSONRPC_HTTP:
+        return std::any_cast<jsonrpc_protocol_t&>(sp_proto).append_error(pipes, request_id, error_code, response);
+    }
+    return false;
+};
+
 void protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     switch (type) {
     case protocol_type_t::TCP:

@@ -2,7 +2,6 @@
 
 #include "connection.hpp"
 #include "parse/json.hpp"
-#include "reply.hpp"
 #include "server.hpp"
 #include "shared.hpp"
 
@@ -249,9 +248,7 @@ void ucall_call_reply_content(ucall_call_t call, ucall_str_t body, size_t body_l
         return;
 
     body_len = unum::ucall::string_length(body, body_len);
-    struct iovec iovecs[unum::ucall::iovecs_for_content_k] {};
-    unum::ucall::fill_with_content(iovecs, scratch.dynamic_id, std::string_view(body, body_len), true);
-    connection.pipes.append_outputs<unum::ucall::iovecs_for_content_k>(iovecs);
+    connection.protocol.append_response(connection.pipes, scratch.dynamic_id, std::string_view(body, body_len));
 }
 
 void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, size_t note_len) {
@@ -269,12 +266,9 @@ void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, s
     if (res.ec != std::error_code())
         return ucall_call_reply_error_unknown(call);
 
-    struct iovec iovecs[unum::ucall::iovecs_for_error_k] {};
-    unum::ucall::fill_with_error(iovecs, scratch.dynamic_id, std::string_view(code, code_len),
-                                 std::string_view(note, note_len), false);
-
     automata.connection.protocol.prepare_response(connection.pipes);
-    if (!connection.pipes.append_outputs<unum::ucall::iovecs_for_error_k>(iovecs))
+    if (!connection.protocol.append_error(connection.pipes, scratch.dynamic_id, std::string_view(code, code_len),
+                                          std::string_view(note, note_len)))
         return ucall_call_reply_error_out_of_memory(call);
     automata.connection.protocol.finalize_response(connection.pipes);
 }

@@ -1,8 +1,7 @@
 #pragma once
 
-#if defined(__linux__) // iovec required only for uring
+#if defined(__linux__)
 #define UCALL_IS_LINUX
-#include <sys/uio.h> // `struct iovec`
 #endif
 
 #include <atomic>

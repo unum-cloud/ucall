@@ -19,6 +19,9 @@ class protocol_t {
 
     void prepare_response(exchange_pipes_t&) noexcept;
 
+    bool append_response(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
+    bool append_error(exchange_pipes_t&, std::string_view, std::string_view, std::string_view) noexcept;
+
     void finalize_response(exchange_pipes_t&) noexcept;
 
     bool is_input_complete(span_gt<char> const&) noexcept;

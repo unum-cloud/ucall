@@ -7,12 +7,6 @@ using descriptor_t = ssize_t;
 using connectino_data_t = void*;
 using network_data_t = void*;
 
-/// @brief When preparing replies to requests, instead of allocating
-/// a new tape and joining them together, we assemble the requests
-/// `iovec`-s to pass to the kernel.
-static constexpr std::size_t iovecs_for_content_k = 5;
-static constexpr std::size_t iovecs_for_error_k = 7;
-
 /// @brief To avoid dynamic memory allocations on tiny requests,
 /// for every connection we keep a tiny embedded buffer of this capacity.
 static constexpr std::size_t ram_page_size_k = 4096;
