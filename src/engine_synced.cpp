@@ -192,7 +192,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
     // Wait for connection or timeout
     int select_result = select(socket + 1, &readfds, NULL, NULL, &timeout);
 
-    conn_ctx_t coctx{.conn_ptr = &connection};
+    conn_ctx_t coctx{&connection};
 
     if (select_result > 0)
         coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
@@ -211,7 +211,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
 void network_engine_t::set_stats_heartbeat(connection_t& connection) {
     synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{.conn_ptr = &connection, .res = 0};
+    conn_ctx_t coctx{&connection, 0};
     // TODO what?
 
     ctx->queue_mutex.lock();
@@ -222,7 +222,7 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
 void network_engine_t::close_connection_gracefully(connection_t& connection) {
     synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{.conn_ptr = &connection, .res = close(connection.descriptor)};
+    conn_ctx_t coctx{&connection, close(connection.descriptor)};
     if (coctx.res == -1)
         coctx.res = errno;
 
@@ -234,8 +234,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{.conn_ptr = &connection,
-                     .res = send(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
+    conn_ctx_t coctx{&connection, send(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
     if (coctx.res == -1)
         coctx.res = errno;
 
@@ -247,8 +246,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     synced_ctx_t* ctx = reinterpret_cast<synced_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{.conn_ptr = &connection,
-                     .res = recv(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
+    conn_ctx_t coctx{&connection, recv(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
     if (coctx.res == -1)
         coctx.res = errno;
 

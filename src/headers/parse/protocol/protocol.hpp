@@ -84,6 +84,7 @@ bool protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
     case protocol_type_t::JSONRPC_HTTP:
         return std::any_cast<jsonrpc_protocol_t&>(sp_proto).is_input_complete(input);
     }
+    return true;
 };
 
 std::variant<parsed_request_t, default_error_t> protocol_t::parse(std::string_view body) const noexcept {
@@ -96,6 +97,8 @@ std::variant<parsed_request_t, default_error_t> protocol_t::parse(std::string_vi
     case protocol_type_t::JSONRPC_HTTP:
         return std::any_cast<jsonrpc_protocol_t const&>(sp_proto).parse(body);
     }
+
+    return default_error_t{-1, "Unknown"};
 }
 
 } // namespace unum::ucall

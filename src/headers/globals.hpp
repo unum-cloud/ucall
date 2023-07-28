@@ -3,7 +3,7 @@
 
 namespace unum::ucall {
 
-enum descriptor_t : int {};
+using descriptor_t = ssize_t;
 using connectino_data_t = void*;
 using network_data_t = void*;
 
