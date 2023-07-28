@@ -1,7 +1,10 @@
 #pragma once
 
+#if defined(UCALL_IS_WINDOWS)
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
-
+#endif
 #include "contain/pipe.hpp"
 #include "globals.hpp"
 #include "parse/protocol/protocol.hpp"
