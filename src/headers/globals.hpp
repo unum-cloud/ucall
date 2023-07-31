@@ -1,4 +1,11 @@
 #pragma once
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define UCALL_IS_WINDOWS
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 #include <cstddef>
 
 namespace unum::ucall {

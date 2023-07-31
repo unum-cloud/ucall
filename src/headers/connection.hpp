@@ -1,12 +1,14 @@
 #pragma once
 
+#include "globals.hpp"
+
 #if defined(UCALL_IS_WINDOWS)
 #include <winsock2.h>
 #else
 #include <sys/socket.h>
 #endif
+
 #include "containers.hpp"
-#include "globals.hpp"
 #include "parse/protocol/protocol.hpp"
 #include "shared.hpp"
 
