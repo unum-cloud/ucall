@@ -105,9 +105,6 @@ template <typename element_at> class span_gt {
 
   public:
     span_gt(element_at* b, element_at* e) noexcept : begin_(b), end_(e) {}
-    span_gt(span_gt&&) = delete;
-    span_gt(span_gt const&) = delete;
-    span_gt& operator=(span_gt const&) = delete;
 
     [[nodiscard]] element_at const* data() const noexcept { return begin_; }
     [[nodiscard]] element_at* data() noexcept { return begin_; }

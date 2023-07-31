@@ -18,7 +18,7 @@ struct tcp_protocol_t {
 
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
-    bool is_input_complete(span_gt<char> const& input) noexcept;
+    bool is_input_complete(span_gt<char> input) noexcept;
 
     inline void reset() noexcept;
 
@@ -41,7 +41,7 @@ inline void tcp_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept 
     pipes.push_back_reserved(tcp_termination_symbol);
 }
 
-bool tcp_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
+bool tcp_protocol_t::is_input_complete(span_gt<char> input) noexcept {
     return input[input.size() - 1] == tcp_termination_symbol;
 }
 

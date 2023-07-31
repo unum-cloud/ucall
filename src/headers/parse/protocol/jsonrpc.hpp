@@ -18,7 +18,7 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
 
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
-    bool is_input_complete(span_gt<char> const& input) noexcept;
+    bool is_input_complete(span_gt<char> input) noexcept;
 
     inline void reset() noexcept;
 
@@ -78,7 +78,7 @@ inline void jsonrpc_protocol_t<base_protocol_t>::finalize_response(exchange_pipe
 }
 
 template <typename base_protocol_t>
-bool jsonrpc_protocol_t<base_protocol_t>::is_input_complete(span_gt<char> const& input) noexcept {
+bool jsonrpc_protocol_t<base_protocol_t>::is_input_complete(span_gt<char> input) noexcept {
     return base_proto.is_input_complete(input);
 }
 

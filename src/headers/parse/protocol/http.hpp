@@ -35,7 +35,7 @@ struct http_protocol_t {
 
     inline void reset() noexcept;
 
-    bool is_input_complete(span_gt<char> const& input) noexcept;
+    bool is_input_complete(span_gt<char> input) noexcept;
 
     /**
      * @brief Analyzes the contents of the packet, bifurcating pure JSON-RPC from HTTP1-based.
@@ -72,7 +72,7 @@ inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept
 
 void http_protocol_t::reset() noexcept { content_length.reset(); }
 
-bool http_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
+bool http_protocol_t::is_input_complete(span_gt<char> input) noexcept {
 
     if (!content_length) {
         size_t bytes_expected = 0;

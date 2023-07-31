@@ -33,7 +33,7 @@ class protocol_t {
 
     void finalize_response(exchange_pipes_t&) noexcept;
 
-    bool is_input_complete(span_gt<char> const&) noexcept;
+    bool is_input_complete(span_gt<char>) noexcept;
 
     std::variant<parsed_request_t, default_error_t> parse(std::string_view) const noexcept;
 };
@@ -141,7 +141,7 @@ void protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     }
 };
 
-bool protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
+bool protocol_t::is_input_complete(span_gt<char> input) noexcept {
     switch (type) {
     case protocol_type_t::tcp_k:
         return std::get<tcp_protocol_t>(sp_proto).is_input_complete(input);
