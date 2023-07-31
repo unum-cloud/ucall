@@ -1,5 +1,6 @@
 #pragma once
 
+#include "containers.hpp"
 #include "parse/protocol/http.hpp"
 #include "parse/protocol/jsonrpc.hpp"
 #include "parse/protocol/protocol_concept.hpp"
