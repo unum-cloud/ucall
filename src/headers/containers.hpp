@@ -254,12 +254,12 @@ class exchange_pipes_t {
     void prepare_more_outputs() noexcept {
         if (!output_.dynamic.size())
             return;
-        output_.embedded_used = std::min(output_.dynamic.size() - output_submitted_, ram_page_size_k);
+        output_.embedded_used = (std::min)(output_.dynamic.size() - output_submitted_, ram_page_size_k);
         std::memcpy(output_.embedded, output_.dynamic.data() + output_submitted_, output_.embedded_used);
     }
-    bool has_outputs() const noexcept { return std::max(output_.embedded_used, output_.dynamic.size()); }
+    bool has_outputs() const noexcept { return (std::max)(output_.embedded_used, output_.dynamic.size()); }
     bool has_remaining_outputs() const noexcept {
-        return output_submitted_ < std::max(output_.embedded_used, output_.dynamic.size());
+        return output_submitted_ < (std::max)(output_.embedded_used, output_.dynamic.size());
     }
     char const* next_output_address() const noexcept {
         return output_.dynamic.size() ? output_.embedded : output_.embedded + output_submitted_;
