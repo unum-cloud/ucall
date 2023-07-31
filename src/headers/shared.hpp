@@ -113,7 +113,7 @@ struct memory_map_t {
         return *this;
     }
 
-    bool reserve(std::size_t length, int flags = MAP_ANONYMOUS | MAP_PRIVATE) noexcept {
+    bool reserve(std::size_t length) noexcept {
 #if defined(UCALL_IS_WINDOWS)
         HANDLE hFile = INVALID_HANDLE_VALUE;
         HANDLE hMap = CreateFileMapping(hFile, nullptr, PAGE_READWRITE, 0, length, nullptr);
@@ -129,7 +129,7 @@ struct memory_map_t {
         // Use mmap for Linux and other POSIX systems
         // Make sure that the `length` is a multiple of `page_size`
         // auto page_size = sysconf(_SC_PAGE_SIZE);
-        char* new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, flags, -1, 0);
+        char* new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         if (new_ptr == MAP_FAILED) {
             errno;
             return false;
