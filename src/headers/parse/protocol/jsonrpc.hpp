@@ -4,15 +4,12 @@
 #include <optional>
 
 #include "containers.hpp"
-#include "parse/protocol/protocol_concept.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
 
-struct jsonrpc_protocol_t {
-    protocol_t base_proto;
-
-    explicit jsonrpc_protocol_t(protocol_type_t type) noexcept : base_proto(type){};
+template <typename base_protocol_t> struct jsonrpc_protocol_t {
+    base_protocol_t base_proto;
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -27,13 +24,14 @@ struct jsonrpc_protocol_t {
 
     inline std::variant<parsed_request_t, default_error_t> parse(std::string_view body) const noexcept;
 };
-
-inline void jsonrpc_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
+template <typename base_protocol_t>
+inline void jsonrpc_protocol_t<base_protocol_t>::prepare_response(exchange_pipes_t& pipes) noexcept {
     base_proto.prepare_response(pipes);
 }
 
-inline bool jsonrpc_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view request_id,
-                                                std::string_view response) noexcept {
+template <typename base_protocol_t>
+inline bool jsonrpc_protocol_t<base_protocol_t>::append_response(exchange_pipes_t& pipes, std::string_view request_id,
+                                                                 std::string_view response) noexcept {
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
     // <-- {"jsonrpc": "2.0", "id": 1, "result": 19}
@@ -50,8 +48,10 @@ inline bool jsonrpc_protocol_t::append_response(exchange_pipes_t& pipes, std::st
     return true;
 };
 
-inline bool jsonrpc_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view request_id,
-                                             std::string_view error_code, std::string_view message) noexcept {
+template <typename base_protocol_t>
+inline bool jsonrpc_protocol_t<base_protocol_t>::append_error(exchange_pipes_t& pipes, std::string_view request_id,
+                                                              std::string_view error_code,
+                                                              std::string_view message) noexcept {
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "foobar", "id": "1"}
     // <-- {"jsonrpc": "2.0", "id": "1", "error": {"code": -32601, "message": "Method not found"}}
@@ -72,17 +72,21 @@ inline bool jsonrpc_protocol_t::append_error(exchange_pipes_t& pipes, std::strin
     return true;
 };
 
-inline void jsonrpc_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
+template <typename base_protocol_t>
+inline void jsonrpc_protocol_t<base_protocol_t>::finalize_response(exchange_pipes_t& pipes) noexcept {
     base_proto.finalize_response(pipes);
 }
 
-bool jsonrpc_protocol_t::is_input_complete(span_gt<char> const& input) noexcept {
+template <typename base_protocol_t>
+bool jsonrpc_protocol_t<base_protocol_t>::is_input_complete(span_gt<char> const& input) noexcept {
     return base_proto.is_input_complete(input);
 }
 
-void jsonrpc_protocol_t::reset() noexcept { base_proto.reset(); }
+template <typename base_protocol_t> void jsonrpc_protocol_t<base_protocol_t>::reset() noexcept { base_proto.reset(); }
 
-inline std::variant<parsed_request_t, default_error_t> jsonrpc_protocol_t::parse(std::string_view body) const noexcept {
+template <typename base_protocol_t>
+inline std::variant<parsed_request_t, default_error_t>
+jsonrpc_protocol_t<base_protocol_t>::parse(std::string_view body) const noexcept {
     return base_proto.parse(body);
 }
 
