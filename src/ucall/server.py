@@ -26,6 +26,13 @@ def only_native_types(hints: dict[str, type]) -> bool:
     return True
 
 
+class Protocol():
+    TCP = 0
+    HTTP = 1
+    JSONRPC_TCP = 2
+    JSONRPC_HTTP = 3
+
+
 class Server:
 
     def __init__(self, uring_if_possible=True, **kwargs) -> None:
