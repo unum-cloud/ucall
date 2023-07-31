@@ -6,6 +6,10 @@
 typedef SSIZE_T ssize_t;
 #endif
 
+#if defined(__linux__)
+#define UCALL_IS_LINUX
+#endif
+
 #include <cstddef>
 
 namespace unum::ucall {

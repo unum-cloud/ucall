@@ -1,18 +1,20 @@
 #pragma once
 
-#if defined(__linux__)
-#define UCALL_IS_LINUX
+#include "globals.hpp"
+
+#if defined(UCALL_IS_WINDOWS)
+#include <Windows.h>
+
+#else
+#include <sys/mman.h>
+
 #endif
 
 #include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <memory>
-#include <mutex>       // `std::mutex`
-#include <numeric>     // `std::iota`
-#include <stdlib.h>    // `std::aligned_malloc`
 #include <string_view> // `std::string_view`
-#include <sys/mman.h>
 
 #if defined(__x86_64__)
 #ifdef _MSC_VER
@@ -23,8 +25,6 @@
 #endif
 
 #include "ucall/ucall.h" // `ucall_callback_t`
-
-#include "globals.hpp"
 
 namespace unum::ucall {
 
@@ -114,21 +114,40 @@ struct memory_map_t {
     }
 
     bool reserve(std::size_t length, int flags = MAP_ANONYMOUS | MAP_PRIVATE) noexcept {
+#if defined(UCALL_IS_WINDOWS)
+        HANDLE hFile = INVALID_HANDLE_VALUE;
+        HANDLE hMap = CreateFileMapping(hFile, nullptr, PAGE_READWRITE, 0, length, nullptr);
+        if (hMap == nullptr)
+            return false;
+
+        char* new_ptr = (char*)MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, length); // Map a view of the file
+        if (new_ptr == nullptr) {
+            CloseHandle(hMap);
+            return false;
+        }
+#else
+        // Use mmap for Linux and other POSIX systems
         // Make sure that the `length` is a multiple of `page_size`
         // auto page_size = sysconf(_SC_PAGE_SIZE);
-        auto new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, flags, -1, 0);
+        char* new_ptr = (char*)mmap(ptr, length, PROT_WRITE | PROT_READ, flags, -1, 0);
         if (new_ptr == MAP_FAILED) {
             errno;
             return false;
         }
+#endif
         std::memset(new_ptr, 0, length);
         ptr = new_ptr;
         return true;
     }
 
     ~memory_map_t() noexcept {
+#if defined(UCALL_IS_WINDOWS)
+        if (ptr)
+            UnmapViewOfFile(ptr); // Unmap the view of the file
+#else
         if (ptr)
             munmap(ptr, length);
+#endif
         ptr = nullptr;
         length = 0;
     }
