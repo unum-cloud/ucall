@@ -82,8 +82,9 @@ bool http_protocol_t::is_input_complete(span_gt<char> input) noexcept {
             return false;
         parsed_request_t request = std::get<parsed_request_t>(json_or_error);
 
-        auto res = std::from_chars(request.content_length.begin(), request.content_length.end(), bytes_expected);
-        bytes_expected += (request.body.begin() - input.data());
+        auto res = std::from_chars(request.content_length.data(),
+                                   request.content_length.data() + request.content_length.size(), bytes_expected);
+        bytes_expected += (request.body.data() - input.data());
 
         content_length = bytes_expected;
     }
