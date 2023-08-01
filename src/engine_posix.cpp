@@ -12,14 +12,15 @@
 #define SHUT_WR SD_SEND
 #define SHUT_RD SD_RECEIVE
 #define SHUT_RDWR SD_BOTH
-// SO_REUSEPORT is not supported on Windows.
+// SO_REUSEPORT, MSG_NOSIGNAL is not supported on Windows.
 #define SO_REUSEPORT 0
-
+#define MSG_NOSIGNAL 0
 #pragma comment(lib, "Ws2_32.lib")
 #define UNICODE
 
 #else
-#include <arpa/inet.h>  // `inet_addr`
+#include <arpa/inet.h> // `inet_addr`
+#include <fcntl.h>
 #include <netinet/in.h> // `sockaddr_in`
 
 #include <sys/ioctl.h>
@@ -122,6 +123,16 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
     // Configure the socket.
     socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    {
+#if defined(UCALL_IS_WINDOWS)
+        u_long mode = 1; // 1 to enable non-blocking socket, 0 to disable
+        ioctlsocket(socket_descriptor, FIONBIO, &mode);
+#else
+        int flags = fcntl(socket_descriptor, F_GETFL, 0);
+        flags |= O_NONBLOCK;
+        fcntl(socket_descriptor, F_SETFL, flags);
+#endif
+    }
     if (socket_descriptor < 0)
         goto cleanup;
     if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
@@ -225,7 +236,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{&connection, send(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
+    conn_ctx_t coctx{&connection, send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL)};
     if (coctx.res == -1)
         coctx.res = errno;
 
@@ -237,7 +248,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{&connection, recv(connection.descriptor, buffer, buf_len, MSG_DONTWAIT | MSG_NOSIGNAL)};
+    conn_ctx_t coctx{&connection, recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL)};
     if (coctx.res == -1)
         coctx.res = errno;
 

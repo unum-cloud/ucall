@@ -48,7 +48,8 @@ bool tcp_protocol_t::is_input_complete(span_gt<char> input) noexcept {
 void tcp_protocol_t::reset() noexcept {}
 
 inline std::variant<parsed_request_t, default_error_t> tcp_protocol_t::parse(std::string_view body) const noexcept {
-    parsed_request_t req{.body = body};
+    parsed_request_t req;
+    req.body = body;
     req.body.remove_suffix(1);
     return req;
 }
