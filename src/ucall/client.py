@@ -11,39 +11,6 @@ import numpy as np
 from PIL import Image
 
 
-def _receive_all(sock, buffer_size=4096):
-    header = sock.recv(4)
-    body = None
-    content_len = -1
-
-    if header == b'HTTP':
-        while b'\r\n\r\n' not in header:
-            chunk = sock.recv(1024)
-            if not chunk:
-                break
-            header += chunk
-
-        header, body = header.split(b'\r\n\r\n', 1)
-
-        pref = b'Content-Length:'
-        for line in header.splitlines():
-            if line.startswith(pref):
-                content_len = int(line[len(pref):].strip())
-                break
-    else:
-        body = header
-
-    content_len -= len(body)
-    while content_len != 0:
-        chunk = sock.recv(buffer_size)
-        if not chunk:
-            break
-        body += chunk
-        content_len -= len(chunk)
-
-    return body
-
-
 class Response:
 
     def __init__(self, data):
@@ -118,6 +85,7 @@ class Request:
 
 class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
+    TCP_TERMINATOR = b'\0'
 
     def __init__(self, uri: str = '127.0.0.1', port: int = 8545, use_http: bool = True) -> None:
         self.uri = uri
@@ -169,12 +137,52 @@ class Client:
         request = json.dumps(req_obj.packed)
         if self.use_http:
             request = self.http_template % (len(request)) + request
+        else:
+            request += self.TCP_TERMINATOR.decode()  # Termination for TCP NULL
 
         self._make_socket()
         self.sock.send(request.encode())
 
+    def _receive_all_http(self, buffer_size=4096):
+        body = None
+        content_len = -1
+        header = b''
+
+        while b'\r\n\r\n' not in header:
+            chunk = self.sock.recv(1024)
+            if not chunk:
+                break
+            header += chunk
+
+        header, body = header.split(b'\r\n\r\n', 1)
+
+        pref = b'Content-Length:'
+        for line in header.splitlines():
+            if line.startswith(pref):
+                content_len = int(line[len(pref):].strip())
+                break
+
+        content_len -= len(body)
+        while content_len != 0:
+            chunk = self.sock.recv(buffer_size)
+            body += chunk
+            content_len -= len(chunk)
+
+        return body
+
+    def _receive_all_tcp(self, buffer_size=4096):
+        body = b''
+        while not body.endswith(self.TCP_TERMINATOR):
+            body += self.sock.recv(buffer_size)
+
+        return body[:-1]
+
     def _recv(self) -> Response:
-        response_bytes = _receive_all(self.sock)
+        response_bytes = None
+        if self.use_http:
+            response_bytes = self._receive_all_http()
+        else:
+            response_bytes = self._receive_all_tcp()
         response = json.loads(response_bytes)
         return Response(response)
 

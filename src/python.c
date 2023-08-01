@@ -19,7 +19,7 @@
 
 #include <turbob64.h>
 
-#include "helpers/py_to_json.h"
+#include "headers/parse/py_to_json.h"
 #include "ucall/ucall.h"
 
 #define stringify_value_m(a) stringify_m(a)
@@ -414,11 +414,12 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     static const char const* keywords_list[] = {
-        "hostname",      "port",  "queue_depth", "max_callbacks", "max_threads",
-        "count_threads", "quiet", "ssl_pk",      "ssl_certs",     NULL,
+        "hostname", "port",   "protocol",  "queue_depth", "max_callbacks", "max_threads", "count_threads",
+        "quiet",    "ssl_pk", "ssl_certs", NULL,
     };
     self->config.hostname = "0.0.0.0";
     self->config.port = 8545;
+    self->config.protocol = jsonrpc_http_k;
     self->config.queue_depth = 4096;
     self->config.max_callbacks = UINT16_MAX;
     self->config.max_threads = 16;
@@ -429,10 +430,11 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     PyObject* certs_path = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnpsO", (char**)keywords_list, //
-                                     &self->config.hostname, &self->config.port, &self->config.queue_depth,
-                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
-                                     &self->quiet, &self->config.ssl_private_key_path, &certs_path))
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnnpsO", (char**)keywords_list, //
+                                     &self->config.hostname, &self->config.port, &self->config.protocol,
+                                     &self->config.queue_depth, &self->config.max_callbacks, &self->config.max_threads,
+                                     &self->count_threads, &self->quiet, &self->config.ssl_private_key_path,
+                                     &certs_path))
         return -1;
 
     if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
