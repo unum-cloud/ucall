@@ -186,28 +186,17 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
     timeout.tv_sec = 0;
     timeout.tv_usec = connection.next_wakeup;
 
-    // Create fd_set to hold the server_socket
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(socket, &readfds);
-
-    // Wait for connection or timeout
-    int select_result = select(socket + 1, &readfds, NULL, NULL, &timeout);
-
     conn_ctx_t coctx{&connection};
 
-    if (select_result > 0)
-        coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
-    else if (select_result == 0)
-        coctx.res = -ECANCELED;
-    else // -1
-        return errno;
+    coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
+    if (coctx.res == -1)
+        coctx.res = -errno;
 
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
     ctx->queue_mutex.unlock();
 
-    return select_result;
+    return 0;
 }
 
 void network_engine_t::set_stats_heartbeat(connection_t& connection) {
