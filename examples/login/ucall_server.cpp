@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     config.max_lifetime_exchanges = UINT32_MAX;
     config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : fileno(stdin);
     config.logs_format = "human";
+    config.protocol = protocol_type_t::jsonrpc_http_k;
     // config.use_ssl = true;
     // config.ssl_private_key_path = "./examples/login/certs/main.key";
     // const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
