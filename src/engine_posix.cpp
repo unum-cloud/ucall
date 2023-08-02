@@ -32,9 +32,6 @@
 
 #include <queue>
 
-#include <charconv> // `std::to_chars`
-#include <chrono>   // `std::chrono`
-
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -52,9 +49,6 @@
 namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ucall;
-
-using time_clock_t = std::chrono::steady_clock;
-using time_point_t = std::chrono::time_point<time_clock_t>;
 
 static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
