@@ -56,12 +56,12 @@ struct ucall_ssl_context_t {
 
     constexpr ucall_ssl_context_t() noexcept
         : certs{{nullptr}}, sign_certificate({{nullptr}}), verify_certificate({{nullptr}}), hand_props({{{nullptr}}}),
-          tls(nullptr), ssl({.random_bytes = ptls_openssl_random_bytes,
-                             .get_time = &ptls_get_time,
-                             .key_exchanges = ptls_openssl_key_exchanges,
-                             .cipher_suites = ptls_openssl_cipher_suites,
-                             .certificates = {certs, 0},
-                             .sign_certificate = &sign_certificate.super}){};
+          tls(), ssl({.random_bytes = ptls_openssl_random_bytes,
+                      .get_time = &ptls_get_time,
+                      .key_exchanges = ptls_openssl_key_exchanges,
+                      .cipher_suites = ptls_openssl_cipher_suites,
+                      .certificates = {certs, 0},
+                      .sign_certificate = &sign_certificate.super}){};
 
     int init(const char* pk_path, const char** crts_path, size_t crts_cnt) noexcept {
         FILE* fp;
@@ -103,11 +103,48 @@ struct ucall_ssl_context_t {
         return 0;
     }
 
+    ssize_t do_handshake(descriptor_t fd, void* buf, size_t len) {
+        ptls_buffer_t wbuf, rbuf;
+        uint8_t sm_buf[ram_page_size_k];
+
+        ptls_buffer_init(&rbuf, buf, len);
+        ptls_buffer_init(&wbuf, sm_buf, ram_page_size_k);
+        ssize_t ret = 0;
+        ssize_t read_ret = 0;
+        while (!ptls_handshake_is_complete(tls[fd])) {
+            read_ret = recv(fd, rbuf.base, rbuf.capacity, MSG_NOSIGNAL);
+            if (read_ret == -1) {
+                ret = -errno;
+                break;
+            }
+            rbuf.off = read_ret;
+            ret = ptls_handshake(tls[fd], &wbuf, rbuf.base, &rbuf.off, &hand_props);
+            if (ret != PTLS_ERROR_IN_PROGRESS && ret != PTLS_ALERT_CLOSE_NOTIFY)
+                break;
+
+            ret = send(fd, wbuf.base, wbuf.off, MSG_NOSIGNAL);
+            if (ret == -1) {
+                ret = errno;
+                break;
+            }
+            wbuf.off = 0;
+        }
+
+        if (ret >= 0) {
+            ret = read_ret - rbuf.off;
+            memmove(rbuf.base, rbuf.base + rbuf.off, ret);
+        }
+
+        // ptls_buffer_dispose(&rbuf);
+        ptls_buffer_dispose(&wbuf);
+        return ret;
+    }
+
     ptls_iovec_t certs[16];
     ptls_openssl_sign_certificate_t sign_certificate;
     ptls_openssl_verify_certificate_t verify_certificate;
     ptls_handshake_properties_t hand_props;
-    ptls_t* tls;
+    array_gt<ptls_t*> tls;
     ptls_context_t ssl;
 };
 
@@ -118,7 +155,7 @@ struct conn_ctx_t {
 
 struct posix_ctx_t {
     std::queue<conn_ctx_t> res_queue; // TODO replace with custom
-    ucall_ssl_context_t ssl_ctx;
+    std::optional<ucall_ssl_context_t> ssl_ctx;
     mutex_t queue_mutex;
     memory_map_t fixed_buffers{};
 };
@@ -194,9 +231,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         u_long mode = 1; // 1 to enable non-blocking socket, 0 to disable
         ioctlsocket(socket_descriptor, FIONBIO, &mode);
 #else
-        int flags = fcntl(socket_descriptor, F_GETFL, 0);
-        flags |= O_NONBLOCK;
-        fcntl(socket_descriptor, F_SETFL, flags);
+        fcntl(socket_descriptor, F_SETFL, O_NONBLOCK);
 #endif
     }
     if (socket_descriptor < 0)
@@ -209,8 +244,10 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
     if (config.use_ssl) {
-        if (uctx->ssl_ctx.init(config.ssl_private_key_path, config.ssl_certificates_paths,
-                               config.ssl_certificates_count) != 0)
+        uctx->ssl_ctx.emplace();
+        uctx->ssl_ctx->tls.reserve(config.max_concurrent_connections);
+        if (uctx->ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths,
+                                config.ssl_certificates_count) != 0)
             goto cleanup;
     }
 
@@ -253,15 +290,14 @@ void ucall_free(ucall_server_t punned_server) {
 int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = connection.next_wakeup;
-
     conn_ctx_t coctx{&connection};
 
     coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
     if (coctx.res == -1)
         coctx.res = -errno;
+
+    if (ctx->ssl_ctx)
+        ctx->ssl_ctx->tls[coctx.res] = ptls_new(&ctx->ssl_ctx->ssl, true);
 
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
@@ -284,6 +320,10 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
 void network_engine_t::close_connection_gracefully(connection_t& connection) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
+    if (ctx->ssl_ctx) {
+        ptls_free(ctx->ssl_ctx->tls[connection.descriptor]);
+        ctx->ssl_ctx->tls[connection.descriptor] = nullptr;
+    }
     conn_ctx_t coctx{&connection, close(connection.descriptor)};
     if (coctx.res == -1)
         coctx.res = errno;
@@ -295,11 +335,24 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
 
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    conn_ctx_t coctx{&connection};
+    ssize_t res = 0;
 
-    conn_ctx_t coctx{&connection, send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL)};
-    if (coctx.res == -1)
-        coctx.res = errno;
-
+    if (ctx->ssl_ctx) {
+        ptls_buffer_t encrypt_buf;
+        uint8_t sm_buf[ram_page_size_k];
+        ptls_buffer_init(&encrypt_buf, sm_buf, ram_page_size_k);
+        res = ptls_send(ctx->ssl_ctx->tls[connection.descriptor], &encrypt_buf, buffer, buf_len);
+        if (res == 0) {
+            res = send(connection.descriptor, encrypt_buf.base, encrypt_buf.off, MSG_NOSIGNAL);
+            coctx.res = (res != encrypt_buf.off) ? -EAGAIN : buf_len;
+        } else
+            coctx.res = -ECANCELED;
+        ptls_buffer_dispose(&encrypt_buf);
+    } else {
+        res = send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL);
+        coctx.res = (res == -1) ? errno : res;
+    }
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
     ctx->queue_mutex.unlock();
@@ -308,9 +361,34 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{&connection, recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL)};
-    if (coctx.res == -1)
-        coctx.res = errno;
+    conn_ctx_t coctx{&connection};
+    ssize_t res = 0;
+
+    if (ctx->ssl_ctx) {
+        ptls_buffer_t decrpyt_buf;
+        uint8_t read_buf[ram_page_size_k];
+
+        if (!ptls_handshake_is_complete(ctx->ssl_ctx->tls[connection.descriptor]))
+            res = ctx->ssl_ctx->do_handshake(connection.descriptor, read_buf, buf_len);
+
+        if (res < 0)
+            coctx.res = -ECANCELED;
+        else {
+            ptls_buffer_init(&decrpyt_buf, buffer, buf_len);
+            size_t recv_size = ram_page_size_k - res;
+            ssize_t read_res = recv(connection.descriptor, (char*)read_buf + res, recv_size, MSG_NOSIGNAL);
+            res += read_res > 0 ? read_res : 0;
+            if (res > 0) {
+                res = ptls_receive(ctx->ssl_ctx->tls[connection.descriptor], &decrpyt_buf, read_buf, (size_t*)&res);
+                coctx.res = (res == -1) ? -ECANCELED : decrpyt_buf.off;
+            } else
+                coctx.res = -EAGAIN;
+            // ptls_buffer_dispose(&decrpyt_buf);
+        }
+    } else {
+        res = recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL);
+        coctx.res = (res == -1) ? errno : res;
+    }
 
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
@@ -318,7 +396,7 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
 }
 
 bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) {
-    return res == -ECANCELED || res == EWOULDBLOCK || res == -EAGAIN;
+    return res == -ECANCELED || res == -EWOULDBLOCK || res == -EAGAIN;
 };
 
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
