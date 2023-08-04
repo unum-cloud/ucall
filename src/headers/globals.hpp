@@ -48,6 +48,4 @@ static constexpr std::size_t sleep_growth_factor_k{4};
 
 static constexpr descriptor_t bad_descriptor_k{-1};
 
-using timestamp_t = std::uint64_t;
-
 } // namespace unum::ucall
