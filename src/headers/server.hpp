@@ -72,13 +72,12 @@ bool server_t::consider_accepting_new_connection() noexcept {
 
     connections_mutex.lock();
     connection_t* con_ptr = connections.alloc();
-    con_ptr->protocol.reset_protocol(protocol_type);
     connections_mutex.unlock();
 
-    if (!con_ptr) {
+    if (!con_ptr)
         return false;
-    }
 
+    con_ptr->protocol.reset_protocol(protocol_type);
     connection_t& connection = *con_ptr;
     connection.stage = stage_t::waiting_to_accept_k;
     int result = network_engine.try_accept(socket, connection);
