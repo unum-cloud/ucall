@@ -55,13 +55,13 @@ static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 struct ucall_ssl_context_t {
 
     constexpr ucall_ssl_context_t() noexcept
-        : certs{{nullptr}}, sign_certificate({{nullptr}}), verify_certificate({{nullptr}}), hand_props({{{nullptr}}}),
-          tls(), ssl({.random_bytes = ptls_openssl_random_bytes,
-                      .get_time = &ptls_get_time,
-                      .key_exchanges = ptls_openssl_key_exchanges,
-                      .cipher_suites = ptls_openssl_cipher_suites,
-                      .certificates = {certs, 0},
-                      .sign_certificate = &sign_certificate.super}){};
+        : certs(), sign_certificate(), verify_certificate(), hand_props(), tls(),
+          ssl({.random_bytes = ptls_openssl_random_bytes,
+               .get_time = &ptls_get_time,
+               .key_exchanges = ptls_openssl_key_exchanges,
+               .cipher_suites = ptls_openssl_cipher_suites,
+               .certificates = {certs, 0},
+               .sign_certificate = &sign_certificate.super}){};
 
     int init(const char* pk_path, const char** crts_path, size_t crts_cnt) noexcept {
         FILE* fp;
@@ -124,7 +124,7 @@ struct ucall_ssl_context_t {
 
             ret = send(fd, wbuf.base, wbuf.off, MSG_NOSIGNAL);
             if (ret == -1) {
-                ret = errno;
+                ret = -errno;
                 break;
             }
             wbuf.off = 0;
@@ -295,8 +295,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
     coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
     if (coctx.res == -1)
         coctx.res = -errno;
-
-    if (ctx->ssl_ctx)
+    else if (ctx->ssl_ctx)
         ctx->ssl_ctx->tls[coctx.res] = ptls_new(&ctx->ssl_ctx->ssl, true);
 
     ctx->queue_mutex.lock();
@@ -358,6 +357,22 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
     ctx->queue_mutex.unlock();
 }
 
+static ssize_t recv_timeout(descriptor_t fd, char* buffer, size_t buf_len, size_t timout_us) {
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = timout_us;
+    fd_set readfd;
+
+    FD_ZERO(&readfd);
+    FD_SET(fd, &readfd);
+
+    int ret = select(fd + 1, &readfd, NULL, NULL, &tv);
+    if (ret > 0) {
+        return recv(fd, buffer, buf_len, MSG_NOSIGNAL);
+    } else
+        return -1;
+}
+
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
@@ -372,17 +387,18 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
             res = ctx->ssl_ctx->do_handshake(connection.descriptor, read_buf, buf_len);
 
         if (res < 0)
-            coctx.res = -ECANCELED;
+            coctx.res = -EAGAIN;
         else {
-            ptls_buffer_init(&decrpyt_buf, buffer, buf_len);
             size_t recv_size = ram_page_size_k - res;
-            ssize_t read_res = recv(connection.descriptor, (char*)read_buf + res, recv_size, MSG_NOSIGNAL);
+            ssize_t read_res =
+                recv_timeout(connection.descriptor, (char*)read_buf + res, recv_size, connection.next_wakeup);
             res += read_res > 0 ? read_res : 0;
             if (res > 0) {
+                ptls_buffer_init(&decrpyt_buf, buffer, buf_len);
                 res = ptls_receive(ctx->ssl_ctx->tls[connection.descriptor], &decrpyt_buf, read_buf, (size_t*)&res);
                 coctx.res = (res == -1) ? -ECANCELED : decrpyt_buf.off;
             } else
-                coctx.res = -EAGAIN;
+                coctx.res = -errno;
             // ptls_buffer_dispose(&decrpyt_buf);
         }
     } else {
