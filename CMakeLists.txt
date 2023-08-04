@@ -227,6 +227,14 @@ add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
 target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
 target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 
+add_library(ucall_server_epoll src/engine_epoll.cpp)
+target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads)
+set(PYTHON_BACKEND ucall_server_epoll)
+
+add_executable(ucall_example_login_epoll examples/login/ucall_server.cpp)
+target_link_libraries(ucall_example_login_epoll ucall_server_epoll cxxopts)
+target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+
 if(LINUX)
     add_library(ucall_server_uring src/engine_uring.cpp)
     set(PYTHON_BACKEND ucall_server_uring)
