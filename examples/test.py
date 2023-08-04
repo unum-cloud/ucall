@@ -4,7 +4,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ucall.client import Client, ClientTLS
-from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
+from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP, CaseTLS
 
 
 class ClientGeneric:
@@ -41,6 +41,12 @@ def test_shuffled_tcp():
 def test_shuffled_http():
     for connections in range(1, 10):
         shuffled_n_identities(CaseHTTP, count_clients=connections)
+
+
+def test_shuffled_tls():
+    for connections in range(1, 10):
+        print(connections)
+        shuffled_n_identities(CaseTLS, count_clients=connections)
 
 
 def test_shuffled_http_batches():
@@ -205,9 +211,10 @@ def test_pillow_tls():
 
 
 if __name__ == '__main__':
-    test_normal()
-    test_normal_positional()
-    # test_normal_tls()
+    # test_normal()
+    # test_normal_positional()
+    test_normal_tls()
+    test_shuffled_tls()
     # test_normal_positional_tls()
     test_shuffled_tcp()
     # test_numpy()
