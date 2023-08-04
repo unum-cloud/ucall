@@ -24,7 +24,7 @@ struct automata_t {
     void close_gracefully() noexcept;
 };
 
-bool automata_t::should_release() const noexcept { return connection.expired() || connection.empty_transmits > 100; }
+bool automata_t::should_release() const noexcept { return connection.expired(); }
 
 bool automata_t::is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
 
@@ -92,21 +92,20 @@ void automata_t::operator()() noexcept {
         // this connection to the subsequent timer to decide.
         if (server.network_engine.is_canceled(completed_result, connection)) {
             connection.sleep_ns += connection.next_wakeup;
-            connection.next_wakeup *= sleep_growth_factor_k;
+            connection.next_wakeup += sleep_growth_factor_k;
             completed_result = 0;
         }
 
         // No data was received.
         if (completed_result == 0) {
-            connection.empty_transmits++;
             return should_release() ? close_gracefully() : receive_next();
         }
 
         // Absorb the arrived data.
         server.stats.bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_received.fetch_add(1, std::memory_order_relaxed);
-        connection.empty_transmits = 0;
         connection.sleep_ns = 0;
+        connection.next_wakeup = wakeup_initial_frequency_ns_k;
         if (!connection.pipes.absorb_input(completed_result)) {
             ucall_call_reply_error_out_of_memory(this);
             return send_next();
@@ -144,11 +143,9 @@ void automata_t::operator()() noexcept {
 
     case stage_t::responding_in_progress_k:
 
-        connection.empty_transmits = completed_result == 0 ? ++connection.empty_transmits : 0;
-
         if (server.network_engine.is_canceled(completed_result, connection)) {
             connection.sleep_ns += connection.next_wakeup;
-            connection.next_wakeup *= sleep_growth_factor_k;
+            connection.next_wakeup += sleep_growth_factor_k;
             completed_result = 0;
         }
 

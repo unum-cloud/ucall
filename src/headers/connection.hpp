@@ -30,7 +30,6 @@ struct connection_t {
 
     /// @brief Accumulated duration of sleep cycles.
     std::size_t sleep_ns{};
-    std::size_t empty_transmits{};
     std::size_t exchanges{};
 
     /// @brief Relative time set for the last wake-up call.
@@ -52,7 +51,6 @@ struct connection_t {
         pipes.release_outputs();
 
         sleep_ns = 0;
-        empty_transmits = 0;
         exchanges = 0;
         next_wakeup = wakeup_initial_frequency_ns_k;
     };
