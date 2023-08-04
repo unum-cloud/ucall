@@ -121,19 +121,21 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
 
-FetchContent_Declare(
-    OpenSSL
-    URL https://cloudflare.cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
-    OVERRIDE_FIND_PACKAGE
-)
+if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+    FetchContent_Declare(
+        OpenSSL
+        URL https://cloudflare.cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
+        OVERRIDE_FIND_PACKAGE
+    )
 
-FetchContent_MakeAvailable(OpenSSL)
-set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
-set(OPENSSL_VERSION "1.1.1")
-set(OPENSSL_FOUND true)
-include_directories(${OPENSSL_INCLUDE_DIR})
-LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
-GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
+    FetchContent_MakeAvailable(OpenSSL)
+    set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
+    set(OPENSSL_VERSION "1.1.1")
+    set(OPENSSL_FOUND true)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
+    GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
+endif()
 
 FetchContent_Declare(
   picotls
