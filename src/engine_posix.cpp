@@ -231,7 +231,9 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         u_long mode = 1; // 1 to enable non-blocking socket, 0 to disable
         ioctlsocket(socket_descriptor, FIONBIO, &mode);
 #else
-        fcntl(socket_descriptor, F_SETFL, O_NONBLOCK);
+        int flags = fcntl(socket_descriptor, F_GETFL, 0);
+        flags |= O_NONBLOCK;
+        fcntl(socket_descriptor, F_SETFL, flags);
 #endif
     }
     if (socket_descriptor < 0)
@@ -344,13 +346,13 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
         res = ptls_send(ctx->ssl_ctx->tls[connection.descriptor], &encrypt_buf, buffer, buf_len);
         if (res == 0) {
             res = send(connection.descriptor, encrypt_buf.base, encrypt_buf.off, MSG_NOSIGNAL);
-            coctx.res = (res != encrypt_buf.off) ? -EAGAIN : buf_len;
+            coctx.res = (res != encrypt_buf.off) ? -errno : buf_len;
         } else
             coctx.res = -ECANCELED;
         ptls_buffer_dispose(&encrypt_buf);
     } else {
         res = send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL);
-        coctx.res = (res == -1) ? errno : res;
+        coctx.res = (res == -1) ? -errno : res;
     }
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
@@ -403,7 +405,7 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
         }
     } else {
         res = recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL);
-        coctx.res = (res == -1) ? errno : res;
+        coctx.res = (res == -1) ? -errno : res;
     }
 
     ctx->queue_mutex.lock();
