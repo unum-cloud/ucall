@@ -187,7 +187,7 @@ target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=
 if(LINUX)
     add_library(ucall_server_uring src/engine_uring.cpp)
     set(PYTHON_BACKEND ucall_server_uring)
-    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS})
+    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS}  ${picotls_LIBS} crypto)
     add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
     target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
     target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)

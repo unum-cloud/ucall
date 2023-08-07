@@ -116,6 +116,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
     buffer_gt<struct iovec> registered_buffers{};
+    std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -185,11 +186,18 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
+    if (config.use_ssl) {
+        ssl_ctx = std::make_unique<ssl_context_t>();
+        if (ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths, config.ssl_certificates_count) !=
+            0)
+            goto cleanup;
+    }
 
     // Initialize all the members.
     new (server_ptr) server_t();
     server_ptr->network_engine.network_data = uctx;
     server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->ssl_ctx = std::move(ssl_ctx);
     server_ptr->protocol_type = config.protocol;
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
