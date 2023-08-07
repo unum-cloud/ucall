@@ -39,6 +39,7 @@ void automata_t::send_next() noexcept {
     connection.protocol.reset();
     pipes.release_inputs();
 
+    connection.encrypt();
     server.network_engine.send_packet(connection, (void*)pipes.next_output_address(), pipes.next_output_length(),
                                       server.connections.offset_of(connection) * 2u + 1u);
 }
@@ -67,6 +68,8 @@ void automata_t::operator()() noexcept {
             server.consider_accepting_new_connection();
             return;
         }
+        if (server.ssl_ctx)
+            connection.make_tls(&server.ssl_ctx->ssl);
 
         // Check if accepting the new connection request worked out.
         server.reserved_connections--;
@@ -111,9 +114,13 @@ void automata_t::operator()() noexcept {
             return send_next();
         }
 
+        if (!connection.prepare_step())
+            return send_next();
+
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
+        connection.decrypt();
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
             server.engine.raise_request(scratch, connection.pipes, connection.protocol, this);
 
@@ -151,6 +158,9 @@ void automata_t::operator()() noexcept {
 
         if (should_release())
             return close_gracefully();
+
+        if (!connection.is_ready())
+            return receive_next();
 
         server.stats.bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_sent.fetch_add(1, std::memory_order_relaxed);
