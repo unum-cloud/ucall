@@ -49,10 +49,10 @@ int main(int argc, char** argv) {
     config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : fileno(stdin);
     config.logs_format = "human";
     config.protocol = protocol_type_t::jsonrpc_http_k;
-    config.ssl_private_key_path = "./examples/login/certs/main.key";
-    const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
-    config.ssl_certificates_paths = crts;
-    config.ssl_certificates_count = 2;
+    // config.ssl_private_key_path = "./examples/login/certs/main.key";
+    // const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
+    // config.ssl_certificates_paths = crts;
+    // config.ssl_certificates_count = 2;
 
     ucall_init(&config, &server);
     if (!server) {
