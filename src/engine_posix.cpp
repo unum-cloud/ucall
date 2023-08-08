@@ -143,7 +143,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
-    if (config.use_ssl) {
+    if (config.ssl_certificates_count != 0) {
         ssl_ctx = std::make_unique<ssl_context_t>();
         if (ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths, config.ssl_certificates_count) !=
             0)
