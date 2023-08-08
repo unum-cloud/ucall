@@ -124,7 +124,7 @@ include_directories(${tb64_SOURCE_DIR})
 if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
     FetchContent_Declare(
         OpenSSL
-        URL https://cloudflare.cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
+        URL https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
         OVERRIDE_FIND_PACKAGE
     )
 
