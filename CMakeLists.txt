@@ -129,6 +129,9 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
     )
 
     FetchContent_MakeAvailable(OpenSSL)
+    if(IS_DIRECTORY "${LibreSSL_SOURCE_DIR}")
+        set_property(DIRECTORY ${LibreSSL_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+    endif()
     set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
     set(OPENSSL_VERSION "1.1.1")
     set(OPENSSL_FOUND true)
@@ -144,6 +147,10 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(picotls)
+if(IS_DIRECTORY "${picotls_SOURCE_DIR}")
+    set_property(DIRECTORY ${picotls_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+endif()
+
 include_directories(${picotls_SOURCE_DIR}/include)
 set(picotls_LIBS picotls-core picotls-openssl)
 
