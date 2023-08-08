@@ -8,7 +8,7 @@ import string
 from typing import Optional, List
 
 import requests
-from ucall.client import Client
+from ucall.client import Client, ClientTLS
 
 
 # Using such strings is much faster than JSON package
@@ -108,6 +108,32 @@ class CaseTCP:
         self.identity = identity
         self.expected = -1
         self.client = Client(uri, port, use_http=False)
+        self.response = None
+
+    def __call__(self) -> str:
+        self.send()
+        return self.recv()
+
+    def send(self):
+        user_id = random.randint(1, 1000)
+        session_id = random.randint(1, 1000)
+        self.expected = ((user_id ^ session_id) % 23) == 0
+
+        self.response = self.client.validate_session(
+            user_id=user_id, session_id=session_id)
+
+    def recv(self):
+        assert self.response.json == self.expected
+        return self.response.json
+
+
+class CaseTLS:
+    """JSON-RPC Client that operates directly over TCP/IPv4 stack, without HTTP"""
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.client = ClientTLS(uri, port, allow_self_signed=True)
         self.response = None
 
     def __call__(self) -> str:

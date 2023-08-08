@@ -14,10 +14,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CACHEFILE_DIR "${CMAKE_SOURCE_DIR}/build")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/lib" CACHE PATH "Path to static libs")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/lib" CACHE PATH "Path to shared libs")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/bin")
+if (NOT CMAKE_BINARY_DIR OR ${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+    set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/build")
+endif()
+set(CMAKE_CACHEFILE_DIR ${CMAKE_BINARY_DIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to static libs")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to shared libs")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
@@ -116,7 +120,32 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+    FetchContent_Declare(
+        OpenSSL
+        URL https://cloudflare.cdn.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
+        OVERRIDE_FIND_PACKAGE
+    )
+
+    FetchContent_MakeAvailable(OpenSSL)
+    set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
+    set(OPENSSL_VERSION "1.1.1")
+    set(OPENSSL_FOUND true)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
+    GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
+endif()
+
+FetchContent_Declare(
+  picotls
+  GIT_REPOSITORY https://github.com/h2o/picotls.git
+  GIT_TAG master
+)
+
+FetchContent_MakeAvailable(picotls)
+include_directories(${picotls_SOURCE_DIR}/include)
+set(picotls_LIBS picotls-core picotls-openssl)
 
 # LibUring
 if(LINUX)
@@ -148,7 +177,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/headers)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads )
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${picotls_LIBS} crypto )
 set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
@@ -166,7 +195,7 @@ target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=
 if(LINUX)
     add_library(ucall_server_uring src/engine_uring.cpp)
     set(PYTHON_BACKEND ucall_server_uring)
-    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS})
+    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS}  ${picotls_LIBS} crypto)
     add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
     target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
     target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)

@@ -42,12 +42,10 @@ constexpr std::size_t cpu_cycles_per_micro_second_k = 3'000;
 // static constexpr std::size_t max_embedded_length_k{ram_page_size_k - sj::SIMDJSON_PADDING};
 
 static constexpr descriptor_t invalid_descriptor_k{-1};
-static constexpr std::size_t max_inactive_duration_ns_k{100'000'000'000};
-static constexpr std::size_t wakeup_initial_frequency_ns_k{3'000};
-static constexpr std::size_t sleep_growth_factor_k{4};
+static constexpr std::size_t max_inactive_duration_s_k{10};
+static constexpr std::size_t wakeup_initial_frequency_ns_k{100};
+static constexpr std::size_t sleep_growth_factor_k{2};
 
 static constexpr descriptor_t bad_descriptor_k{-1};
-
-using timestamp_t = std::uint64_t;
 
 } // namespace unum::ucall

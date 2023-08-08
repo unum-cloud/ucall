@@ -32,8 +32,6 @@
 
 #include <queue>
 
-#include <simdjson.h>
-
 #include "ucall/ucall.h"
 
 #include "automata.hpp"
@@ -45,6 +43,8 @@
 namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ucall;
+
+static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
 struct conn_ctx_t {
     connection_t* conn_ptr;
@@ -91,6 +91,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
+    std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -142,11 +143,18 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
+    if (config.ssl_certificates_count != 0) {
+        ssl_ctx = std::make_unique<ssl_context_t>();
+        if (ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths, config.ssl_certificates_count) !=
+            0)
+            goto cleanup;
+    }
 
     // Initialize all the members.
     new (server_ptr) server_t();
     server_ptr->network_engine.network_data = uctx;
     server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->ssl_ctx = std::move(ssl_ctx);
     server_ptr->protocol_type = config.protocol;
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
@@ -182,16 +190,21 @@ void ucall_free(ucall_server_t punned_server) {
 int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = connection.next_wakeup;
-
     conn_ctx_t coctx{&connection};
 
     coctx.res = accept(socket, &connection.client_address, &connection.client_address_len);
     if (coctx.res == -1)
         coctx.res = -errno;
-
+    else {
+#if defined(UCALL_IS_WINDOWS)
+        u_long mode = 1; // 1 to enable non-blocking socket, 0 to disable
+        ioctlsocket(coctx.res, FIONBIO, &mode);
+#else
+        int flags = fcntl(coctx.res, F_GETFL, 0);
+        flags |= O_NONBLOCK;
+        fcntl(coctx.res, F_SETFL, flags);
+#endif
+    }
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
     ctx->queue_mutex.unlock();
@@ -224,10 +237,11 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
 
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
+    conn_ctx_t coctx{&connection};
+    ssize_t res = 0;
 
-    conn_ctx_t coctx{&connection, send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL)};
-    if (coctx.res == -1)
-        coctx.res = errno;
+    res = send(connection.descriptor, (const char*)buffer, buf_len, MSG_NOSIGNAL);
+    coctx.res = (res == -1) ? -errno : res;
 
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
@@ -237,9 +251,11 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
-    conn_ctx_t coctx{&connection, recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL)};
-    if (coctx.res == -1)
-        coctx.res = errno;
+    conn_ctx_t coctx{&connection};
+    ssize_t res = 0;
+
+    res = recv(connection.descriptor, (char*)buffer, buf_len, MSG_NOSIGNAL);
+    coctx.res = (res == -1) ? -errno : res;
 
     ctx->queue_mutex.lock();
     ctx->res_queue.push(coctx);
@@ -247,7 +263,11 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
 }
 
 bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) {
-    return res == -ECANCELED || res == EWOULDBLOCK || res == -EAGAIN;
+    return res == -ECANCELED || res == -EWOULDBLOCK || res == -EAGAIN;
+};
+
+bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) {
+    return res == -EBADF || res == -EPIPE;
 };
 
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {

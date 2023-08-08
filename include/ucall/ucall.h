@@ -74,8 +74,6 @@ typedef struct ucall_config_t {
     /// @brief Connection Protocol.
     protocol_type_t protocol;
 
-    /// @brief Enable SSL.
-    bool use_ssl;
     /// @brief Private Key required for SSL.
     char const* ssl_private_key_path;
     /// @brief At least one certificate is required for SSL.

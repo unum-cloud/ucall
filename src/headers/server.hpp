@@ -13,9 +13,9 @@ struct server_t {
     network_engine_t network_engine{};
     engine_t engine{};
     protocol_type_t protocol_type;
+    std::unique_ptr<ssl_context_t> ssl_ctx = nullptr;
 
     std::atomic<std::size_t> active_connections{};
-    std::atomic<std::size_t> reserved_connections{};
     std::uint32_t max_lifetime_micro_seconds{};
     std::uint32_t max_lifetime_exchanges{};
 
@@ -66,9 +66,6 @@ void server_t::release_connection(connection_t& connection) noexcept {
 }
 
 bool server_t::consider_accepting_new_connection() noexcept {
-    std::size_t reserved_connections_old{};
-    if (!reserved_connections.compare_exchange_strong(reserved_connections_old, 1u))
-        return false;
 
     connections_mutex.lock();
     connection_t* con_ptr = connections.alloc();
@@ -84,7 +81,6 @@ bool server_t::consider_accepting_new_connection() noexcept {
 
     if (result < 0) {
         connections.release(con_ptr);
-        reserved_connections--;
         return false;
     }
 
