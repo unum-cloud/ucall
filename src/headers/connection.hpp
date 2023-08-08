@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #endif
 
+#include <ctime>
+
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -35,8 +37,9 @@ struct connection_t {
     socklen_t client_address_len{sizeof(struct sockaddr)};
 
     /// @brief Accumulated duration of sleep cycles.
-    std::size_t sleep_ns{};
+    std::time_t last_active_s{};
     std::size_t exchanges{};
+    std::size_t empty_transmits{};
 
     /// @brief TLS related data
     ptls_t* tls_ctx{};
@@ -52,12 +55,7 @@ struct connection_t {
         ptls_buffer_init(&work_buf, ptls_buf, ram_page_size_k);
     }
 
-    bool expired() const noexcept {
-        if (sleep_ns > max_inactive_duration_ns_k)
-            return true;
-
-        return false;
-    };
+    bool expired() const noexcept { return std::time(nullptr) - last_active_s > max_inactive_duration_s_k; };
 
     bool is_ready() const noexcept { return tls_ctx == nullptr || ptls_handshake_is_complete(tls_ctx); }
 
@@ -121,8 +119,8 @@ struct connection_t {
             ptls_buffer_dispose(&work_buf);
         }
 
-        sleep_ns = 0;
         exchanges = 0;
+        empty_transmits = 0;
         next_wakeup = wakeup_initial_frequency_ns_k;
     };
 };

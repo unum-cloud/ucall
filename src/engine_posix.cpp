@@ -266,6 +266,10 @@ bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const&
     return res == -ECANCELED || res == -EWOULDBLOCK || res == -EAGAIN;
 };
 
+bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) {
+    return res == -EBADF || res == -EPIPE;
+};
+
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 

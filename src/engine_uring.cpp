@@ -358,6 +358,13 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
 
 bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) { return res == -ECANCELED; };
 
+bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) {
+    // Since the socket operates in blocking mode, a return value of 0 is unlikely,
+    // but just in case allow the possibility of occasional occurrences.
+
+    return res == -EBADF || res == -EPIPE || (res == 0 && conn.empty_transmits > 8);
+};
+
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     io_uring* uring = &ctx->uring;

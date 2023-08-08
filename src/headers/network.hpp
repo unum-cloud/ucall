@@ -15,6 +15,7 @@ struct network_engine_t {
     void close_connection_gracefully(connection_t&);
 
     bool is_canceled(ssize_t, connection_t const&);
+    bool is_corrupted(ssize_t, connection_t const&);
 
     template <size_t max_count_ak> std::size_t pop_completed_events(completed_event_t*);
 };
