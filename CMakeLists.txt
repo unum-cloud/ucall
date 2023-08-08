@@ -61,6 +61,8 @@ if(LINUX)
     string(REGEX MATCH "[0-9]+.[0-9]+" LINUX_KERNEL_VERSION ${UNAME_RESULT})
 endif()
 
+include_directories(include/ src/headers)
+
 include(FetchContent)
 include(ExternalProject)
 
@@ -181,7 +183,6 @@ if(LINUX)
 endif()
 
 find_package(Threads REQUIRED)
-include_directories(include/ src/headers)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
 target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${picotls_LIBS} crypto )
