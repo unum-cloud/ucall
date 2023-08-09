@@ -12,8 +12,8 @@ struct server_t {
     descriptor_t socket{};
     network_engine_t network_engine{};
     engine_t engine{};
-    protocol_type_t protocol_type;
-    std::unique_ptr<ssl_context_t> ssl_ctx = nullptr;
+    protocol_type_t protocol_type{};
+    std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     std::atomic<std::size_t> active_connections{};
     std::uint32_t max_lifetime_micro_seconds{};
