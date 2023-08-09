@@ -154,7 +154,8 @@ if(IS_DIRECTORY "${picotls_SOURCE_DIR}")
 endif()
 
 include_directories(${picotls_SOURCE_DIR}/include)
-set(picotls_LIBS picotls-core picotls-openssl)
+# `crypto` comes from LibreSSL if it is built, otherwise from system libssl
+set(tls_LIBS picotls-core picotls-openssl crypto)
 
 # LibUring
 if(LINUX)
@@ -185,7 +186,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${picotls_LIBS} crypto )
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${tls_LIBS})
 set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
@@ -195,7 +196,7 @@ target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=
 if(LINUX)
     add_library(ucall_server_uring src/engine_uring.cpp)
     set(PYTHON_BACKEND ucall_server_uring)
-    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS}  ${picotls_LIBS} crypto)
+    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS} ${tls_LIBS})
     add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
     target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
     target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
