@@ -134,13 +134,14 @@ struct connection_t {
 
 struct ssl_context_t {
 
-    constexpr ssl_context_t() noexcept
-        : certs(), sign_certificate(), verify_certificate(), ssl({.random_bytes = ptls_openssl_random_bytes,
-                                                                  .get_time = &ptls_get_time,
-                                                                  .key_exchanges = ptls_openssl_key_exchanges,
-                                                                  .cipher_suites = ptls_openssl_cipher_suites,
-                                                                  .certificates = {certs, 0},
-                                                                  .sign_certificate = &sign_certificate.super}){};
+    constexpr ssl_context_t() noexcept : certs(), sign_certificate(), verify_certificate(), ssl() {
+        ssl.random_bytes = ptls_openssl_random_bytes;
+        ssl.get_time = &ptls_get_time;
+        ssl.key_exchanges = ptls_openssl_key_exchanges;
+        ssl.cipher_suites = ptls_openssl_cipher_suites;
+        ssl.certificates = {certs, 0};
+        ssl.sign_certificate = &sign_certificate.super;
+    };
 
     ssl_context_t(ssl_context_t const& other) = delete;
     ssl_context_t(ssl_context_t&& other) = delete;
