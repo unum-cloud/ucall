@@ -59,7 +59,6 @@ void automata_t::operator()() noexcept {
 
         if (server.network_engine.is_canceled(completed_result, connection)) {
             server.release_connection(connection);
-            server.consider_accepting_new_connection();
             return;
         }
         if (server.ssl_ctx)
