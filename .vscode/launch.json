@@ -62,7 +62,7 @@
             "name": "C++: Test epoll Server",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build_debug/build/bin/ucall_example_login_epoll",
+            "program": "${workspaceFolder}/build_debug/bin/ucall_example_login_epoll",
             "cwd": "${workspaceFolder}",
             "environment": [],
             "showDisplayString": true,
