@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #endif
 
-#include <ctime>
+#include <chrono>
 
 #include <openssl/engine.h>
 #include <openssl/err.h>
@@ -37,7 +37,7 @@ struct connection_t {
     socklen_t client_address_len{sizeof(struct sockaddr)};
 
     /// @brief Accumulated duration of sleep cycles.
-    std::time_t last_active_s{};
+    std::size_t last_active_ns{};
     std::size_t exchanges{};
     std::size_t empty_transmits{};
 
@@ -55,7 +55,14 @@ struct connection_t {
         ptls_buffer_init(&work_buf, ptls_buf, ram_page_size_k);
     }
 
-    bool expired() const noexcept { return std::time(nullptr) - last_active_s > max_inactive_duration_s_k; };
+    void record_activity() noexcept {
+        last_active_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    }
+
+    bool expired() const noexcept {
+        return std::chrono::high_resolution_clock::now().time_since_epoch().count() - last_active_ns >
+               max_inactive_duration_ns_k;
+    };
 
     bool is_ready() const noexcept { return tls_ctx == nullptr || ptls_handshake_is_complete(tls_ctx); }
 
@@ -80,7 +87,7 @@ struct connection_t {
         return false;
     }
 
-    void encrypt() {
+    void encrypt() noexcept {
         if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
             return;
 
@@ -92,7 +99,7 @@ struct connection_t {
         }
     }
 
-    void decrypt() {
+    void decrypt() noexcept {
         if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
             return;
 
@@ -127,13 +134,14 @@ struct connection_t {
 
 struct ssl_context_t {
 
-    constexpr ssl_context_t() noexcept
-        : certs(), sign_certificate(), verify_certificate(), ssl({.random_bytes = ptls_openssl_random_bytes,
-                                                                  .get_time = &ptls_get_time,
-                                                                  .key_exchanges = ptls_openssl_key_exchanges,
-                                                                  .cipher_suites = ptls_openssl_cipher_suites,
-                                                                  .certificates = {certs, 0},
-                                                                  .sign_certificate = &sign_certificate.super}){};
+    constexpr ssl_context_t() noexcept : certs(), sign_certificate(), verify_certificate(), ssl() {
+        ssl.random_bytes = ptls_openssl_random_bytes;
+        ssl.get_time = &ptls_get_time;
+        ssl.key_exchanges = ptls_openssl_key_exchanges;
+        ssl.cipher_suites = ptls_openssl_cipher_suites;
+        ssl.certificates = {certs, 0};
+        ssl.sign_certificate = &sign_certificate.super;
+    };
 
     ssl_context_t(ssl_context_t const& other) = delete;
     ssl_context_t(ssl_context_t&& other) = delete;
