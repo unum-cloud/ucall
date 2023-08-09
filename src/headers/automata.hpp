@@ -65,7 +65,7 @@ void automata_t::operator()() noexcept {
             connection.make_tls(&server.ssl_ctx->ssl);
 
         // Check if accepting the new connection request worked out.
-        connection.last_active_s = std::time(nullptr);
+        connection.record_activity();
         ++server.active_connections;
         server.stats.added_connections.fetch_add(1, std::memory_order_relaxed);
         connection.descriptor = descriptor_t{completed_result};
@@ -104,7 +104,7 @@ void automata_t::operator()() noexcept {
         server.stats.bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_received.fetch_add(1, std::memory_order_relaxed);
         connection.empty_transmits = 0;
-        connection.last_active_s = std::time(nullptr);
+        connection.record_activity();
         if (!connection.pipes.absorb_input(completed_result)) {
             ucall_call_reply_error_out_of_memory(this);
             return send_next();
@@ -158,7 +158,7 @@ void automata_t::operator()() noexcept {
         if (!connection.is_ready())
             return receive_next();
 
-        connection.last_active_s = std::time(nullptr);
+        connection.record_activity();
         server.stats.bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_sent.fetch_add(1, std::memory_order_relaxed);
         connection.pipes.mark_submitted_outputs(completed_result);

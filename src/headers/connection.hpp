@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #endif
 
-#include <ctime>
+#include <chrono>
 
 #include <openssl/engine.h>
 #include <openssl/err.h>
@@ -37,7 +37,7 @@ struct connection_t {
     socklen_t client_address_len{sizeof(struct sockaddr)};
 
     /// @brief Accumulated duration of sleep cycles.
-    std::time_t last_active_s{};
+    std::size_t last_active_ns{};
     std::size_t exchanges{};
     std::size_t empty_transmits{};
 
@@ -55,7 +55,14 @@ struct connection_t {
         ptls_buffer_init(&work_buf, ptls_buf, ram_page_size_k);
     }
 
-    bool expired() const noexcept { return std::time(nullptr) - last_active_s > max_inactive_duration_s_k; };
+    void record_activity() noexcept {
+        last_active_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    }
+
+    bool expired() const noexcept {
+        return std::chrono::high_resolution_clock::now().time_since_epoch().count() - last_active_ns >
+               max_inactive_duration_ns_k;
+    };
 
     bool is_ready() const noexcept { return tls_ctx == nullptr || ptls_handshake_is_complete(tls_ctx); }
 
@@ -80,7 +87,7 @@ struct connection_t {
         return false;
     }
 
-    void encrypt() {
+    void encrypt() noexcept {
         if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
             return;
 
@@ -92,7 +99,7 @@ struct connection_t {
         }
     }
 
-    void decrypt() {
+    void decrypt() noexcept {
         if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
             return;
 
