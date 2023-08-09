@@ -187,7 +187,7 @@ void ucall_free(ucall_server_t punned_server) {
     delete ctx;
 }
 
-int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) {
+int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
     conn_ctx_t coctx{&connection};
@@ -212,7 +212,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
     return 0;
 }
 
-void network_engine_t::set_stats_heartbeat(connection_t& connection) {
+void network_engine_t::set_stats_heartbeat(connection_t& connection) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
     conn_ctx_t coctx{&connection, 0};
@@ -223,7 +223,7 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
     ctx->queue_mutex.unlock();
 }
 
-void network_engine_t::close_connection_gracefully(connection_t& connection) {
+void network_engine_t::close_connection_gracefully(connection_t& connection) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
     conn_ctx_t coctx{&connection, close(connection.descriptor)};
@@ -235,7 +235,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
     ctx->queue_mutex.unlock();
 }
 
-void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
     conn_ctx_t coctx{&connection};
     ssize_t res = 0;
@@ -248,7 +248,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
     ctx->queue_mutex.unlock();
 }
 
-void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
     conn_ctx_t coctx{&connection};
@@ -262,15 +262,15 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
     ctx->queue_mutex.unlock();
 }
 
-bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) {
+bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) noexcept {
     return res == -ECANCELED || res == -EWOULDBLOCK || res == -EAGAIN;
 };
 
-bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) {
+bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) noexcept {
     return res == -EBADF || res == -EPIPE;
 };
 
-template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
+template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) noexcept {
     posix_ctx_t* ctx = reinterpret_cast<posix_ctx_t*>(network_data);
 
     size_t completed = 0;
