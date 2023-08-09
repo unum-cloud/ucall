@@ -1,48 +1,3 @@
-/**
- * @brief JSON-RPC implementation for TCP/IP stack with `io_uring`.
- *
- * Supports:
- * > Thousands of concurrent stateful connections.
- * > Hundreds of physical execution threads.
- * > Both HTTP and HTTP-less raw JSON-RPC calls.
- *
- * @section Primary structures
- * - `engine_t`: primary server instance.
- * - `connection_t`: lifetime state of a single TCP connection.
- * - `scratch_space_t`: temporary memory used by a single thread at a time.
- * - `automata_t`: automata that accepts and responds to messages.
- *
- * @section Concurrency
- * The whole class is thread safe and can be used with as many threads as
- * defined during construction with `ucall_init`. Some `connection_t`-s
- * can, however, be simultaneously handled by two threads, if one logical
- * operation is split into multiple physical calls:
- *
- *      1.  Receiving packets with timeouts.
- *          This allows us to reconsider closing a connection every once
- *          in a while, instead of loyally waiting for more data to come.
- *      2.  Closing sockets gracefully.
- *
- * @section Linux kernel requirements
- * We need Submission Queue Polling to extract maximum performance from `io_uring`.
- * Many of the requests would get an additional `IOSQE_FIXED_FILE` flag, and the
- * setup call would receive `IORING_SETUP_SQPOLL`. Aside from those, we also
- * need to prioritize following efficient interfaces:
- * - `io_uring_prep_accept_direct` to alloc from reusable files list > 5.19..
- * - `io_uring_prep_read_fixed` to read into registered buffers.
- * - `io_uring_register_buffers`.
- * - `io_uring_register_files_sparse` > 5.19, or `io_uring_register_files` before that.
- * - `IORING_SETUP_COOP_TASKRUN` > 5.19.
- * - `IORING_SETUP_SINGLE_ISSUER` > 6.0.
- *
- * @author Ashot Vardanian
- *
- * @see Notable links:
- * https://man7.org/linux/man-pages/dir_by_project.html#liburing
- * https://jvns.ca/blog/2017/06/03/async-io-on-linux--select--poll--and-epoll/
- * https://stackoverflow.com/a/17665015/2766161
- */
-
 #include <arpa/inet.h> // `inet_addr`
 #include <fcntl.h>
 #include <netinet/in.h> // `sockaddr_in`
@@ -170,6 +125,9 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_descriptor < 0)
         goto cleanup;
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
+        errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
     if (setnonblocking(socket_descriptor) < 0)
