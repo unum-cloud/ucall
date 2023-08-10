@@ -22,30 +22,45 @@ namespace sj = simdjson;
 namespace sjd = sj::dom;
 using namespace unum::ucall;
 
-static constexpr int timeout_k = 100;
-
 struct event_data_t {
-    connection_t* connection{};
-    descriptor_t descriptor{-1};
-    void* buffer{nullptr};
-    size_t buf_len{0};
-    bool is_accept{false};
+    connection_t* connection;
+    descriptor_t descriptor;
+    void* buffer;
+    size_t buf_len;
+    bool is_accept;
+    bool is_close;
+    bool active;
+
+    event_data_t() noexcept { reset(); }
+
+    void reset() noexcept {
+        connection = nullptr;
+        descriptor = invalid_descriptor_k;
+        buffer = nullptr;
+        buf_len = 0;
+        is_accept = false;
+        is_close = false;
+        active = false;
+    }
 };
 
 struct epoll_ctx_t {
-    epoll_ctx_t(int max_events) { pool.reserve(max_events); }
-    int epoll{-1};
-    pool_gt<event_data_t> pool;
+    descriptor_t epoll;
+    array_gt<event_data_t> event_log;
+
+    epoll_ctx_t(size_t max_events) noexcept { event_log.reserve(max_events); }
+    size_t map_index(descriptor_t fd) const noexcept { return fd % event_log.capacity(); }
+    event_data_t& get_data(descriptor_t fd) noexcept { return event_log[map_index(fd)]; }
 };
 
 static int setnonblocking(int sockfd) {
     return fcntl(sockfd, F_SETFD, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK) == -1 ? -1 : 0;
 }
 
-static int epoll_ctl_am(int epfd, int op, int fd, event_data_t* data) {
+static int epoll_ctl_am(int epfd, int op, int fd, int keep_fd = -1) {
     struct epoll_event ev;
     ev.events = op;
-    ev.data.ptr = data;
+    ev.data.fd = keep_fd == -1 ? fd : keep_fd;
     int res = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
     return res;
 }
@@ -181,11 +196,18 @@ void ucall_free(ucall_server_t punned_server) {
 
 int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
-    auto data = ctx->pool.alloc();
-    data->connection = &connection;
-    data->descriptor = socket;
-    data->is_accept = true;
-    epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLOUT | EPOLLET, socket, data);
+    event_data_t& data = ctx->get_data(socket);
+    if (data.active)
+        return -ECANCELED;
+
+    data.connection = &connection;
+    data.descriptor = socket;
+    data.active = true;
+    data.is_accept = true;
+    if (epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLET | EPOLLONESHOT, socket) < 0) {
+        data.reset();
+        return -ECANCELED;
+    }
     return 0;
 }
 
@@ -194,39 +216,57 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) noexcept {}
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     struct epoll_event ep_events[max_count_ak];
-    int completed = 0;
-    int num_events = epoll_wait(ctx->epoll, ep_events, max_count_ak, timeout_k);
+    size_t completed = 0;
+    int num_events = epoll_wait(ctx->epoll, ep_events, max_count_ak, max_inactive_duration_ns_k);
     if (num_events < 0)
         return 0;
+
     for (int i = 0; i < num_events; ++i) {
-        auto data = (event_data_t*)ep_events[i].data.ptr;
-        auto& connection = *data->connection;
-        if (data->is_accept) {
-            int conn_sock =
-                accept(data->descriptor, (struct sockaddr*)&connection.client_address, &connection.client_address_len);
+        descriptor_t fd = ep_events[i].data.fd;
+        event_data_t& data = ctx->get_data(fd);
+        connection_t* connection = data.connection;
+
+        if (data.is_accept) {
+            descriptor_t conn_sock =
+                accept(fd, (struct sockaddr*)&connection->client_address, &connection->client_address_len);
             setnonblocking(conn_sock);
-            events[completed].connection_ptr = &connection;
+            events[completed].connection_ptr = connection;
             events[completed].result = conn_sock;
-            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, data->descriptor, NULL);
+            if (conn_sock > 0) {
+                ctx->get_data(conn_sock).active = true;
+                ctx->get_data(conn_sock).connection = connection;
+            }
+            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, fd, NULL);
+            data.active = false;
             ++completed;
+            continue;
         } else if (ep_events[i].events & EPOLLIN) {
-            events[completed].connection_ptr = &connection;
-            events[completed].result = recv(connection.descriptor, data->buffer, data->buf_len, 0);
-            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection.descriptor, NULL);
-            ++completed;
-            ctx->pool.release(data);
+            if (data.is_close) {
+                epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, data.descriptor, NULL);
+                epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection->descriptor, NULL);
+                events[completed].connection_ptr = connection;
+                events[completed].result = close(connection->descriptor);
+                close(data.descriptor);
+                ++completed;
+                data.reset();
+                continue;
+            } else {
+                events[completed].connection_ptr = connection;
+                events[completed].result = recv(connection->descriptor, data.buffer, data.buf_len, MSG_NOSIGNAL);
+                ++completed;
+                epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection->descriptor, NULL);
+            }
         } else if (ep_events[i].events & EPOLLOUT) {
-            events[completed].connection_ptr = &connection;
-            events[completed].result = send(connection.descriptor, data->buffer, data->buf_len, 0);
-            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection.descriptor, NULL);
-            ctx->pool.release(data);
+            events[completed].connection_ptr = connection;
+            events[completed].result = send(connection->descriptor, data.buffer, data.buf_len, MSG_NOSIGNAL);
             ++completed;
+            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection->descriptor, NULL);
         }
-        if (ep_events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
-            epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection.descriptor, NULL);
-            events[completed].connection_ptr = &connection;
-            events[completed].result = close(connection.descriptor);
-            ctx->pool.release(data);
+
+        if (ep_events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR) && data.active) {
+            events[completed].connection_ptr = connection;
+            events[completed].result = -ECONNRESET;
+            data.active = false;
             ++completed;
         }
     }
@@ -240,26 +280,38 @@ bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const
 };
 
 void network_engine_t::close_connection_gracefully(connection_t& connection) noexcept {
+
+    descriptor_t timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    itimerspec timer_spec;
+    timer_spec.it_value.tv_sec = 0;
+    timer_spec.it_value.tv_nsec = 1;
+    timer_spec.it_interval.tv_sec = 0;
+    timer_spec.it_interval.tv_nsec = 0;
+    timerfd_settime(timer_fd, 0, &timer_spec, NULL);
+
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
-    auto data = ctx->pool.alloc();
-    data->connection = &connection;
-    epoll_ctl_am(ctx->epoll, EPOLLET | EPOLLRDHUP | EPOLLHUP, connection.descriptor, data);
+    event_data_t& data = ctx->get_data(connection.descriptor);
+    data.descriptor = timer_fd;
+    data.is_close = true;
+    epoll_ctl_am(ctx->epoll, EPOLLIN, timer_fd, connection.descriptor);
 }
 
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
-    auto data = ctx->pool.alloc();
-    data->connection = &connection;
-    data->buffer = buffer;
-    data->buf_len = buf_len;
-    epoll_ctl_am(ctx->epoll, EPOLLOUT | EPOLLET | EPOLLRDHUP | EPOLLHUP, connection.descriptor, data);
+    event_data_t& data = ctx->get_data(connection.descriptor);
+    if (!data.active)
+        return;
+    data.buffer = buffer;
+    data.buf_len = buf_len;
+    epoll_ctl_am(ctx->epoll, EPOLLOUT | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
 
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
-    auto data = ctx->pool.alloc();
-    data->connection = &connection;
-    data->buffer = buffer;
-    data->buf_len = buf_len;
-    epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP, connection.descriptor, data);
+    event_data_t& data = ctx->get_data(connection.descriptor);
+    if (!data.active)
+        return;
+    data.buffer = buffer;
+    data.buf_len = buf_len;
+    epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
