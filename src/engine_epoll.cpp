@@ -45,10 +45,9 @@ struct event_data_t {
 };
 
 struct epoll_ctx_t {
-    descriptor_t epoll;
-    array_gt<event_data_t> event_log;
+    descriptor_t epoll{};
+    array_gt<event_data_t> event_log{};
 
-    epoll_ctx_t(size_t max_events) noexcept { event_log.reserve(max_events); }
     size_t map_index(descriptor_t fd) const noexcept { return fd % event_log.capacity(); }
     event_data_t& get_data(descriptor_t fd) noexcept { return event_log[map_index(fd)]; }
 };
@@ -93,7 +92,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // Allocation
     int socket_descriptor{-1};
     int socket_options{1};
-    epoll_ctx_t* ectx = new epoll_ctx_t(config.queue_depth);
+    epoll_ctx_t* ectx = new epoll_ctx_t();
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -119,6 +118,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     if (!connections.reserve(config.max_concurrent_connections))
         goto cleanup;
     if (!spaces.resize(config.max_threads))
+        goto cleanup;
+    if (!ectx->event_log.reserve(config.queue_depth))
         goto cleanup;
     for (auto& space : spaces)
         if (space.parser.allocate(ram_page_size_k, ram_page_size_k / 2u) != sj::SUCCESS)
@@ -172,8 +173,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
 cleanup:
     errno;
-    if (ectx->epoll)
-        epoll_ctl(ectx->epoll, EPOLL_CTL_DEL, socket_descriptor, nullptr);
+    if (ectx)
+        delete ectx;
     if (socket_descriptor >= 0)
         close(socket_descriptor);
     std::free(server_ptr);
@@ -187,7 +188,6 @@ void ucall_free(ucall_server_t punned_server) {
 
     server_t& server = *reinterpret_cast<server_t*>(punned_server);
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(server.network_engine.network_data);
-    epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, server.socket, nullptr);
     close(server.socket);
     server.~server_t();
     std::free(punned_server);
@@ -217,7 +217,7 @@ template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_event
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     struct epoll_event ep_events[max_count_ak];
     size_t completed = 0;
-    int num_events = epoll_wait(ctx->epoll, ep_events, max_count_ak, max_inactive_duration_ns_k);
+    int num_events = epoll_wait(ctx->epoll, ep_events, max_count_ak, max_inactive_duration_ns_k / 1'000'000);
     if (num_events < 0)
         return 0;
 
