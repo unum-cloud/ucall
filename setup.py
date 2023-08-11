@@ -120,6 +120,7 @@ setup(
     package_dir={'': 'src'},
     ext_modules=[
         CMakeExtension('ucall.uring'),
+        CMakeExtension('ucall.epoll'),
         CMakeExtension('ucall.posix'),
     ],
     cmdclass={

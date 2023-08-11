@@ -187,7 +187,6 @@ find_package(Threads REQUIRED)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
 target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${tls_LIBS})
-set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
 target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
@@ -195,7 +194,6 @@ target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=
 
 add_library(ucall_server_epoll src/engine_epoll.cpp)
 target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS}  )
-set(PYTHON_BACKEND ucall_server_epoll)
 
 add_executable(ucall_example_login_epoll examples/login/ucall_server.cpp)
 target_link_libraries(ucall_example_login_epoll ucall_server_epoll cxxopts)
@@ -203,7 +201,6 @@ target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=
 
 if(LINUX)
     add_library(ucall_server_uring src/engine_uring.cpp)
-    set(PYTHON_BACKEND ucall_server_uring)
     target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS} ${tls_LIBS})
     add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
     target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
@@ -229,6 +226,12 @@ if(LINUX)
     target_link_libraries(py_ucall_uring PRIVATE ucall_server_uring base64)
     set_target_properties(py_ucall_uring PROPERTIES OUTPUT_NAME uring)
     target_compile_definitions(py_ucall_uring PRIVATE UCALL_PYTHON_MODULE_NAME=uring)
+
+    Python3_add_library(py_ucall_epoll src/python.c)
+    target_include_directories(py_ucall_epoll PUBLIC src/ include/)
+    target_link_libraries(py_ucall_epoll PRIVATE ucall_server_epoll base64)
+    set_target_properties(py_ucall_epoll PROPERTIES OUTPUT_NAME epoll)
+    target_compile_definitions(py_ucall_epoll PRIVATE UCALL_PYTHON_MODULE_NAME=epoll)
 endif()
 
 Python3_add_library(py_ucall_posix src/python.c)
