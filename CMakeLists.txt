@@ -142,18 +142,52 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
     GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
 endif()
 
-FetchContent_Declare(
-  picotls
-  GIT_REPOSITORY https://github.com/h2o/picotls.git
-  GIT_TAG master
-)
 
-FetchContent_MakeAvailable(picotls)
-if(IS_DIRECTORY "${picotls_SOURCE_DIR}")
-    set_property(DIRECTORY ${picotls_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+if(MSVC)
+    set(PICOTLS_DIR ${CMAKE_BINARY_DIR}/_deps/picotls-ep)
+    set(PICOTLSVS_DIR ${PICOTLS_DIR}/picotlsvs)
+
+    ExternalProject_Add(
+        picotls
+        GIT_REPOSITORY https://github.com/h2o/picotls.git
+        GIT_TAG master
+        DEPENDS crypto
+        PREFIX ${CMAKE_BINARY_DIR}/_deps/
+        SOURCE_DIR ${PICOTLS_DIR}
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND cd ${PICOTLSVS_DIR} && MSBuild.exe picotlsvs.sln -target:picotls-core -target:picotls-openssl -p:OPENSSL64DIR=${LibreSSL_SOURCE_DIR} -p:Configuration=Release -p:PlatformToolset=v141 -p:WindowsTargetPlatformVersion=10.0.17763.0
+        INSTALL_COMMAND ""
+        UPDATE_COMMAND ""
+    )
+    add_library(picotls-core STATIC IMPORTED GLOBAL)
+    add_dependencies(picotls-core picotls)
+    set_property(TARGET picotls-core
+        PROPERTY IMPORTED_LOCATION
+        ${PICOTLSVS_DIR}/x64/Release/picotls-core.lib
+    )
+    add_library(picotls-openssl STATIC IMPORTED GLOBAL)
+    add_dependencies(picotls-openssl picotls)
+    set_property(TARGET picotls-openssl
+        PROPERTY IMPORTED_LOCATION
+        ${PICOTLSVS_DIR}/x64/Release/picotls-openssl.lib
+    )
+
+    include_directories(${PICOTLS_DIR}/include/)
+    set(URING_LIBS uring_internal)
+else()
+    FetchContent_Declare(
+    picotls
+    GIT_REPOSITORY https://github.com/h2o/picotls.git
+    GIT_TAG master
+    )
+
+    FetchContent_MakeAvailable(picotls)
+    if(IS_DIRECTORY "${picotls_SOURCE_DIR}")
+        set_property(DIRECTORY ${picotls_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+    endif()
+    include_directories(${picotls_SOURCE_DIR}/include)
 endif()
 
-include_directories(${picotls_SOURCE_DIR}/include)
 # `crypto` comes from LibreSSL if it is built, otherwise from system libssl
 set(tls_LIBS picotls-core picotls-openssl crypto)
 

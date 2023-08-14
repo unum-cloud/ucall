@@ -13,8 +13,18 @@
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
+
+#if defined(UCALL_IS_WINDOWS)
+#pragma warning(push)
+#pragma warning(disable : 4576)
+#endif
+
 #include <picotls.h>
 #include <picotls/openssl.h>
+
+#if defined(UCALL_IS_WINDOWS)
+#pragma warning(pop)
+#endif
 
 #include "containers.hpp"
 #include "parse/protocol/protocol.hpp"
