@@ -18,8 +18,6 @@
 
 #pragma region Cpp Declaration
 
-namespace sj = simdjson;
-namespace sjd = sj::dom;
 using namespace unum::ucall;
 
 struct event_data_t {
@@ -45,11 +43,11 @@ struct epoll_ctx_t {
     event_data_t& data_at(descriptor_t fd) noexcept { return event_log[fd % event_log.capacity()]; }
 };
 
-static int setnonblocking(int sockfd) {
+static int set_nonblock(int sockfd) {
     return fcntl(sockfd, F_SETFD, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK) == -1 ? -1 : 0;
 }
 
-static int epoll_ctl_am(int epfd, int op, int fd, int keep_fd = -1) {
+static int epoll_ctl_add(int epfd, int op, int fd, int keep_fd = -1) {
     struct epoll_event ev;
     ev.events = op;
     ev.data.fd = keep_fd == -1 ? fd : keep_fd;
@@ -141,7 +139,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         errno;
     if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
         goto cleanup;
-    if (setnonblocking(socket_descriptor) < 0)
+    if (set_nonblock(socket_descriptor) < 0)
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
@@ -154,7 +152,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
             0)
             goto cleanup;
     }
-    setnonblocking(socket_descriptor);
 
     // Initialize all the members.
     new (server_ptr) server_t();
@@ -174,8 +171,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
 cleanup:
     errno;
-    if (ectx)
-        delete ectx;
     if (socket_descriptor >= 0)
         close(socket_descriptor);
     std::free(server_ptr);
@@ -203,7 +198,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
 
     data.connection = &connection;
     data.active = true;
-    if (epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLET | EPOLLONESHOT, socket) < 0) {
+    if (epoll_ctl_add(ctx->epoll, EPOLLIN | EPOLLET | EPOLLONESHOT, socket) < 0) {
         data.reset();
         return -ECANCELED;
     }
@@ -231,7 +226,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) noe
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     event_data_t& data = ctx->data_at(connection.descriptor);
     data.timer_fd = timer_fd;
-    epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLONESHOT, timer_fd, connection.descriptor);
+    epoll_ctl_add(ctx->epoll, EPOLLIN | EPOLLONESHOT, timer_fd, connection.descriptor);
 }
 
 void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
@@ -241,7 +236,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
         return;
     data.buffer = buffer;
     data.buf_len = buf_len;
-    epoll_ctl_am(ctx->epoll, EPOLLOUT | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
+    epoll_ctl_add(ctx->epoll, EPOLLOUT | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
 
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
@@ -251,7 +246,7 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
         return;
     data.buffer = buffer;
     data.buf_len = buf_len;
-    epoll_ctl_am(ctx->epoll, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
+    epoll_ctl_add(ctx->epoll, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
 
 template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) noexcept {
@@ -268,7 +263,7 @@ template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_event
         if (fd != connection->descriptor) { // Accept
             descriptor_t conn_sock =
                 accept(fd, (struct sockaddr*)&connection->client_address, &connection->client_address_len);
-            setnonblocking(conn_sock);
+            set_nonblock(conn_sock);
             events[completed].connection_ptr = connection;
             events[completed].result = conn_sock;
             if (conn_sock > 0) {
