@@ -35,13 +35,15 @@ class Protocol():
 
 class Server:
 
-    def __init__(self, uring_if_possible=True, **kwargs) -> None:
+    def __init__(self, uring_if_possible=True, epoll_if_possible=False, **kwargs) -> None:
         if uring_if_possible and supports_io_uring():
-            from ucall import uring
-            self.native = uring.Server(**kwargs)
+            from ucall import uring as backend
+        elif epoll_if_possible and platform.system() == 'Linux':
+            from ucall import epoll as backend
         else:
-            from ucall import posix
-            self.native = posix.Server(**kwargs)
+            from ucall import posix as backend
+
+        self.native = backend.Server(**kwargs)
 
     def __call__(self, func: Callable):
         return self.route(func)

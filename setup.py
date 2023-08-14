@@ -25,7 +25,7 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
-        if 'uring' in ext.name and platform.system() != 'Linux':
+        if 'posix' not in ext.name and platform.system() != 'Linux':
             return
 
         self.parallel = multiprocessing.cpu_count() // 2
@@ -120,6 +120,7 @@ setup(
     package_dir={'': 'src'},
     ext_modules=[
         CMakeExtension('ucall.uring'),
+        CMakeExtension('ucall.epoll'),
         CMakeExtension('ucall.posix'),
     ],
     cmdclass={
