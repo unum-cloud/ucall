@@ -226,16 +226,17 @@ add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
 target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
 target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 
-add_library(ucall_server_epoll src/engine_epoll.cpp)
-target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS}  )
-
-add_executable(ucall_example_login_epoll examples/login/ucall_server.cpp)
-target_link_libraries(ucall_example_login_epoll ucall_server_epoll cxxopts)
-target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
-
 if(LINUX)
+    add_library(ucall_server_epoll src/engine_epoll.cpp)
+    target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS})
+
+    add_executable(ucall_example_login_epoll examples/login/ucall_server.cpp)
+    target_link_libraries(ucall_example_login_epoll ucall_server_epoll cxxopts)
+    target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+
     add_library(ucall_server_uring src/engine_uring.cpp)
     target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS} ${tls_LIBS})
+
     add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
     target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
     target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
