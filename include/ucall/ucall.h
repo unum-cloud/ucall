@@ -45,7 +45,15 @@ typedef char const* ucall_str_t;
 
 typedef void (*ucall_callback_t)(ucall_call_t, ucall_callback_tag_t);
 
-typedef enum protocol_type_t { tcp_k = 0, http_k, jsonrpc_tcp_k, jsonrpc_http_k } protocol_type_t;
+/**
+ * @brief Represents the types of protocols that can be used.
+ */
+typedef enum protocol_type_t {
+    tcp_k,         ///< Raw Transmission Control Protocol (TCP)
+    http_k,        ///< Raw Hypertext Transfer Protocol (HTTP)
+    jsonrpc_tcp_k, ///< JSON-RPC over TCP
+    jsonrpc_http_k ///< JSON-RPC over HTTP
+} protocol_type_t;
 
 /**
  * @brief Configuration parameters for `ucall_init()`.
@@ -74,8 +82,6 @@ typedef struct ucall_config_t {
     /// @brief Connection Protocol.
     protocol_type_t protocol;
 
-    /// @brief Enable SSL.
-    bool use_ssl;
     /// @brief Private Key required for SSL.
     char const* ssl_private_key_path;
     /// @brief At least one certificate is required for SSL.

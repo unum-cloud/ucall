@@ -221,5 +221,12 @@ class ClientTLS(Client):
     def _socket_is_closed(self) -> bool:
         if self.sock is None:
             return True
-        self.sock.read(1, None)
+        try:
+            self.sock.setblocking(False)
+            self.sock.read(1, None)
+        except Exception:
+            return False
+        finally:
+            self.sock.setblocking(True)
+
         return self.sock.pending() <= 0

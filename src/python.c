@@ -438,7 +438,6 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
         return -1;
 
     if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
-        self->config.use_ssl = true;
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
         self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
         for (size_t i = 0; i < self->config.ssl_certificates_count; i++)

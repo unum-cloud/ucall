@@ -116,6 +116,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
     buffer_gt<struct iovec> registered_buffers{};
+    std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     // By default, let's open TCP port for IPv4.
     struct sockaddr_in address {};
@@ -185,11 +186,18 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (listen(socket_descriptor, config.queue_depth) < 0)
         goto cleanup;
+    if (config.ssl_certificates_count != 0) {
+        ssl_ctx = std::make_unique<ssl_context_t>();
+        if (ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths, config.ssl_certificates_count) !=
+            0)
+            goto cleanup;
+    }
 
     // Initialize all the members.
     new (server_ptr) server_t();
     server_ptr->network_engine.network_data = uctx;
     server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->ssl_ctx = std::move(ssl_ctx);
     server_ptr->protocol_type = config.protocol;
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
@@ -237,7 +245,7 @@ bool io_check_send_zc() noexcept {
     return res;
 }
 
-int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) {
+int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     io_uring* uring = &ctx->uring;
     io_uring_sqe* uring_sqe{};
@@ -258,7 +266,7 @@ int network_engine_t::try_accept(descriptor_t socket, connection_t& connection) 
     return res;
 }
 
-void network_engine_t::set_stats_heartbeat(connection_t& connection) {
+void network_engine_t::set_stats_heartbeat(connection_t& connection) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     __kernel_timespec wakeup{0, connection.next_wakeup};
     io_uring* uring = &ctx->uring;
@@ -270,7 +278,7 @@ void network_engine_t::set_stats_heartbeat(connection_t& connection) {
     ctx->submission_mutex.unlock();
 }
 
-void network_engine_t::close_connection_gracefully(connection_t& connection) {
+void network_engine_t::close_connection_gracefully(connection_t& connection) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     // The operations are not expected to complete in exactly the same order
     // as their submissions. So to stop all existing communication on the
@@ -297,7 +305,7 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) {
     ctx->submission_mutex.unlock();
 }
 
-void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     io_uring* uring = &ctx->uring;
     ctx->submission_mutex.lock();
@@ -317,7 +325,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
     ctx->submission_mutex.unlock();
 }
 
-void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) {
+void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     ctx->submission_mutex.lock();
     io_uring* uring = &ctx->uring;
@@ -348,9 +356,18 @@ void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_
     ctx->submission_mutex.unlock();
 }
 
-bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) { return res == -ECANCELED; };
+bool network_engine_t::is_canceled(ssize_t res, unum::ucall::connection_t const& conn) noexcept {
+    return res == -ECANCELED;
+}
 
-template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) {
+bool network_engine_t::is_corrupted(ssize_t res, unum::ucall::connection_t const& conn) noexcept {
+    // Since the socket operates in blocking mode, a return value of 0 is unlikely,
+    // but just in case allow the possibility of occasional occurrences.
+
+    return res == -EBADF || res == -EPIPE || (res == 0 && conn.empty_transmits > 8);
+};
+
+template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_events(completed_event_t* events) noexcept {
     uring_ctx_t* ctx = reinterpret_cast<uring_ctx_t*>(network_data);
     io_uring* uring = &ctx->uring;
     unsigned uring_head = 0;

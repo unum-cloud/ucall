@@ -33,23 +33,6 @@ struct default_error_t {
     std::string_view note;
 };
 
-inline timestamp_t cpu_cycle() noexcept {
-    timestamp_t result;
-#ifdef __aarch64__
-    /*
-     * According to ARM DDI 0487F.c, from Armv8.0 to Armv8.5 inclusive, the
-     * system counter is at least 56 bits wide; from Armv8.6, the counter
-     * must be 64 bits wide.  So the system counter could be less than 64
-     * bits wide and it is attributed with the flag 'cap_user_time_short'
-     * is true.
-     */
-    asm volatile("mrs %0, cntvct_el0" : "=r"(result));
-#else
-    result = __rdtsc();
-#endif
-    return result;
-}
-
 inline std::size_t string_length(char const* c_str, std::size_t optional_length) noexcept {
     return c_str && !optional_length ? std::strlen(c_str) : optional_length;
 }

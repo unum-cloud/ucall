@@ -24,8 +24,6 @@ struct automata_t {
     void close_gracefully() noexcept;
 };
 
-bool automata_t::should_release() const noexcept { return connection.expired() || connection.empty_transmits > 100; }
-
 bool automata_t::is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
 
 void automata_t::close_gracefully() noexcept {
@@ -39,6 +37,7 @@ void automata_t::send_next() noexcept {
     connection.protocol.reset();
     pipes.release_inputs();
 
+    connection.encrypt();
     server.network_engine.send_packet(connection, (void*)pipes.next_output_address(), pipes.next_output_length(),
                                       server.connections.offset_of(connection) * 2u + 1u);
 }
@@ -54,23 +53,20 @@ void automata_t::receive_next() noexcept {
 
 void automata_t::operator()() noexcept {
 
-    if (is_corrupted())
-        return close_gracefully();
-
     switch (connection.stage) {
 
     case stage_t::waiting_to_accept_k:
 
         if (server.network_engine.is_canceled(completed_result, connection)) {
             server.release_connection(connection);
-            server.reserved_connections--;
-            server.consider_accepting_new_connection();
             return;
         }
+        if (server.ssl_ctx)
+            connection.make_tls(&server.ssl_ctx->ssl);
 
         // Check if accepting the new connection request worked out.
-        server.reserved_connections--;
-        server.active_connections++;
+        connection.record_activity();
+        ++server.active_connections;
         server.stats.added_connections.fetch_add(1, std::memory_order_relaxed);
         connection.descriptor = descriptor_t{completed_result};
         return receive_next();
@@ -90,8 +86,10 @@ void automata_t::operator()() noexcept {
         // If the following timeout request has happened,
         // we don't want to do anything here. Let's leave the faith of
         // this connection to the subsequent timer to decide.
+        if (server.network_engine.is_corrupted(completed_result, connection) || connection.expired())
+            return close_gracefully();
+
         if (server.network_engine.is_canceled(completed_result, connection)) {
-            connection.sleep_ns += connection.next_wakeup;
             connection.next_wakeup *= sleep_growth_factor_k;
             completed_result = 0;
         }
@@ -99,22 +97,26 @@ void automata_t::operator()() noexcept {
         // No data was received.
         if (completed_result == 0) {
             connection.empty_transmits++;
-            return should_release() ? close_gracefully() : receive_next();
+            return receive_next();
         }
 
         // Absorb the arrived data.
         server.stats.bytes_received.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_received.fetch_add(1, std::memory_order_relaxed);
         connection.empty_transmits = 0;
-        connection.sleep_ns = 0;
+        connection.record_activity();
         if (!connection.pipes.absorb_input(completed_result)) {
             ucall_call_reply_error_out_of_memory(this);
             return send_next();
         }
 
+        if (!connection.prepare_step())
+            return send_next();
+
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
+        connection.decrypt();
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
             server.engine.raise_request(scratch, connection.pipes, connection.protocol, this);
 
@@ -123,10 +125,10 @@ void automata_t::operator()() noexcept {
             // so we can go back to listening the port.
             if (!connection.pipes.has_outputs()) {
                 connection.exchanges++;
-                if (connection.exchanges >= server.max_lifetime_exchanges)
-                    return close_gracefully();
-                else
-                    return receive_next();
+                // if (connection.exchanges >= server.max_lifetime_exchanges) TODO Why?
+                //     return close_gracefully();
+                // else
+                return receive_next();
             } else {
                 connection.pipes.prepare_more_outputs();
                 return send_next();
@@ -143,27 +145,29 @@ void automata_t::operator()() noexcept {
         }
 
     case stage_t::responding_in_progress_k:
+        if (server.network_engine.is_corrupted(completed_result, connection) || connection.expired())
+            return close_gracefully();
 
         connection.empty_transmits = completed_result == 0 ? ++connection.empty_transmits : 0;
 
         if (server.network_engine.is_canceled(completed_result, connection)) {
-            connection.sleep_ns += connection.next_wakeup;
             connection.next_wakeup *= sleep_growth_factor_k;
             completed_result = 0;
         }
 
-        if (should_release())
-            return close_gracefully();
+        if (!connection.is_ready())
+            return receive_next();
 
+        connection.record_activity();
         server.stats.bytes_sent.fetch_add(completed_result, std::memory_order_relaxed);
         server.stats.packets_sent.fetch_add(1, std::memory_order_relaxed);
         connection.pipes.mark_submitted_outputs(completed_result);
         if (!connection.pipes.has_remaining_outputs()) {
             connection.exchanges++;
-            if (connection.exchanges >= server.max_lifetime_exchanges)
-                return close_gracefully();
-            else
-                return receive_next();
+            // if (connection.exchanges >= server.max_lifetime_exchanges) TODO Why?
+            //     return close_gracefully();
+            // else
+            return receive_next();
         } else {
             connection.pipes.prepare_more_outputs();
             return send_next();

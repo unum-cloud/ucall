@@ -233,6 +233,16 @@ class exchange_pipes_t {
     char* next_input_address() noexcept { return input_.embedded; }
     std::size_t next_input_length() const noexcept { return ram_page_size_k; }
 
+    /**
+     * @brief Discards the first 'cnt' elements from the embedded buffer.
+     */
+    void drop_embedded_n(size_t cnt) noexcept {
+        if (cnt > input_.embedded_used)
+            return release_inputs();
+        input_.embedded_used -= cnt;
+        std::memmove(input_.embedded, input_.embedded + cnt, input_.embedded_used);
+    }
+
     bool shift_input_to_dynamic() noexcept {
         if (!input_.dynamic.append_n(input_.embedded, input_.embedded_used))
             return false;
