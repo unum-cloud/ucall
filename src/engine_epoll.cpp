@@ -99,6 +99,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     buffer_gt<scratch_space_t> spaces{};
     buffer_gt<struct iovec> registered_buffers{};
     memory_map_t fixed_buffers{};
+    std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     // Try allocating all the necessary memory.
     server_ptr = (server_t*)std::malloc(sizeof(server_t));
@@ -147,12 +148,19 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     ectx->epoll = epoll_create(1);
     if (ectx->epoll < 0)
         goto cleanup;
+    if (config.ssl_certificates_count != 0) {
+        ssl_ctx = std::make_unique<ssl_context_t>();
+        if (ssl_ctx->init(config.ssl_private_key_path, config.ssl_certificates_paths, config.ssl_certificates_count) !=
+            0)
+            goto cleanup;
+    }
     setnonblocking(socket_descriptor);
 
     // Initialize all the members.
     new (server_ptr) server_t();
     server_ptr->network_engine.network_data = ectx;
     server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->ssl_ctx = std::move(ssl_ctx);
     server_ptr->protocol_type = config.protocol;
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
