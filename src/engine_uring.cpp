@@ -53,11 +53,7 @@
 
 #include <simdjson.h>
 
-#include "ucall/ucall.h"
-
-#include "automata.hpp"
-#include "network.hpp"
-#include "server.hpp"
+#include "backend_core.hpp"
 
 #pragma region Cpp Declaration
 
