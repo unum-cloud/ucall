@@ -316,7 +316,7 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     self->wrappers[self->count_added] = wrap;
 
     ucall_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
-                        &self->wrappers[self->count_added]);
+                        post_k, &self->wrappers[self->count_added]);
 
     ++self->count_added;
     Py_INCREF(wrap.callable);

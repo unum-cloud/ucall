@@ -10,6 +10,16 @@ namespace unum::ucall {
 
 struct tcp_protocol_t {
     static constexpr char tcp_termination_symbol = '\0';
+    /// @brief Active parsed request
+    parsed_request_t parsed{};
+
+    std::optional<default_error_t> set_to(sjd::element const&) noexcept;
+    std::string_view get_content() const noexcept;
+    std::string_view get_id() const noexcept;
+    std::string_view get_method_name() const noexcept;
+    request_type_t get_request_type() const noexcept;
+    any_param_t get_param(size_t) const noexcept;
+    any_param_t get_param(std::string_view) const noexcept;
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -22,8 +32,25 @@ struct tcp_protocol_t {
 
     inline void reset() noexcept;
 
-    inline std::variant<parsed_request_t, default_error_t> parse(std::string_view body) const noexcept;
+    inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
+    inline std::optional<default_error_t> parse_content(scratch_space_t& body) noexcept;
 };
+
+inline std::optional<default_error_t> tcp_protocol_t::set_to(sjd::element const&) noexcept {
+    return std::optional<default_error_t>();
+}
+
+std::string_view tcp_protocol_t::get_content() const noexcept { return parsed.body; }
+
+inline std::string_view tcp_protocol_t::get_id() const noexcept { return std::string_view(); }
+
+inline std::string_view tcp_protocol_t::get_method_name() const noexcept { return std::string_view(); }
+
+inline request_type_t tcp_protocol_t::get_request_type() const noexcept { return request_type_t::post_k; }
+
+inline any_param_t tcp_protocol_t::get_param(size_t) const noexcept { return any_param_t(); }
+
+inline any_param_t tcp_protocol_t::get_param(std::string_view) const noexcept { return any_param_t(); }
 
 inline void tcp_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {}
 
@@ -47,11 +74,12 @@ bool tcp_protocol_t::is_input_complete(span_gt<char> input) noexcept {
 
 void tcp_protocol_t::reset() noexcept {}
 
-inline std::variant<parsed_request_t, default_error_t> tcp_protocol_t::parse(std::string_view body) const noexcept {
-    parsed_request_t req;
-    req.body = body;
-    req.body.remove_suffix(1);
-    return req;
+std::optional<default_error_t> tcp_protocol_t::parse_headers(std::string_view body) noexcept {
+    parsed.body = body;
+    parsed.body.remove_suffix(1);
+    return std::nullopt;
 }
+
+std::optional<default_error_t> tcp_protocol_t::parse_content(scratch_space_t& body) noexcept { return std::nullopt; }
 
 } // namespace unum::ucall

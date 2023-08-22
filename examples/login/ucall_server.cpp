@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         std::printf("- silent\n");
 
     // Add all the callbacks we need
-    ucall_add_procedure(server, "validate_session", &validate_session, nullptr);
+    ucall_add_procedure(server, "validate_session", &validate_session, request_type_t::post_k, nullptr);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;

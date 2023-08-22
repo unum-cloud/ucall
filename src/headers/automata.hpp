@@ -22,7 +22,10 @@ struct automata_t {
     void send_next() noexcept;
     void receive_next() noexcept;
     void close_gracefully() noexcept;
+    protocol_t const& get_protocol() const noexcept;
 };
+
+protocol_t const& automata_t::get_protocol() const noexcept { return connection.protocol; };
 
 bool automata_t::is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
 
@@ -185,60 +188,4 @@ void automata_t::operator()() noexcept {
     }
 }
 
-sj::simdjson_result<sjd::element> param_at(ucall_call_t call, ucall_str_t name, size_t name_len) noexcept {
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    scratch_space_t& scratch = automata.scratch;
-    name_len = string_length(name, name_len);
-    return scratch.point_to_param({name, name_len});
-}
-
-sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) noexcept {
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    scratch_space_t& scratch = automata.scratch;
-    return scratch.point_to_param(position);
-}
 } // namespace unum::ucall
-
-void ucall_add_procedure(ucall_server_t punned_server, ucall_str_t name, ucall_callback_t callback,
-                         ucall_callback_tag_t callback_tag) {
-    unum::ucall::server_t& server = *reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (server.engine.callbacks.size() + 1 < server.engine.callbacks.capacity())
-        server.engine.callbacks.push_back_reserved({name, callback, callback_tag});
-}
-
-void ucall_take_calls(ucall_server_t punned_server, uint16_t thread_idx) {
-    unum::ucall::server_t* server = reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (!thread_idx && server->logs_file_descriptor > 0)
-        server->submit_stats_heartbeat();
-    while (true) {
-        ucall_take_call(punned_server, thread_idx);
-    }
-}
-
-void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
-    // Unlike the classical synchronous interface, this implements only a part of the connection machine,
-    // is responsible for checking if a specific request has been completed. All of the submitted
-    // memory must be preserved until we get the confirmation.
-    unum::ucall::server_t* server = reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (thread_idx == 0)
-        server->consider_accepting_new_connection();
-
-    constexpr std::size_t completed_max_k{16};
-    unum::ucall::completed_event_t completed_events[completed_max_k]{};
-
-    std::size_t completed_count = server->network_engine.pop_completed_events<completed_max_k>(completed_events);
-
-    for (std::size_t i = 0; i != completed_count; ++i) {
-        unum::ucall::completed_event_t& completed = completed_events[i];
-
-        unum::ucall::automata_t automata{
-            *server, //
-            server->spaces[thread_idx],
-            *completed.connection_ptr,
-            completed.result,
-        };
-
-        // If everything is fine, let automata work in its normal regime.
-        automata();
-    }
-}

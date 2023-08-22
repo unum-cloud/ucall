@@ -56,6 +56,16 @@ typedef enum protocol_type_t {
 } protocol_type_t;
 
 /**
+ * @brief Represents the types of callbacks/Requests.
+ */
+typedef enum request_type_t {
+    get_k,   ///< GET Request
+    put_k,   ///< PUT Request
+    post_k,  ///< POST Request
+    delete_k ///< DELETE Request
+} request_type_t;
+
+/**
  * @brief Configuration parameters for `ucall_init()`.
  */
 typedef struct ucall_config_t {
@@ -106,13 +116,15 @@ void ucall_free(ucall_server_t);
  * @param server Must be pre-initialized with `ucall_init()`.
  * @param name The string to be matched against "method" in every JSON request.
  * @param callback Function pointer to the callback.
+ * @param callback_type Type of the request the callback is registered for.
  * @param callback_tag Optional payload/tag, often pointing to metadata about
  * expected "params", mostly used for higher-level runtimes, like CPython.
  */
-void ucall_add_procedure(      //
-    ucall_server_t server,     //
-    ucall_str_t name,          //
-    ucall_callback_t callback, //
+void ucall_add_procedure(         //
+    ucall_server_t server,        //
+    ucall_str_t name,             //
+    ucall_callback_t callback,    //
+    request_type_t callback_type, //
     ucall_callback_tag_t callback_tag);
 
 /**
