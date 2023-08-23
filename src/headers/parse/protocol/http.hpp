@@ -7,7 +7,6 @@
 #include <variant>
 
 #include "containers.hpp"
-#include "parse/json.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
@@ -25,9 +24,7 @@ struct http_protocol_t {
     /// @brief Active parsed request
     parsed_request_t parsed{};
 
-    std::optional<default_error_t> set_to(sjd::element const&) noexcept;
     std::string_view get_content() const noexcept;
-    std::string_view get_id() const noexcept;
     std::string_view get_method_name() const noexcept;
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
@@ -35,8 +32,8 @@ struct http_protocol_t {
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
-    inline bool append_response(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
-    inline bool append_error(exchange_pipes_t&, std::string_view, std::string_view, std::string_view) noexcept;
+    inline bool append_response(exchange_pipes_t&, std::string_view) noexcept;
+    inline bool append_error(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
 
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
@@ -49,7 +46,12 @@ struct http_protocol_t {
      * @warning This doesn't check the headers for validity or additional metadata.
      */
     inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
-    inline std::optional<default_error_t> parse_content(scratch_space_t&) noexcept { return std::nullopt; };
+    inline std::optional<default_error_t> parse_content() noexcept { return std::nullopt; };
+
+    template <typename calle_at>
+    std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept {
+        return std::nullopt;
+    }
 };
 
 inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
@@ -57,12 +59,11 @@ inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept 
     body_size = pipes.output_span().size();
 }
 
-inline bool http_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view,
-                                             std::string_view response) noexcept {
+inline bool http_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
     return pipes.append_outputs(response);
 };
 
-inline bool http_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code, std::string_view,
+inline bool http_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {
     return pipes.append_outputs(error_code);
 };
@@ -80,13 +81,7 @@ inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept
 
 void http_protocol_t::reset() noexcept { content_length.reset(); }
 
-inline std::optional<default_error_t> http_protocol_t::set_to(sjd::element const&) noexcept {
-    return std::optional<default_error_t>();
-}
-
 std::string_view http_protocol_t::get_content() const noexcept { return parsed.body; }
-
-inline std::string_view http_protocol_t::get_id() const noexcept { return std::string_view(); }
 
 inline std::string_view http_protocol_t::get_method_name() const noexcept { return std::string_view(); }
 

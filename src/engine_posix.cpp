@@ -86,7 +86,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     server_t* server_ptr{};
     pool_gt<connection_t> connections{};
     array_gt<named_callback_t> callbacks{};
-    buffer_gt<scratch_space_t> spaces{};
     std::unique_ptr<ssl_context_t> ssl_ctx{};
 
     // By default, let's open TCP port for IPv4.
@@ -105,11 +104,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (!connections.reserve(config.max_concurrent_connections))
         goto cleanup;
-    if (!spaces.resize(config.max_threads))
-        goto cleanup;
-    for (auto& space : spaces)
-        if (space.parser.allocate(ram_page_size_k, ram_page_size_k / 2u) != sj::SUCCESS)
-            goto cleanup;
 
     for (std::size_t i = 0; i != config.max_concurrent_connections; ++i) {
         auto& connection = connections.at_offset(i);
@@ -156,7 +150,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
     server_ptr->engine.callbacks = std::move(callbacks);
     server_ptr->connections = std::move(connections);
-    server_ptr->spaces = std::move(spaces);
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
     server_ptr->logs_format = config.logs_format ? std::string_view(config.logs_format) : std::string_view();
     *server_out = (ucall_server_t)server_ptr;

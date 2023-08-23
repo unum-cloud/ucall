@@ -1,7 +1,6 @@
 #pragma once
 
 #include "connection.hpp"
-#include "parse/json.hpp"
 #include "server.hpp"
 #include "shared.hpp"
 
@@ -9,7 +8,6 @@ namespace unum::ucall {
 
 struct automata_t {
     server_t& server;
-    scratch_space_t& scratch;
     connection_t& connection;
     ssize_t completed_result{};
 
@@ -121,7 +119,7 @@ void automata_t::operator()() noexcept {
         // and send back a response.
         connection.decrypt();
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
-            server.engine.raise_request(scratch, connection.pipes, connection.protocol, this);
+            server.engine.raise_request(connection.pipes, connection.protocol, this);
 
             connection.pipes.release_inputs();
             // Some requests require no response at all,

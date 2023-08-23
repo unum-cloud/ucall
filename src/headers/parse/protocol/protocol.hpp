@@ -26,23 +26,23 @@ class protocol_t {
 
     void reset() noexcept;
 
-    std::optional<default_error_t> set_to(sjd::element const&) noexcept;
     std::string_view get_content() const noexcept;
-    std::string_view get_id() const noexcept;
     std::string_view get_method_name() const noexcept;
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
 
     void prepare_response(exchange_pipes_t&) noexcept;
-    bool append_response(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
-    bool append_error(exchange_pipes_t&, std::string_view, std::string_view, std::string_view) noexcept;
+    bool append_response(exchange_pipes_t&, std::string_view) noexcept;
+    bool append_error(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
     void finalize_response(exchange_pipes_t&) noexcept;
 
     bool is_input_complete(span_gt<char>) noexcept;
 
     std::optional<default_error_t> parse_headers(std::string_view) noexcept;
-    std::optional<default_error_t> parse_content(scratch_space_t&) noexcept;
+    std::optional<default_error_t> parse_content() noexcept;
+
+    template <typename calle_at> std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept;
 };
 
 protocol_t::protocol_t(protocol_type_t p_type) noexcept : sp_proto({}), type(p_type) { reset_protocol(p_type); }
@@ -82,21 +82,6 @@ void protocol_t::reset() noexcept {
     }
 }
 
-inline std::optional<default_error_t> protocol_t::set_to(sjd::element const& elm) noexcept {
-    switch (type) {
-    case protocol_type_t::tcp_k:
-        return std::get<tcp_protocol_t>(sp_proto).set_to(elm);
-    case protocol_type_t::http_k:
-        return std::get<http_protocol_t>(sp_proto).set_to(elm);
-    case protocol_type_t::jsonrpc_tcp_k:
-        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).set_to(elm);
-    case protocol_type_t::jsonrpc_http_k:
-        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).set_to(elm);
-    }
-
-    return std::nullopt;
-}
-
 inline std::string_view protocol_t::get_content() const noexcept {
     switch (type) {
     case protocol_type_t::tcp_k:
@@ -107,21 +92,6 @@ inline std::string_view protocol_t::get_content() const noexcept {
         return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).get_content();
     case protocol_type_t::jsonrpc_http_k:
         return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).get_content();
-    }
-
-    return {};
-}
-
-inline std::string_view protocol_t::get_id() const noexcept {
-    switch (type) {
-    case protocol_type_t::tcp_k:
-        return std::get<tcp_protocol_t>(sp_proto).get_id();
-    case protocol_type_t::http_k:
-        return std::get<http_protocol_t>(sp_proto).get_id();
-    case protocol_type_t::jsonrpc_tcp_k:
-        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).get_id();
-    case protocol_type_t::jsonrpc_http_k:
-        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).get_id();
     }
 
     return {};
@@ -204,34 +174,31 @@ void protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
     }
 }
 
-bool protocol_t::append_response(exchange_pipes_t& pipes, std::string_view request_id,
-                                 std::string_view response) noexcept {
+bool protocol_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
     switch (type) {
     case protocol_type_t::tcp_k:
-        return std::get<tcp_protocol_t>(sp_proto).append_response(pipes, request_id, response);
+        return std::get<tcp_protocol_t>(sp_proto).append_response(pipes, response);
     case protocol_type_t::http_k:
-        return std::get<http_protocol_t>(sp_proto).append_response(pipes, request_id, response);
+        return std::get<http_protocol_t>(sp_proto).append_response(pipes, response);
     case protocol_type_t::jsonrpc_tcp_k:
-        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).append_response(pipes, request_id, response);
+        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).append_response(pipes, response);
     case protocol_type_t::jsonrpc_http_k:
-        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).append_response(pipes, request_id, response);
+        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).append_response(pipes, response);
     }
     return false;
 };
 
-bool protocol_t::append_error(exchange_pipes_t& pipes, std::string_view request_id, std::string_view error_code,
+bool protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                               std::string_view response) noexcept {
     switch (type) {
     case protocol_type_t::tcp_k:
-        return std::get<tcp_protocol_t>(sp_proto).append_error(pipes, request_id, error_code, response);
+        return std::get<tcp_protocol_t>(sp_proto).append_error(pipes, error_code, response);
     case protocol_type_t::http_k:
-        return std::get<http_protocol_t>(sp_proto).append_error(pipes, request_id, error_code, response);
+        return std::get<http_protocol_t>(sp_proto).append_error(pipes, error_code, response);
     case protocol_type_t::jsonrpc_tcp_k:
-        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).append_error(pipes, request_id, error_code,
-                                                                                   response);
+        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).append_error(pipes, error_code, response);
     case protocol_type_t::jsonrpc_http_k:
-        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).append_error(pipes, request_id, error_code,
-                                                                                    response);
+        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).append_error(pipes, error_code, response);
     }
     return false;
 };
@@ -282,16 +249,32 @@ std::optional<default_error_t> protocol_t::parse_headers(std::string_view body) 
     return default_error_t{-1, "Unknown"};
 }
 
-std::optional<default_error_t> protocol_t::parse_content(scratch_space_t& scratch) noexcept {
+std::optional<default_error_t> protocol_t::parse_content() noexcept {
     switch (type) {
     case protocol_type_t::tcp_k:
-        return std::get<tcp_protocol_t>(sp_proto).parse_content(scratch);
+        return std::get<tcp_protocol_t>(sp_proto).parse_content();
     case protocol_type_t::http_k:
-        return std::get<http_protocol_t>(sp_proto).parse_content(scratch);
+        return std::get<http_protocol_t>(sp_proto).parse_content();
     case protocol_type_t::jsonrpc_tcp_k:
-        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).parse_content(scratch);
+        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).parse_content();
     case protocol_type_t::jsonrpc_http_k:
-        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).parse_content(scratch);
+        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).parse_content();
+    }
+
+    return default_error_t{-1, "Unknown"};
+}
+
+template <typename calle_at>
+inline std::optional<default_error_t> protocol_t::populate_response(exchange_pipes_t& pipes, calle_at caller) noexcept {
+    switch (type) {
+    case protocol_type_t::tcp_k:
+        return std::get<tcp_protocol_t>(sp_proto).populate_response(pipes, caller);
+    case protocol_type_t::http_k:
+        return std::get<http_protocol_t>(sp_proto).populate_response(pipes, caller);
+    case protocol_type_t::jsonrpc_tcp_k:
+        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).populate_response(pipes, caller);
+    case protocol_type_t::jsonrpc_http_k:
+        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).populate_response(pipes, caller);
     }
 
     return default_error_t{-1, "Unknown"};

@@ -7,7 +7,6 @@
 #include "containers.hpp"
 #include "log.hpp"
 #include "network.hpp"
-#include "parse/json.hpp"
 #include "parse/protocol/protocol.hpp"
 #include "shared.hpp"
 
@@ -27,34 +26,24 @@ struct engine_t {
 
     bool find_and_call(std::string_view, request_type_t, ucall_call_t) const noexcept;
     // void raise_calls(sjd::parser&, scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
-    void raise_request(scratch_space_t&, exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
+    void raise_request(exchange_pipes_t&, protocol_t&, ucall_call_t) const noexcept;
 };
 
-void engine_t::raise_request(scratch_space_t& scratch, exchange_pipes_t& pipes, protocol_t& protocol,
-                             ucall_call_t call) const noexcept {
+void engine_t::raise_request(exchange_pipes_t& pipes, protocol_t& protocol, ucall_call_t call) const noexcept {
 
     if (auto error_ptr = protocol.parse_headers(pipes.input_span()); error_ptr)
         return ucall_call_reply_error(call, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
-    if (auto error_ptr = protocol.parse_content(scratch); error_ptr)
+    if (auto error_ptr = protocol.parse_content(); error_ptr)
         return ucall_call_reply_error(call, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 
     protocol.prepare_response(pipes);
-    if (scratch.is_batch()) {
-        for (auto const& elm : std::get<1>(scratch.elements)) {
-            protocol.set_to(elm);
-            if (!find_and_call(protocol.get_method_name(), protocol.get_request_type(), call))
-                return ucall_call_reply_error(call, -32601, "Method not found", 16);
-        }
-    } else {
-        protocol.set_to(std::get<0>(scratch.elements));
-        if (!find_and_call(protocol.get_method_name(), protocol.get_request_type(), call))
-            return ucall_call_reply_error(call, -32601, "Method not found", 16);
-        if (protocol.get_id().empty()) {
-            pipes.push_back_reserved('{');
-            pipes.push_back_reserved('}');
-        }
-    }
+    auto error_ptr =
+        protocol.populate_response(pipes, [&](std::string_view method_name, request_type_t req_type) -> bool {
+            return find_and_call(method_name, req_type, call);
+        });
+    if (error_ptr)
+        return ucall_call_reply_error(call, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
     protocol.finalize_response(pipes);
 }
 

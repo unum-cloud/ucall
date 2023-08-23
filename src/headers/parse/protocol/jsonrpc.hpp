@@ -4,10 +4,13 @@
 #include <optional>
 
 #include "containers.hpp"
-#include "parse/json.hpp"
 #include "shared.hpp"
+#include <simdjson.h>
 
 namespace unum::ucall {
+
+namespace sj = simdjson;
+namespace sjd = sj::dom;
 
 struct jsonrpc_obj_t {
     char printed_int_id[max_integer_length_k]{};
@@ -19,8 +22,9 @@ struct jsonrpc_obj_t {
 
 template <typename base_protocol_t> struct jsonrpc_protocol_t {
     base_protocol_t base_proto{};
-    bool is_batch{};
     jsonrpc_obj_t active_obj{};
+    sjd::parser parser{};
+    std::variant<sjd::element, sjd::array> elements{};
 
     inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
         if (elm.is_bool())
@@ -35,7 +39,6 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
     }
 
     inline std::string_view get_content() const noexcept { return base_proto.get_content(); };
-    inline std::string_view get_id() const noexcept { return active_obj.dynamic_id; };
     inline std::string_view get_method_name() const noexcept { return active_obj.method_name; };
     request_type_t get_request_type() const noexcept;
 
@@ -64,8 +67,8 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
-    bool append_response(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
-    bool append_error(exchange_pipes_t&, std::string_view, std::string_view, std::string_view) noexcept;
+    bool append_response(exchange_pipes_t&, std::string_view) noexcept;
+    bool append_error(exchange_pipes_t&, std::string_view, std::string_view) noexcept;
 
     inline void finalize_response(exchange_pipes_t& pipes) noexcept;
 
@@ -74,25 +77,29 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
     inline void reset() noexcept;
 
     inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
-    inline std::optional<default_error_t> parse_content(scratch_space_t& scratch) noexcept;
+    inline std::optional<default_error_t> parse_content() noexcept;
+
+    template <typename calle_at> std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept;
 };
 
 template <typename base_protocol_t>
 inline void jsonrpc_protocol_t<base_protocol_t>::prepare_response(exchange_pipes_t& pipes) noexcept {
     base_proto.prepare_response(pipes);
-    if (is_batch)
+    if (std::holds_alternative<sjd::array>(elements))
         pipes.push_back_reserved('[');
 }
 
 template <typename base_protocol_t>
-inline bool jsonrpc_protocol_t<base_protocol_t>::append_response(exchange_pipes_t& pipes, std::string_view request_id,
+inline bool jsonrpc_protocol_t<base_protocol_t>::append_response(exchange_pipes_t& pipes,
                                                                  std::string_view response) noexcept {
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
     // <-- {"jsonrpc": "2.0", "id": 1, "result": 19}
+    if (active_obj.dynamic_id.empty())
+        return true;
     if (!pipes.append_outputs({R"({"jsonrpc":"2.0","id":)", 22}))
         return false;
-    if (!pipes.append_outputs(request_id))
+    if (!pipes.append_outputs(active_obj.dynamic_id))
         return false;
     if (!pipes.append_outputs({R"(,"result":)", 10}))
         return false;
@@ -104,15 +111,14 @@ inline bool jsonrpc_protocol_t<base_protocol_t>::append_response(exchange_pipes_
 };
 
 template <typename base_protocol_t>
-inline bool jsonrpc_protocol_t<base_protocol_t>::append_error(exchange_pipes_t& pipes, std::string_view request_id,
-                                                              std::string_view error_code,
+inline bool jsonrpc_protocol_t<base_protocol_t>::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                                               std::string_view message) noexcept {
     // Communication example would be:
     // --> {"jsonrpc": "2.0", "method": "foobar", "id": "1"}
     // <-- {"jsonrpc": "2.0", "id": "1", "error": {"code": -32601, "message": "Method not found"}}
     if (!pipes.append_outputs({R"({"jsonrpc":"2.0","id":)", 22}))
         return false;
-    if (!pipes.append_outputs(request_id))
+    if (!pipes.append_outputs(active_obj.dynamic_id))
         return false;
     if (!pipes.append_outputs({R"(,"error":{"code":)", 17}))
         return false;
@@ -133,7 +139,7 @@ inline void jsonrpc_protocol_t<base_protocol_t>::finalize_response(exchange_pipe
     if (pipes.output_span()[pipes.output_span().size() - 1] == ',')
         pipes.output_pop_back();
 
-    if (is_batch)
+    if (std::holds_alternative<sjd::array>(elements))
         pipes.push_back_reserved(']');
 
     base_proto.finalize_response(pipes);
@@ -153,12 +159,28 @@ jsonrpc_protocol_t<base_protocol_t>::parse_headers(std::string_view body) noexce
 }
 
 template <typename base_protocol_t>
-inline std::optional<default_error_t>
-jsonrpc_protocol_t<base_protocol_t>::parse_content(scratch_space_t& scratch) noexcept {
-    auto error_ptr = scratch.parse(base_proto.get_content());
-    if (error_ptr)
-        return error_ptr;
-    is_batch = scratch.is_batch();
+inline std::optional<default_error_t> jsonrpc_protocol_t<base_protocol_t>::parse_content() noexcept {
+    std::string_view json_doc = base_proto.get_content();
+
+    if (json_doc.size() > parser.capacity()) {
+        if (parser.allocate(json_doc.size(), json_doc.size() / 2) != sj::SUCCESS)
+            return default_error_t{-32000, "Out of memory"};
+        parser.set_max_capacity(json_doc.size());
+    }
+
+    auto one_or_many = parser.parse(json_doc.data(), json_doc.size(), false);
+
+    if (one_or_many.error() == sj::CAPACITY)
+        return default_error_t{-32000, "Out of memory"};
+
+    if (one_or_many.error() != sj::SUCCESS)
+        return default_error_t{-32700, "Invalid JSON was received by the server."};
+
+    if (one_or_many.is_array())
+        elements.emplace<sjd::array>(one_or_many.get_array().value_unsafe());
+    else
+        elements.emplace<sjd::element>(one_or_many.value_unsafe());
+
     return std::nullopt;
 }
 
@@ -206,6 +228,25 @@ std::optional<default_error_t> jsonrpc_protocol_t<base_protocol_t>::set_to(sjd::
 
     active_obj.method_name = method.get_string().value_unsafe();
     active_obj.element = doc;
+    return std::nullopt;
+}
+
+template <typename base_protocol_t>
+template <typename calle_at>
+inline std::optional<default_error_t>
+jsonrpc_protocol_t<base_protocol_t>::populate_response(exchange_pipes_t& pipes, calle_at find_and_call) noexcept {
+    if (std::holds_alternative<sjd::array>(elements)) {
+        for (auto const& elm : std::get<sjd::array>(elements)) {
+            set_to(elm);
+            if (!find_and_call(get_method_name(), get_request_type()))
+                return default_error_t{-32601, "Method not found"};
+        }
+    } else {
+        set_to(std::get<sjd::element>(elements));
+        if (!find_and_call(get_method_name(), get_request_type()))
+            return default_error_t{-32601, "Method not found"};
+    }
+
     return std::nullopt;
 }
 

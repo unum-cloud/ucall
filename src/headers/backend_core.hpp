@@ -57,7 +57,6 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
 
         unum::ucall::automata_t automata{
             *server, //
-            server->spaces[thread_idx],
             *completed.connection_ptr,
             completed.result,
         };
@@ -70,21 +69,14 @@ void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
 void ucall_call_reply_content(ucall_call_t call, ucall_str_t body, size_t body_len) {
     unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
     unum::ucall::connection_t& connection = automata.connection;
-    // No response is needed for "id"-less notifications.
-    if (automata.get_protocol().get_id().empty())
-        return;
 
     body_len = unum::ucall::string_length(body, body_len);
-    connection.protocol.append_response(connection.pipes, automata.get_protocol().get_id(),
-                                        std::string_view(body, body_len));
+    connection.protocol.append_response(connection.pipes, std::string_view(body, body_len));
 }
 
 void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, size_t note_len) {
     unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
     unum::ucall::connection_t& connection = automata.connection;
-    // No response is needed for "id"-less notifications.
-    if (automata.get_protocol().get_id().empty())
-        return;
 
     note_len = unum::ucall::string_length(note, note_len);
     char code[unum::ucall::max_integer_length_k]{};
@@ -94,8 +86,8 @@ void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, s
         return ucall_call_reply_error_unknown(call);
 
     automata.connection.protocol.prepare_response(connection.pipes);
-    if (!connection.protocol.append_error(connection.pipes, automata.get_protocol().get_id(),
-                                          std::string_view(code, code_len), std::string_view(note, note_len)))
+    if (!connection.protocol.append_error(connection.pipes, std::string_view(code, code_len),
+                                          std::string_view(note, note_len)))
         return ucall_call_reply_error_out_of_memory(call);
     automata.connection.protocol.finalize_response(connection.pipes);
 }
