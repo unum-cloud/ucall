@@ -39,7 +39,6 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
     }
 
     inline std::string_view get_content() const noexcept { return base_proto.get_content(); };
-    inline std::string_view get_method_name() const noexcept { return active_obj.method_name; };
     request_type_t get_request_type() const noexcept;
 
     inline any_param_t get_param(std::string_view name) const noexcept {
@@ -238,12 +237,12 @@ jsonrpc_protocol_t<base_protocol_t>::populate_response(exchange_pipes_t& pipes, 
     if (std::holds_alternative<sjd::array>(elements)) {
         for (auto const& elm : std::get<sjd::array>(elements)) {
             set_to(elm);
-            if (!find_and_call(get_method_name(), get_request_type()))
+            if (!find_and_call(active_obj.method_name, get_request_type()))
                 return default_error_t{-32601, "Method not found"};
         }
     } else {
         set_to(std::get<sjd::element>(elements));
-        if (!find_and_call(get_method_name(), get_request_type()))
+        if (!find_and_call(active_obj.method_name, get_request_type()))
             return default_error_t{-32601, "Method not found"};
     }
 

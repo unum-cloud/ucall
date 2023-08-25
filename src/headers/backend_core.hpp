@@ -26,8 +26,7 @@ unum::ucall::any_param_t param_at(ucall_call_t call, size_t position) noexcept {
 void ucall_add_procedure(ucall_server_t punned_server, ucall_str_t name, ucall_callback_t callback,
                          request_type_t callback_type, ucall_callback_tag_t callback_tag) {
     unum::ucall::server_t& server = *reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (server.engine.callbacks.size() + 1 < server.engine.callbacks.capacity())
-        server.engine.callbacks.push_back_reserved({name, callback, callback_type, callback_tag});
+    server.engine.try_add_callback({{name, strlen(name)}, callback, callback_type, callback_tag});
 }
 
 void ucall_take_calls(ucall_server_t punned_server, uint16_t thread_idx) {
@@ -85,13 +84,12 @@ void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, s
     if (res.ec != std::error_code())
         return ucall_call_reply_error_unknown(call);
 
-    automata.connection.protocol.prepare_response(connection.pipes);
     if (!connection.protocol.append_error(connection.pipes, std::string_view(code, code_len),
                                           std::string_view(note, note_len)))
         return ucall_call_reply_error_out_of_memory(call);
-    automata.connection.protocol.finalize_response(connection.pipes);
 }
 
+// TODO Abstract out errors to protocols
 void ucall_call_reply_error_invalid_params(ucall_call_t call) {
     return ucall_call_reply_error(call, -32602, "Invalid method param(s).", 24);
 }

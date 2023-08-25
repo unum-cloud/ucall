@@ -14,7 +14,6 @@ struct tcp_protocol_t {
     parsed_request_t parsed{};
 
     std::string_view get_content() const noexcept;
-    std::string_view get_method_name() const noexcept;
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
@@ -40,8 +39,6 @@ struct tcp_protocol_t {
 };
 
 std::string_view tcp_protocol_t::get_content() const noexcept { return parsed.body; }
-
-inline std::string_view tcp_protocol_t::get_method_name() const noexcept { return std::string_view(); }
 
 inline request_type_t tcp_protocol_t::get_request_type() const noexcept { return request_type_t::post_k; }
 

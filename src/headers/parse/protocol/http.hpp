@@ -11,6 +11,7 @@
 
 namespace unum::ucall {
 
+// TODO Let higher protocols modify, add, remove Headers
 static constexpr char const* http_header_k =
     "HTTP/1.1 200 OK\r\nContent-Length:          \r\nContent-Type: application/json\r\n\r\n";
 static constexpr std::size_t http_header_size_k = 78;
@@ -25,7 +26,6 @@ struct http_protocol_t {
     parsed_request_t parsed{};
 
     std::string_view get_content() const noexcept;
-    std::string_view get_method_name() const noexcept;
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
@@ -83,8 +83,6 @@ void http_protocol_t::reset() noexcept { content_length.reset(); }
 
 std::string_view http_protocol_t::get_content() const noexcept { return parsed.body; }
 
-inline std::string_view http_protocol_t::get_method_name() const noexcept { return std::string_view(); }
-
 inline request_type_t http_protocol_t::get_request_type() const noexcept { return parsed.type; }
 
 inline any_param_t http_protocol_t::get_param(size_t) const noexcept { return any_param_t(); }
@@ -140,6 +138,7 @@ inline std::optional<default_error_t> http_protocol_t::parse_headers(std::string
     if (res < 0)
         return default_error_t{-400, "Not a HTTP request"};
 
+    parsed.path = std::string_view(path, path_len);
     auto type_str = std::string_view(method, method_len);
     if (type_str == "GET")
         parsed.type = get_k;
