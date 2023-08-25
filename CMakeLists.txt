@@ -226,6 +226,11 @@ add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
 target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
 target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 
+add_executable(ucall_example_rest_posix examples/login/ucall_server_rest.cpp)
+target_link_libraries(ucall_example_rest_posix ucall_server_posix cxxopts)
+target_compile_options(ucall_example_rest_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+
+
 if(LINUX)
     add_library(ucall_server_epoll src/engine_epoll.cpp)
     target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS})

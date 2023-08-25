@@ -96,5 +96,29 @@
                 ],
             },
         },
+        {
+            "name": "C++: Test POSIX Rest Server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build_debug/bin/ucall_example_rest_posix",
+            "cwd": "${workspaceFolder}",
+            "showDisplayString": true,
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "Build Debug",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+            },
+            "osx": {
+                "MIMode": "lldb",
+                "environment": [
+                    {
+                        "name": "CPATH",
+                        "value": "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/"
+                    }
+                ],
+            },
+        },
     ]
 }

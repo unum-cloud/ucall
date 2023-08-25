@@ -1,0 +1,132 @@
+/**
+ * @brief Example of a web server built with UCall in C++.
+ */
+#include <charconv> // `std::to_chars`
+#include <cstdio>   // `std::fprintf`
+#include <map>
+#include <thread>
+#include <vector>
+
+#include <cxxopts.hpp>
+
+#include "ucall/ucall.h"
+
+void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+    auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
+    std::string response = "{ \"books\": [";
+    for (auto const& book : *books)
+        response += "\"" + book.second + "\",";
+    if (response[response.size() - 1] == ',')
+        response.pop_back();
+    response += "]}";
+
+    ucall_call_reply_content(call, response.data(), response.size());
+}
+
+void get_book_by_id(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+    auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
+    ucall_str_t book_id_str;
+    size_t book_id_len = 0;
+    bool got_id = ucall_param_named_str(call, "id", 0, &book_id_str, &book_id_len);
+    if (!got_id)
+        return ucall_call_reply_error_invalid_params(call);
+
+    char* endptr = nullptr;
+    size_t book_id = std::strtoul(book_id_str, &endptr, 10);
+    if (book_id == 0 && endptr == book_id_str)
+        return ucall_call_reply_error_invalid_params(call);
+
+    auto found_book = books->find(static_cast<size_t>(book_id));
+
+    if (found_book == books->end())
+        return ucall_call_reply_error(call, 404, "Book not found", 14);
+
+    std::string response = "{ \"book\": \"" + found_book->second + "\" }";
+
+    ucall_call_reply_content(call, response.data(), response.size());
+}
+
+void add_book(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+    auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
+    ucall_str_t new_book;
+    size_t new_book_len = 0;
+    int64_t book_id = 0;
+    bool got_book = ucall_param_named_str(call, "book_name", 0, &new_book, &new_book_len);
+    bool got_id = ucall_param_named_i64(call, "book_id", 0, &book_id);
+    if (!got_book || !got_id)
+        return ucall_call_reply_error_invalid_params(call);
+
+    std::string_view book_name(new_book, new_book_len);
+    auto added_book = books->emplace(static_cast<size_t>(book_id), book_name);
+
+    if (!added_book.second)
+        return ucall_call_reply_error(call, 409, "Book with given Id already exists", 33);
+
+    std::string response = "{ \"book\": \"" + std::string(book_name) + "\" }";
+
+    ucall_call_reply_content(call, response.data(), response.size());
+}
+
+int main(int argc, char** argv) {
+
+    cxxopts::Options options("Summation Server", "If device can't sum integers, just send them over with JSON-RPC :)");
+    options.add_options()                                                                                             //
+        ("h,help", "Print usage")                                                                                     //
+        ("nic", "Networking Interface Internal IP to use", cxxopts::value<std::string>()->default_value("127.0.0.1")) //
+        ("p,port", "On which port to server JSON-RPC", cxxopts::value<int>()->default_value("8545"))                  //
+        ("j,threads", "How many threads to run", cxxopts::value<int>()->default_value("1"))                           //
+        ("s,silent", "Silence statistics output", cxxopts::value<bool>()->default_value("false"))                     //
+        ;
+    auto result = options.parse(argc, argv);
+    if (result.count("help")) {
+        std::cout << options.help() << std::endl;
+        exit(0);
+    }
+
+    ucall_server_t server{};
+    ucall_config_t config{};
+    config.hostname = result["nic"].as<std::string>().c_str();
+    config.port = result["port"].as<int>();
+    config.max_threads = result["threads"].as<int>();
+    config.max_concurrent_connections = 1024;
+    config.queue_depth = 4096 * config.max_threads;
+    config.max_lifetime_exchanges = UINT32_MAX;
+    config.logs_file_descriptor = result["silent"].as<bool>() ? -1 : fileno(stdin);
+    config.logs_format = "human";
+    config.protocol = protocol_type_t::rest_k;
+    // config.ssl_private_key_path = "./examples/login/certs/main.key";
+    // const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
+    // config.ssl_certificates_paths = crts;
+    // config.ssl_certificates_count = 2;
+
+    ucall_init(&config, &server);
+    if (!server) {
+        std::printf("Failed to start server: %s:%i\n", config.hostname, config.port);
+        return -1;
+    }
+
+    std::printf("Initialized server: %s:%i\n", config.hostname, config.port);
+    std::printf("- %zu threads\n", static_cast<std::size_t>(config.max_threads));
+    std::printf("- %zu max concurrent connections\n", static_cast<std::size_t>(config.max_concurrent_connections));
+    if (result["silent"].as<bool>())
+        std::printf("- silent\n");
+
+    std::map<std::size_t, std::string> books;
+
+    // Add all the callbacks we need
+    ucall_add_procedure(server, "/books", &get_books, request_type_t::get_k, &books);
+    ucall_add_procedure(server, "/books", &add_book, request_type_t::post_k, &books);
+    ucall_add_procedure(server, "/books/{id}", &get_book_by_id, request_type_t::get_k, &books);
+
+    if (config.max_threads > 1) {
+        std::vector<std::thread> threads;
+        for (uint16_t i = 0; i != config.max_threads; ++i)
+            threads.emplace_back(&ucall_take_calls, server, i);
+        for (auto& thread : threads)
+            thread.join();
+    } else
+        ucall_take_calls(server, 0);
+
+    ucall_free(server);
+    return 0;
+}
