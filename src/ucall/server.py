@@ -31,6 +31,7 @@ class Protocol():
     HTTP = 1
     JSONRPC_TCP = 2
     JSONRPC_HTTP = 3
+    REST = 4
 
 
 class Server:
