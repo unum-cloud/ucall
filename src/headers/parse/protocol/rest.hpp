@@ -47,7 +47,7 @@ struct rest_protocol_t {
         bool has_slash = name.size() && name.front() == '/';
         std::size_t final_size = name.size() + 1u - has_slash;
         if (final_size > json_pointer_capacity_k)
-            return sj::INVALID_JSON_POINTER;
+            return nullptr;
         std::memcpy((void*)(json_pointer), "/", 1);
         std::memcpy((void*)(json_pointer + 1u - has_slash), name.data(), name.size());
         auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
@@ -55,7 +55,7 @@ struct rest_protocol_t {
             return from_body;
 
         json_pointer[0] = '{';
-        json_pointer[final_size++] = '}'; // TODO How to find named parameter from path?
+        json_pointer[final_size++] = '}';
         size_t position_in_path = active_obj.method_name.find({json_pointer, final_size}, 0);
         if (position_in_path == std::string_view::npos)
             return nullptr;
@@ -91,7 +91,7 @@ inline bool rest_protocol_t::append_response(exchange_pipes_t& pipes, std::strin
     if (!pipes.append_outputs(response))
         return false;
     return true;
-};
+}
 
 inline bool rest_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {

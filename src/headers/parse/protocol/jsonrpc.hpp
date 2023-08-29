@@ -46,7 +46,7 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
         bool has_slash = name.size() && name.front() == '/';
         std::size_t final_size = name.size() + 8u - has_slash;
         if (final_size > json_pointer_capacity_k)
-            return sj::INVALID_JSON_POINTER;
+            return nullptr;
         std::memcpy((void*)json_pointer, "/params/", 8u);
         std::memcpy((void*)(json_pointer + 8u - has_slash), name.data(), name.size());
         return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
@@ -57,7 +57,7 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
         std::memcpy((void*)json_pointer, "/params/", 8u);
         std::to_chars_result res = std::to_chars(json_pointer + 8u, json_pointer + json_pointer_capacity_k, position);
         if (res.ec != std::errc(0))
-            return sj::INVALID_JSON_POINTER;
+            return nullptr;
         std::size_t final_size = res.ptr - json_pointer;
         return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
     }
@@ -107,7 +107,7 @@ inline bool jsonrpc_protocol_t<base_protocol_t>::append_response(exchange_pipes_
     if (!pipes.append_outputs({R"(},)", 2}))
         return false;
     return true;
-};
+}
 
 template <typename base_protocol_t>
 inline bool jsonrpc_protocol_t<base_protocol_t>::append_error(exchange_pipes_t& pipes, std::string_view error_code,
@@ -130,7 +130,7 @@ inline bool jsonrpc_protocol_t<base_protocol_t>::append_error(exchange_pipes_t& 
     if (!pipes.append_outputs({R"("}})", 3}))
         return false;
     return true;
-};
+}
 
 template <typename base_protocol_t>
 inline void jsonrpc_protocol_t<base_protocol_t>::finalize_response(exchange_pipes_t& pipes) noexcept {

@@ -61,12 +61,12 @@ inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept 
 
 inline bool http_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
     return pipes.append_outputs(response);
-};
+}
 
 inline bool http_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {
     return pipes.append_outputs(error_code);
-};
+}
 
 inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     auto output = pipes.output_span();
