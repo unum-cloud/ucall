@@ -1,7 +1,6 @@
 #pragma once
 
 #include "connection.hpp"
-#include "parse/json.hpp"
 #include "server.hpp"
 #include "shared.hpp"
 
@@ -9,7 +8,6 @@ namespace unum::ucall {
 
 struct automata_t {
     server_t& server;
-    scratch_space_t& scratch;
     connection_t& connection;
     ssize_t completed_result{};
 
@@ -22,7 +20,10 @@ struct automata_t {
     void send_next() noexcept;
     void receive_next() noexcept;
     void close_gracefully() noexcept;
+    protocol_t const& get_protocol() const noexcept;
 };
+
+protocol_t const& automata_t::get_protocol() const noexcept { return connection.protocol; };
 
 bool automata_t::is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
 
@@ -118,7 +119,7 @@ void automata_t::operator()() noexcept {
         // and send back a response.
         connection.decrypt();
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
-            server.engine.raise_request(scratch, connection.pipes, connection.protocol, this);
+            server.engine.raise_request(connection.pipes, connection.protocol, this);
 
             connection.pipes.release_inputs();
             // Some requests require no response at all,
@@ -185,173 +186,4 @@ void automata_t::operator()() noexcept {
     }
 }
 
-sj::simdjson_result<sjd::element> param_at(ucall_call_t call, ucall_str_t name, size_t name_len) noexcept {
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    scratch_space_t& scratch = automata.scratch;
-    name_len = string_length(name, name_len);
-    return scratch.point_to_param({name, name_len});
-}
-
-sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) noexcept {
-    automata_t& automata = *reinterpret_cast<automata_t*>(call);
-    scratch_space_t& scratch = automata.scratch;
-    return scratch.point_to_param(position);
-}
 } // namespace unum::ucall
-
-void ucall_add_procedure(ucall_server_t punned_server, ucall_str_t name, ucall_callback_t callback,
-                         ucall_callback_tag_t callback_tag) {
-    unum::ucall::server_t& server = *reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (server.engine.callbacks.size() + 1 < server.engine.callbacks.capacity())
-        server.engine.callbacks.push_back_reserved({name, callback, callback_tag});
-}
-
-void ucall_take_calls(ucall_server_t punned_server, uint16_t thread_idx) {
-    unum::ucall::server_t* server = reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (!thread_idx && server->logs_file_descriptor > 0)
-        server->submit_stats_heartbeat();
-    while (true) {
-        ucall_take_call(punned_server, thread_idx);
-    }
-}
-
-void ucall_take_call(ucall_server_t punned_server, uint16_t thread_idx) {
-    // Unlike the classical synchronous interface, this implements only a part of the connection machine,
-    // is responsible for checking if a specific request has been completed. All of the submitted
-    // memory must be preserved until we get the confirmation.
-    unum::ucall::server_t* server = reinterpret_cast<unum::ucall::server_t*>(punned_server);
-    if (thread_idx == 0)
-        server->consider_accepting_new_connection();
-
-    constexpr std::size_t completed_max_k{16};
-    unum::ucall::completed_event_t completed_events[completed_max_k]{};
-
-    std::size_t completed_count = server->network_engine.pop_completed_events<completed_max_k>(completed_events);
-
-    for (std::size_t i = 0; i != completed_count; ++i) {
-        unum::ucall::completed_event_t& completed = completed_events[i];
-
-        unum::ucall::automata_t automata{
-            *server, //
-            server->spaces[thread_idx],
-            *completed.connection_ptr,
-            completed.result,
-        };
-
-        // If everything is fine, let automata work in its normal regime.
-        automata();
-    }
-}
-
-void ucall_call_reply_content(ucall_call_t call, ucall_str_t body, size_t body_len) {
-    unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
-    unum::ucall::connection_t& connection = automata.connection;
-    unum::ucall::scratch_space_t& scratch = automata.scratch;
-    // No response is needed for "id"-less notifications.
-    if (scratch.dynamic_id.empty())
-        return;
-
-    body_len = unum::ucall::string_length(body, body_len);
-    connection.protocol.append_response(connection.pipes, scratch.dynamic_id, std::string_view(body, body_len));
-}
-
-void ucall_call_reply_error(ucall_call_t call, int code_int, ucall_str_t note, size_t note_len) {
-    unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
-    unum::ucall::connection_t& connection = automata.connection;
-    unum::ucall::scratch_space_t& scratch = automata.scratch;
-    // No response is needed for "id"-less notifications.
-    if (scratch.dynamic_id.empty())
-        return;
-
-    note_len = unum::ucall::string_length(note, note_len);
-    char code[unum::ucall::max_integer_length_k]{};
-    std::to_chars_result res = std::to_chars(code, code + unum::ucall::max_integer_length_k, code_int);
-    auto code_len = res.ptr - code;
-    if (res.ec != std::error_code())
-        return ucall_call_reply_error_unknown(call);
-
-    automata.connection.protocol.prepare_response(connection.pipes);
-    if (!connection.protocol.append_error(connection.pipes, scratch.dynamic_id, std::string_view(code, code_len),
-                                          std::string_view(note, note_len)))
-        return ucall_call_reply_error_out_of_memory(call);
-    automata.connection.protocol.finalize_response(connection.pipes);
-}
-
-void ucall_call_reply_error_invalid_params(ucall_call_t call) {
-    return ucall_call_reply_error(call, -32602, "Invalid method param(s).", 24);
-}
-
-void ucall_call_reply_error_unknown(ucall_call_t call) {
-    return ucall_call_reply_error(call, -32603, "Unknown error.", 14);
-}
-
-void ucall_call_reply_error_out_of_memory(ucall_call_t call) {
-    return ucall_call_reply_error(call, -32000, "Out of memory.", 14);
-}
-
-bool ucall_param_named_bool(ucall_call_t call, ucall_str_t name, size_t name_len, bool* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, name, name_len); value.is_bool()) {
-        *result_ptr = value.get_bool().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_named_i64(ucall_call_t call, ucall_str_t name, size_t name_len, int64_t* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, name, name_len); value.is_int64()) {
-        *result_ptr = value.get_int64().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_named_f64(ucall_call_t call, ucall_str_t name, size_t name_len, double* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, name, name_len); value.is_double()) {
-        *result_ptr = value.get_double().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_named_str(ucall_call_t call, ucall_str_t name, size_t name_len, ucall_str_t* result_ptr,
-                           size_t* result_len_ptr) {
-    if (auto value = unum::ucall::param_at(call, name, name_len); value.is_string()) {
-        *result_ptr = value.get_string().value_unsafe().data();
-        *result_len_ptr = value.get_string_length().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_positional_bool(ucall_call_t call, size_t position, bool* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, position); value.is_bool()) {
-        *result_ptr = value.get_bool().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_positional_i64(ucall_call_t call, size_t position, int64_t* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, position); value.is_int64()) {
-        *result_ptr = value.get_int64().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_positional_f64(ucall_call_t call, size_t position, double* result_ptr) {
-    if (auto value = unum::ucall::param_at(call, position); value.is_double()) {
-        *result_ptr = value.get_double().value_unsafe();
-        return true;
-    } else
-        return false;
-}
-
-bool ucall_param_positional_str(ucall_call_t call, size_t position, ucall_str_t* result_ptr, size_t* result_len_ptr) {
-    if (auto value = unum::ucall::param_at(call, position); value.is_string()) {
-        *result_ptr = value.get_string().value_unsafe().data();
-        *result_len_ptr = value.get_string_length().value_unsafe();
-        return true;
-    } else
-        return false;
-}

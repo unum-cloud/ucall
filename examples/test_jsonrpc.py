@@ -24,7 +24,8 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
         for identity in range(count_clients)
     ]
 
-    for _ in range(count_cycles):
+    for x in range(count_cycles):
+        print(x)
         random.shuffle(clients)
         for client in clients:
             client.send()

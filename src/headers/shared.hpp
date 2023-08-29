@@ -28,6 +28,8 @@
 
 namespace unum::ucall {
 
+using any_param_t = std::variant<nullptr_t, bool, int64_t, double, std::string_view>;
+
 struct default_error_t {
     int code{};
     std::string_view note;
@@ -45,7 +47,8 @@ template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) 
 }
 
 struct parsed_request_t {
-    std::string_view type{};
+    request_type_t type{};
+    std::string_view path{};
     std::string_view keep_alive{};
     std::string_view content_type{};
     std::string_view content_length{};

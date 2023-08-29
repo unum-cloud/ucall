@@ -29,7 +29,6 @@ struct server_t {
     pool_gt<connection_t> connections{};
     mutex_t connections_mutex{};
     /// @brief Same number of them, as max physical threads. Can be in hundreds.
-    buffer_gt<scratch_space_t> spaces{};
     /// @brief Pre-allocated buffered to be submitted for shared use.
     memory_map_t fixed_buffers{};
 
