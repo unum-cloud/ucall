@@ -1,9 +1,11 @@
 import random
 
 from ucall.posix import Server
+from ucall.server import Protocol
 
 server = Server(
     port=8545,
+    protocol=Protocol.JSONRPC_HTTP,
     # ssl_pk='./examples/login/certs/main.key',
     # ssl_certs=[
     #   './examples/login/certs/srv.crt',

@@ -111,7 +111,7 @@ These specific numbers were obtained on `c7g.metal` beefy instances with Gravito
 
 </details>
 
-## How is that possible?!
+## How is that possible?
 
 How can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?
 **UCall stands on the shoulders of Giants**:
@@ -143,7 +143,7 @@ FastAPI supports native type, while UCall supports `numpy.ndarray`, `PIL.Image` 
 This comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).
 
 ```python
-from ucall.rich_posix import Server
+from ucall.server import Server
 import ufrom
 
 server = Server()
@@ -293,7 +293,7 @@ int main(int argc, char** argv) {
     ucall_config_t config{};
 
     ucall_init(&config, &server);
-    ucall_add_procedure(server, "sum", &sum, NULL);
+    ucall_add_procedure(server, "sum", &sum);
     ucall_take_calls(server, 0);
     ucall_free(server);
     return 0;

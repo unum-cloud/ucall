@@ -13,6 +13,6 @@ Regular Server
 =================
 Rich Server
 =================
-.. automodule:: ucall.rich_posix
+.. automodule:: ucall.server
     :members:
     :undoc-members:

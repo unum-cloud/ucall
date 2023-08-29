@@ -1,5 +1,6 @@
+import platform
 import inspect
-from typing import Callable, get_type_hints
+from typing import Callable, Union, get_type_hints
 from functools import wraps
 from io import BytesIO
 
@@ -7,16 +8,49 @@ import numpy as np
 from PIL import Image
 
 
-class _Server:
+def supports_io_uring() -> bool:
+    if platform.system() != 'Linux':
+        return False
+    major, minor, _ = platform.release().split('.', 3)
+    major = int(major)
+    minor = int(minor)
+    if major > 5 or (major == 5 and minor >= 19):
+        return True
+    return False
 
-    def __init__(self) -> None:
-        self.server = None
+
+def only_native_types(hints: dict[str, type]) -> bool:
+    for hint in hints.values():
+        if not isinstance(hint, Union[bool, int, float, str]):
+            return False
+    return True
+
+
+class Protocol():
+    TCP = 0
+    HTTP = 1
+    JSONRPC_TCP = 2
+    JSONRPC_HTTP = 3
+    REST = 4
+
+
+class Server:
+
+    def __init__(self, uring_if_possible=True, epoll_if_possible=False, **kwargs) -> None:
+        if uring_if_possible and supports_io_uring():
+            from ucall import uring as backend
+        elif epoll_if_possible and platform.system() == 'Linux':
+            from ucall import epoll as backend
+        else:
+            from ucall import posix as backend
+
+        self.native = backend.Server(**kwargs)
 
     def __call__(self, func: Callable):
         return self.route(func)
 
     def run(self, max_cycles: int = -1, max_seconds: float = -1):
-        return self.server.run(max_cycles, max_seconds)
+        return self.native.run(max_cycles, max_seconds)
 
     def unpack(self, arg: bytes, hint: type):
         if hint == bytes or hint == bytearray:
@@ -47,6 +81,13 @@ class _Server:
 
     def route(self, func: Callable):
         hints = get_type_hints(func)
+        for name, hint in hints.items():
+            assert isinstance(hint, type), f'Hint for {name} must be a type!'
+
+        # Let's optimize, avoiding the need for the second layer of decorators:
+        if only_native_types(hints):
+            self.native.route(func)
+            return func
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -54,7 +95,6 @@ class _Server:
             new_kwargs = {}
 
             for arg, hint in zip(args, hints.values()):
-                assert isinstance(hint, type), 'Hint must be a type!'
                 if isinstance(arg, bytes):
                     new_args.append(self.unpack(arg, hint))
                 else:
@@ -70,5 +110,5 @@ class _Server:
             return self.pack(res)
 
         wrapper.__signature__ = inspect.signature(func)
-        self.server.route(wrapper)
+        self.native.route(wrapper)
         return wrapper

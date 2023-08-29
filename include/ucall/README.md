@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     ucall_config_t config{};
 
     ucall_init(&config, &server);
-    ucall_add_procedure(server, "sum", &sum, NULL);
+    ucall_add_procedure(server, "sum", &sum, post_k, NULL);
     ucall_take_calls(server, 0);
     ucall_free(server);
     return 0;

@@ -19,7 +19,7 @@
 
 #include <turbob64.h>
 
-#include "helpers/py_to_json.h"
+#include "headers/parse/py_to_json.h"
 #include "ucall/ucall.h"
 
 #define stringify_value_m(a) stringify_m(a)
@@ -67,6 +67,13 @@ typedef struct {
     size_t count_added;
     bool quiet;
 } py_server_t;
+
+typedef struct {
+    py_server_t* server;
+    PyObject* args;
+    PyObject* fn;
+    request_type_t request_type;
+} py_decorator_self_t;
 
 static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
 
@@ -291,7 +298,7 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
     ucall_call_reply_content(call, &parsed_response[0], len);
 }
 
-static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
+static PyObject* __add_procedure(py_decorator_self_t* decorated, PyObject* args) {
     // Take a function object, introspect its arguments,
     // register them inside of a higher-level function,
     // which on every call requests them via `ucall_param_named_...`
@@ -299,28 +306,73 @@ static PyObject* server_add_procedure(py_server_t* self, PyObject* args) {
     // Python objects and passes to the original function.
     // The result of that function call must then be returned via
     // the `ucall_call_send_content` call.
+    py_server_t* server = decorated->server;
     py_wrapper_t wrap;
     if (!PyArg_ParseTuple(args, "O", &wrap.callable) || !PyCallable_Check(wrap.callable)) {
         PyErr_SetString(PyExc_TypeError, "Need a callable object!");
         return NULL;
     }
 
+    char* path = NULL;
+    if (!PyArg_ParseTuple(decorated->args, "|s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Invalid Path!");
+        return NULL;
+    }
+
     if (prepare_wrapper(wrap.callable, &wrap) != 0)
         return NULL;
 
-    if (self->count_added >= self->wrapper_capacity) {
-        self->wrapper_capacity *= 2;
-        self->wrappers = (py_wrapper_t*)realloc(self->wrappers, self->wrapper_capacity);
+    if (server->count_added >= server->wrapper_capacity) {
+        server->wrapper_capacity *= 2;
+        server->wrappers = (py_wrapper_t*)realloc(server->wrappers, server->wrapper_capacity);
     }
 
-    self->wrappers[self->count_added] = wrap;
+    server->wrappers[server->count_added] = wrap;
 
-    ucall_add_procedure(self->server, PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__")), wrapper,
-                        &self->wrappers[self->count_added]);
+    if (path == NULL)
+        path = PyUnicode_AsUTF8(PyObject_GetAttrString(wrap.callable, "__name__"));
 
-    ++self->count_added;
+    ucall_add_procedure(server->server, path, wrapper, decorated->request_type, &server->wrappers[server->count_added]);
+
+    ++server->count_added;
     Py_INCREF(wrap.callable);
+    Py_DECREF(decorated->fn);
+    Py_DECREF(decorated->server);
+    Py_DECREF(decorated->args);
+    free(decorated);
     return wrap.callable;
+}
+
+static PyObject* procedure_decorator(py_server_t* self, PyObject* args, request_type_t req_type) {
+    static PyMethodDef methd = {"__add_procedure", __add_procedure, METH_VARARGS,
+                                "Actual function that registers procedure"};
+    PyObject* name = PyUnicode_FromString(methd.ml_name);
+    py_decorator_self_t* decorator_self = (py_decorator_self_t*)malloc(sizeof(py_decorator_self_t));
+    PyObject* decorator = PyCFunction_NewEx(&methd, decorator_self, name);
+    decorator_self->args = args;
+    decorator_self->server = self;
+    decorator_self->request_type = req_type;
+    decorator_self->fn = decorator;
+    Py_INCREF(args);
+    Py_INCREF(self);
+    Py_DECREF(name);
+    return decorator;
+}
+
+static PyObject* server_add_procedure_get(py_server_t* self, PyObject* args) {
+    return procedure_decorator(self, args, get_k);
+}
+
+static PyObject* server_add_procedure_post(py_server_t* self, PyObject* args) {
+    return procedure_decorator(self, args, post_k);
+}
+
+static PyObject* server_add_procedure_put(py_server_t* self, PyObject* args) {
+    return procedure_decorator(self, args, put_k);
+}
+
+static PyObject* server_add_procedure_delete(py_server_t* self, PyObject* args) {
+    return procedure_decorator(self, args, delete_k);
 }
 
 static bool pycheck_take_call(py_server_t* self, uint16_t thread_idx) {
@@ -381,7 +433,10 @@ static PyObject* server_max_lifetime(py_server_t* self, PyObject* _) {
 }
 
 static PyMethodDef server_methods[] = {
-    {"route", (PyCFunction)&server_add_procedure, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"get", (PyCFunction)&server_add_procedure_get, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"put", (PyCFunction)&server_add_procedure_put, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"post", (PyCFunction)&server_add_procedure_post, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
+    {"delete", (PyCFunction)&server_add_procedure_delete, METH_VARARGS, PyDoc_STR("Append a procedure callback")},
     {"run", (PyCFunction)&server_run, METH_VARARGS,
      PyDoc_STR("Runs the server for N calls or T seconds, before returning")},
     {NULL},
@@ -414,11 +469,12 @@ static PyObject* server_new(PyTypeObject* type, PyObject* args, PyObject* keywor
 
 static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
     static const char const* keywords_list[] = {
-        "hostname",      "port",  "queue_depth", "max_callbacks", "max_threads",
-        "count_threads", "quiet", "ssl_pk",      "ssl_certs",     NULL,
+        "hostname", "port",   "protocol",  "queue_depth", "max_callbacks", "max_threads", "count_threads",
+        "quiet",    "ssl_pk", "ssl_certs", NULL,
     };
     self->config.hostname = "0.0.0.0";
     self->config.port = 8545;
+    self->config.protocol = jsonrpc_http_k;
     self->config.queue_depth = 4096;
     self->config.max_callbacks = UINT16_MAX;
     self->config.max_threads = 16;
@@ -429,14 +485,14 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     PyObject* certs_path = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnpsO", (char**)keywords_list, //
-                                     &self->config.hostname, &self->config.port, &self->config.queue_depth,
-                                     &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
-                                     &self->quiet, &self->config.ssl_private_key_path, &certs_path))
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnnpsO", (char**)keywords_list, //
+                                     &self->config.hostname, &self->config.port, &self->config.protocol,
+                                     &self->config.queue_depth, &self->config.max_callbacks, &self->config.max_threads,
+                                     &self->count_threads, &self->quiet, &self->config.ssl_private_key_path,
+                                     &certs_path))
         return -1;
 
     if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
-        self->config.use_ssl = true;
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
         self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
         for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
@@ -474,7 +530,7 @@ static PyTypeObject ucall_type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc = PyDoc_STR("Server class for Remote Procedure Calls implemented in Python"),
     .tp_methods = server_methods,
-    .tp_call = (ternaryfunc)&server_add_procedure,
+    .tp_call = (ternaryfunc)&server_add_procedure_post,
     .tp_getset = server_computed_properties,
     .tp_init = (initproc)server_init,
     .tp_new = server_new,

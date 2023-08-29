@@ -14,10 +14,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CACHEFILE_DIR "${CMAKE_SOURCE_DIR}/build")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/lib" CACHE PATH "Path to static libs")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/lib" CACHE PATH "Path to shared libs")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build/bin")
+if (NOT CMAKE_BINARY_DIR OR ${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+    set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/build")
+endif()
+set(CMAKE_CACHEFILE_DIR ${CMAKE_BINARY_DIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to static libs")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" CACHE PATH "Path to shared libs")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
@@ -56,6 +60,8 @@ if(LINUX)
     message(-- " Linux Kernel version: " ${UNAME_RESULT})
     string(REGEX MATCH "[0-9]+.[0-9]+" LINUX_KERNEL_VERSION ${UNAME_RESULT})
 endif()
+
+include_directories(include/ src/headers)
 
 include(FetchContent)
 include(ExternalProject)
@@ -116,22 +122,74 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-FetchContent_Declare(
-    mbedtls
-    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls/
-    GIT_TAG v3.4.0
-    CMAKE_ARGS
-    -DENABLE_PROGRAMS=OFF
-    -DENABLE_TESTING=OFF
-    -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
-    -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-)
+if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+    FetchContent_Declare(
+        OpenSSL
+        URL https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.7.3.tar.gz
+        OVERRIDE_FIND_PACKAGE
+    )
 
-FetchContent_MakeAvailable(mbedtls)
-include_directories(${mbedtls_SOURCE_DIR}/include)
-set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
+    FetchContent_MakeAvailable(OpenSSL)
+    if(IS_DIRECTORY "${LibreSSL_SOURCE_DIR}")
+        set_property(DIRECTORY ${LibreSSL_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+    endif()
+    set(OPENSSL_INCLUDE_DIR ${LibreSSL_SOURCE_DIR}/include)
+    set(OPENSSL_VERSION "1.1.1")
+    set(OPENSSL_FOUND true)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
+    GET_FILENAME_COMPONENT(OPENSSL_LIBDIR "${OPENSSL_ONE_LIB_PATH}" DIRECTORY)
+endif()
+
+
+if(MSVC)
+    set(PICOTLS_DIR ${CMAKE_BINARY_DIR}/_deps/picotls-ep)
+    set(PICOTLSVS_DIR ${PICOTLS_DIR}/picotlsvs)
+
+    ExternalProject_Add(
+        picotls
+        GIT_REPOSITORY https://github.com/h2o/picotls.git
+        GIT_TAG master
+        DEPENDS crypto
+        PREFIX ${CMAKE_BINARY_DIR}/_deps/
+        SOURCE_DIR ${PICOTLS_DIR}
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND cd ${PICOTLSVS_DIR} && MSBuild.exe picotlsvs.sln -target:picotls-core -target:picotls-openssl -p:OPENSSL64DIR=${LibreSSL_SOURCE_DIR} -p:Configuration=Release -p:PlatformToolset=v141 -p:WindowsTargetPlatformVersion=10.0.17763.0
+        INSTALL_COMMAND ""
+        UPDATE_COMMAND ""
+    )
+    add_library(picotls-core STATIC IMPORTED GLOBAL)
+    add_dependencies(picotls-core picotls)
+    set_property(TARGET picotls-core
+        PROPERTY IMPORTED_LOCATION
+        ${PICOTLSVS_DIR}/x64/Release/picotls-core.lib
+    )
+    add_library(picotls-openssl STATIC IMPORTED GLOBAL)
+    add_dependencies(picotls-openssl picotls)
+    set_property(TARGET picotls-openssl
+        PROPERTY IMPORTED_LOCATION
+        ${PICOTLSVS_DIR}/x64/Release/picotls-openssl.lib
+    )
+
+    include_directories(${PICOTLS_DIR}/include/ ${PICOTLSVS_DIR}/picotls)
+    set(URING_LIBS uring_internal)
+else()
+    FetchContent_Declare(
+    picotls
+    GIT_REPOSITORY https://github.com/h2o/picotls.git
+    GIT_TAG master
+    )
+
+    FetchContent_MakeAvailable(picotls)
+    if(IS_DIRECTORY "${picotls_SOURCE_DIR}")
+        set_property(DIRECTORY ${picotls_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+    endif()
+    include_directories(${picotls_SOURCE_DIR}/include)
+endif()
+
+# `crypto` comes from LibreSSL if it is built, otherwise from system libssl
+set(tls_LIBS picotls-core picotls-openssl crypto)
 
 # LibUring
 if(LINUX)
@@ -160,24 +218,39 @@ if(LINUX)
 endif()
 
 find_package(Threads REQUIRED)
-include_directories(include/ src/)
+
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
-set(PYTHON_BACKEND ucall_server_posix)
-
-add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
-target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
-target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${tls_LIBS})
+set(BACKENDS ucall_server_posix)
 
 if(LINUX)
+    add_library(ucall_server_epoll src/engine_epoll.cpp)
+    target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS})
+
     add_library(ucall_server_uring src/engine_uring.cpp)
-    set(PYTHON_BACKEND ucall_server_uring)
-    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS})
-    add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
-    target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
-    target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+    target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS} ${tls_LIBS})
+
+    set(BACKENDS ${BACKENDS} ucall_server_epoll ucall_server_uring)
 endif()
+
+foreach(backend IN LISTS BACKENDS)
+    string(FIND "${backend}" "_" last_underscore REVERSE)
+    math(EXPR substring_length "${last_underscore} + 1")
+    string(SUBSTRING "${backend}" ${substring_length} -1 backend_name)
+  
+    set(jsonrpc_example_name "ucall_example_login_${backend_name}")
+    set(rest_example_name "ucall_example_rest_${backend_name}")
+   
+    add_executable(${jsonrpc_example_name} examples/login/ucall_server.cpp)
+    target_link_libraries(${jsonrpc_example_name} ${backend} cxxopts)
+    target_compile_options(${jsonrpc_example_name} PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+
+    add_executable(${rest_example_name} examples/login/ucall_server_rest.cpp)
+    target_link_libraries(${rest_example_name} ${backend} cxxopts)
+    target_compile_options(${rest_example_name} PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+endforeach()
+
 
 if(UCALL_BUILD_EXAMPLES)
     add_executable(ucall_example_redis examples/redis/ucall_server.cpp)
@@ -192,16 +265,16 @@ endif()
 find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 
-if(LINUX)
-    Python3_add_library(py_ucall_uring src/python.c)
-    target_include_directories(py_ucall_uring PUBLIC src/ include/)
-    target_link_libraries(py_ucall_uring PRIVATE ucall_server_uring base64)
-    set_target_properties(py_ucall_uring PROPERTIES OUTPUT_NAME uring)
-    target_compile_definitions(py_ucall_uring PRIVATE UCALL_PYTHON_MODULE_NAME=uring)
-endif()
 
-Python3_add_library(py_ucall_posix src/python.c)
-target_include_directories(py_ucall_posix PUBLIC src/ include/)
-target_link_libraries(py_ucall_posix PRIVATE ucall_server_posix base64)
-set_target_properties(py_ucall_posix PROPERTIES OUTPUT_NAME posix)
-target_compile_definitions(py_ucall_posix PRIVATE UCALL_PYTHON_MODULE_NAME=posix)
+foreach(backend IN LISTS BACKENDS)
+    string(FIND "${backend}" "_" last_underscore REVERSE)
+    math(EXPR substring_length "${last_underscore} + 1")
+    string(SUBSTRING "${backend}" ${substring_length} -1 backend_name)
+  
+    set(py_lib_name "py_ucall_${backend_name}")
+    Python3_add_library(${py_lib_name} src/python.c)
+    target_include_directories(${py_lib_name} PUBLIC src/ include/)
+    target_link_libraries(${py_lib_name} PRIVATE ${backend} base64)
+    set_target_properties(${py_lib_name} PROPERTIES OUTPUT_NAME ${backend_name})
+    target_compile_definitions(${py_lib_name} PRIVATE UCALL_PYTHON_MODULE_NAME=${backend_name})
+endforeach()

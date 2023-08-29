@@ -4,7 +4,7 @@ import requests
 import numpy as np
 from PIL import Image
 from ucall.client import Client, ClientTLS
-from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP
+from login.jsonrpc_client import CaseHTTP, CaseHTTPBatches, CaseTCP, CaseTLS
 
 
 class ClientGeneric:
@@ -24,7 +24,8 @@ def shuffled_n_identities(class_, count_clients: int = 3, count_cycles: int = 10
         for identity in range(count_clients)
     ]
 
-    for _ in range(count_cycles):
+    for x in range(count_cycles):
+        print(x)
         random.shuffle(clients)
         for client in clients:
             client.send()
@@ -41,6 +42,12 @@ def test_shuffled_tcp():
 def test_shuffled_http():
     for connections in range(1, 10):
         shuffled_n_identities(CaseHTTP, count_clients=connections)
+
+
+def test_shuffled_tls():
+    for connections in range(1, 10):
+        print(connections)
+        shuffled_n_identities(CaseTLS, count_clients=connections)
 
 
 def test_shuffled_http_batches():
@@ -206,19 +213,20 @@ def test_pillow_tls():
 
 if __name__ == '__main__':
     test_normal()
-    test_normal_positional()
-    # test_normal_tls()
+    # test_normal_positional()
     # test_normal_positional_tls()
-    test_shuffled_tcp()
-    # test_numpy()
-    # test_pillow()
-    # test_numpy_tls()
-    # test_pillow_tls()
+    # test_normal_tls()
+    # test_shuffled_tcp()
+    # test_shuffled_tls()
+    test_shuffled_http()
+    # # test_numpy()
+    # # test_pillow()
+    # # test_numpy_tls()
+    # # test_pillow_tls()
     test_uniform_batches()
     test_shuffled_http_batches()
-    test_shuffled_http()
+    test_non_uniform_batch()
     test_notification()
     test_method_missing()
     test_param_missing()
     test_param_type()
-    test_non_uniform_batch()
