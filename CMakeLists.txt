@@ -219,33 +219,38 @@ endif()
 
 find_package(Threads REQUIRED)
 
+
 add_library(ucall_server_posix src/engine_posix.cpp)
 target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${tls_LIBS})
-
-add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
-target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
-target_compile_options(ucall_example_login_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
-
-add_executable(ucall_example_rest_posix examples/login/ucall_server_rest.cpp)
-target_link_libraries(ucall_example_rest_posix ucall_server_posix cxxopts)
-target_compile_options(ucall_example_rest_posix PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
-
+set(BACKENDS ucall_server_posix)
 
 if(LINUX)
     add_library(ucall_server_epoll src/engine_epoll.cpp)
     target_link_libraries(ucall_server_epoll simdjson::simdjson Threads::Threads ${tls_LIBS})
 
-    add_executable(ucall_example_login_epoll examples/login/ucall_server.cpp)
-    target_link_libraries(ucall_example_login_epoll ucall_server_epoll cxxopts)
-    target_compile_options(ucall_example_login_epoll PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
-
     add_library(ucall_server_uring src/engine_uring.cpp)
     target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads ${URING_LIBS} ${tls_LIBS})
 
-    add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
-    target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
-    target_compile_options(ucall_example_login_uring PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+    set(BACKENDS  ${BACKENDS} ucall_server_epoll ucall_server_uring)
 endif()
+
+foreach(backend IN LISTS BACKENDS)
+    string(FIND "${backend}" "_" last_underscore REVERSE)
+    math(EXPR substring_length "${last_underscore} + 1")
+    string(SUBSTRING "${backend}" ${substring_length} -1 backend_name)
+  
+    set(jsonrpc_example_name "ucall_example_login_${backend_name}")
+    set(rest_example_name "ucall_example_rest_${backend_name}")
+   
+    add_executable(${jsonrpc_example_name} examples/login/ucall_server.cpp)
+    target_link_libraries(${jsonrpc_example_name} ${backend} cxxopts)
+    target_compile_options(${jsonrpc_example_name} PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+
+    add_executable(${rest_example_name} examples/login/ucall_server_rest.cpp)
+    target_link_libraries(${rest_example_name} ${backend} cxxopts)
+    target_compile_options(${rest_example_name} PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+endforeach()
+
 
 if(UCALL_BUILD_EXAMPLES)
     add_executable(ucall_example_redis examples/redis/ucall_server.cpp)
@@ -260,22 +265,17 @@ endif()
 find_package(Python3 REQUIRED Development.Module)
 include_directories(${Python_INCLUDE_DIRS})
 
-if(LINUX)
-    Python3_add_library(py_ucall_uring src/python.c)
-    target_include_directories(py_ucall_uring PUBLIC src/ include/)
-    target_link_libraries(py_ucall_uring PRIVATE ucall_server_uring base64)
-    set_target_properties(py_ucall_uring PROPERTIES OUTPUT_NAME uring)
-    target_compile_definitions(py_ucall_uring PRIVATE UCALL_PYTHON_MODULE_NAME=uring)
 
-    Python3_add_library(py_ucall_epoll src/python.c)
-    target_include_directories(py_ucall_epoll PUBLIC src/ include/)
-    target_link_libraries(py_ucall_epoll PRIVATE ucall_server_epoll base64)
-    set_target_properties(py_ucall_epoll PROPERTIES OUTPUT_NAME epoll)
-    target_compile_definitions(py_ucall_epoll PRIVATE UCALL_PYTHON_MODULE_NAME=epoll)
-endif()
+foreach(backend IN LISTS BACKENDS)
+    string(FIND "${backend}" "_" last_underscore REVERSE)
+    math(EXPR substring_length "${last_underscore} + 1")
+    string(SUBSTRING "${backend}" ${substring_length} -1 backend_name)
+  
+    set(py_lib_name "py_ucall_${backend_name}")
+    Python3_add_library(${py_lib_name} src/python.c)
+    target_include_directories(${py_lib_name} PUBLIC src/ include/)
+    target_link_libraries(${py_lib_name} PRIVATE ucall_server_uring base64)
+    set_target_properties(${py_lib_name} PROPERTIES OUTPUT_NAME uring)
+    target_compile_definitions(${py_lib_name} PRIVATE UCALL_PYTHON_MODULE_NAME=uring)
 
-Python3_add_library(py_ucall_posix src/python.c)
-target_include_directories(py_ucall_posix PUBLIC src/ include/)
-target_link_libraries(py_ucall_posix PRIVATE ucall_server_posix base64)
-set_target_properties(py_ucall_posix PROPERTIES OUTPUT_NAME posix)
-target_compile_definitions(py_ucall_posix PRIVATE UCALL_PYTHON_MODULE_NAME=posix)
+endforeach()

@@ -20,6 +20,7 @@ unum::ucall::any_param_t param_at(ucall_call_t call, size_t position) noexcept {
     unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
     return automata.get_protocol().get_param(position);
 }
+#pragma endregion
 
 #pragma region C Interface Implementation
 

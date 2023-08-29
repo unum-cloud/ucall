@@ -11,7 +11,32 @@
 
 #include "ucall/ucall.h"
 
-void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+static bool get_param_int_from_path(ucall_call_t call, char const* name, int64_t* res) {
+    ucall_str_t param_str;
+    size_t param_str_len;
+    if (!ucall_param_named_str(call, name, 0, &param_str, &param_str_len))
+        return false;
+
+    char* endptr = nullptr;
+    *res = std::strtoul(param_str, &endptr, 10);
+    if (*res == 0 && endptr == param_str)
+        return false;
+    return true;
+}
+
+static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
+    int64_t a{}, b{};
+    char c_str[256]{};
+    bool got_a = ucall_param_named_i64(call, "user_id", 0, &a);
+    bool got_b = get_param_int_from_path(call, "session_id", &b);
+    if (!got_a || !got_b)
+        return ucall_call_reply_error_invalid_params(call);
+
+    const char* res = ((a ^ b) % 23 == 0) ? "{\"response\": true}" : "{\"response\": false}";
+    ucall_call_reply_content(call, res, strlen(res));
+}
+
+static void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
     auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
     std::string response = "{ \"books\": [";
     for (auto const& book : *books)
@@ -23,7 +48,7 @@ void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
     ucall_call_reply_content(call, response.data(), response.size());
 }
 
-void get_book_by_id(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+static void get_book_by_id(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
     auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
     ucall_str_t book_id_str;
     size_t book_id_len = 0;
@@ -46,7 +71,7 @@ void get_book_by_id(ucall_call_t call, ucall_callback_tag_t punned_books) noexce
     ucall_call_reply_content(call, response.data(), response.size());
 }
 
-void add_book(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
+static void add_book(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
     auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
     ucall_str_t new_book;
     size_t new_book_len = 0;
@@ -117,6 +142,8 @@ int main(int argc, char** argv) {
     ucall_add_procedure(server, "/books", &get_books, request_type_t::get_k, &books);
     ucall_add_procedure(server, "/books", &add_book, request_type_t::post_k, &books);
     ucall_add_procedure(server, "/books/{id}", &get_book_by_id, request_type_t::get_k, &books);
+
+    ucall_add_procedure(server, "/validate_session/{session_id}", &validate_session, request_type_t::get_k, nullptr);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;
