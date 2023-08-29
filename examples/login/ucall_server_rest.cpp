@@ -50,15 +50,9 @@ static void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noex
 
 static void get_book_by_id(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
     auto* books = reinterpret_cast<std::map<std::size_t, std::string>*>(punned_books);
-    ucall_str_t book_id_str;
-    size_t book_id_len = 0;
-    bool got_id = ucall_param_named_str(call, "id", 0, &book_id_str, &book_id_len);
+    int64_t book_id;
+    bool got_id = get_param_int_from_path(call, "id", &book_id);
     if (!got_id)
-        return ucall_call_reply_error_invalid_params(call);
-
-    char* endptr = nullptr;
-    size_t book_id = std::strtoul(book_id_str, &endptr, 10);
-    if (book_id == 0 && endptr == book_id_str)
         return ucall_call_reply_error_invalid_params(call);
 
     auto found_book = books->find(static_cast<size_t>(book_id));

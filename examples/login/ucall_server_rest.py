@@ -15,9 +15,7 @@ books = dict()
 
 
 @server.get('/books')
-def book_list(starts_with: Optional[str] = None):
-    if starts_with != None:
-        return {'books': [book for book in books.values() if book.startswith(starts_with)]}
+def book_list():
     return {'books': list(books.values())}
 
 
@@ -25,13 +23,16 @@ def book_list(starts_with: Optional[str] = None):
 def book_detail(book_id: str):
     book_id = int(book_id)
     if book_id in books:
-        return {'book': book_id}
+        return {'book': books[book_id]}
     else:
         raise RuntimeError('Book not found')
 
 
 @server.post('/books')
 def book_add(book_id: int, book_name: str):
+    if book_id in books.keys():
+        raise RuntimeError('Id is busy')
+
     books[book_id] = book_name
     return {'book': books[book_id]}
 
@@ -46,11 +47,11 @@ def book_update(book_name: str, old_book_id: str):
         raise RuntimeError('Book not found')
 
 
-@server.delete('/books/{book_name}')
-def book_delete(book_name: str):
-    old_book_id = int(old_book_id)
-    if old_book_id in books.keys():
-        books.pop(old_book_id)
+@server.delete('/books/{book_id}')
+def book_delete(book_id: str):
+    book_id = int(book_id)
+    if book_id in books.keys():
+        books.pop(book_id)
         return {'books': list(books.values())}
     else:
         raise RuntimeError('Book not found')
