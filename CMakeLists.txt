@@ -172,7 +172,7 @@ if(MSVC)
         ${PICOTLSVS_DIR}/x64/Release/picotls-openssl.lib
     )
 
-    include_directories(${PICOTLS_DIR}/include/)
+    include_directories(${PICOTLS_DIR}/include/ ${PICOTLSVS_DIR}/picotls)
     set(URING_LIBS uring_internal)
 else()
     FetchContent_Declare(
