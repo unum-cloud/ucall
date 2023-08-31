@@ -17,18 +17,22 @@ static constexpr char const* http_header_k =
 static constexpr std::size_t http_header_size_k = 78;
 static constexpr std::size_t http_header_length_offset_k = 33;
 static constexpr std::size_t http_header_length_capacity_k = 9;
+static constexpr std::size_t http_max_headers_k = 32;
 
 struct http_protocol_t {
-    size_t body_size{};
-    /// @brief Expected reception length extracted from HTTP headers.
+    /// @brief Expected receiving/sending length extracted from HTTP headers.
     std::optional<std::size_t> content_length{};
     /// @brief Active parsed request
     parsed_request_t parsed{};
+
+    phr_header headers[http_max_headers_k]{};
+    size_t count_headers = http_max_headers_k;
 
     std::string_view get_content() const noexcept;
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
+    std::string_view get_header(std::string_view) const noexcept;
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -56,7 +60,7 @@ struct http_protocol_t {
 
 inline void http_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {
     pipes.append_reserved(http_header_k, http_header_size_k);
-    body_size = pipes.output_span().size();
+    content_length = pipes.output_span().size();
 }
 
 inline bool http_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
@@ -70,9 +74,10 @@ inline bool http_protocol_t::append_error(exchange_pipes_t& pipes, std::string_v
 
 inline void http_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     auto output = pipes.output_span();
-    body_size = output.size() - body_size;
-    auto res = std::to_chars(output.data() + http_header_length_offset_k,
-                             output.data() + http_header_length_offset_k + http_header_length_capacity_k, body_size);
+    content_length = output.size() - *content_length;
+    auto res =
+        std::to_chars(output.data() + http_header_length_offset_k,
+                      output.data() + http_header_length_offset_k + http_header_length_capacity_k, *content_length);
 
     if (res.ec != std::errc()) {
         // TODO Return error
@@ -88,6 +93,16 @@ inline request_type_t http_protocol_t::get_request_type() const noexcept { retur
 inline any_param_t http_protocol_t::get_param(size_t) const noexcept { return any_param_t(); }
 
 inline any_param_t http_protocol_t::get_param(std::string_view) const noexcept { return any_param_t(); }
+
+inline std::string_view http_protocol_t::get_header(std::string_view header_name) const noexcept {
+    for (std::size_t i = 0; i < count_headers; ++i) {
+        if (headers[i].name_len == 0)
+            continue;
+        if (std::string_view(headers[i].name, headers[i].name_len) == header_name)
+            return std::string_view(headers[i].value, headers[i].value_len);
+    }
+    return std::string_view();
+}
 
 bool http_protocol_t::is_input_complete(span_gt<char> input) noexcept {
 
@@ -113,30 +128,21 @@ bool http_protocol_t::is_input_complete(span_gt<char> input) noexcept {
  * @warning This doesn't check the headers for validity or additional metadata.
  */
 inline std::optional<default_error_t> http_protocol_t::parse_headers(std::string_view body) noexcept {
-    // A typical HTTP-header may look like this
-    // POST /endpoint HTTP/1.1
-    // Host: rpc.example.com
-    // Content-Type: application/json
-    // Content-Length: ...
-    // Accept: application/json
-    constexpr size_t const max_headers_k = 32;
 
     char const* method{};
     size_t method_len{};
     char const* path{};
     size_t path_len{};
     int minor_version{};
-    phr_header headers[max_headers_k]{};
-    size_t count_headers{max_headers_k};
 
     int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
                                 headers, &count_headers, 0);
 
     if (res == -2)
-        return default_error_t{-206, "Partial HTTP request"};
+        return default_error_t{206, "Partial HTTP request"};
 
     if (res < 0)
-        return default_error_t{-400, "Not a HTTP request"};
+        return default_error_t{400, "Not a HTTP request"};
 
     parsed.path = std::string_view(path, path_len);
     auto type_str = std::string_view(method, method_len);
@@ -149,14 +155,12 @@ inline std::optional<default_error_t> http_protocol_t::parse_headers(std::string
     else if (type_str == "DELETE")
         parsed.type = delete_k;
     else
-        return default_error_t{-405, "Unsupported request type"};
+        return default_error_t{405, "Unsupported request type"};
 
     for (std::size_t i = 0; i < count_headers; ++i) {
         if (headers[i].name_len == 0)
             continue;
-        if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Keep-Alive"))
-            parsed.keep_alive = std::string_view(headers[i].value, headers[i].value_len);
-        else if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Content-Type"))
+        if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Content-Type"))
             parsed.content_type = std::string_view(headers[i].value, headers[i].value_len);
         else if (std::string_view(headers[i].name, headers[i].name_len) == std::string_view("Content-Length"))
             parsed.content_length = std::string_view(headers[i].value, headers[i].value_len);

@@ -27,44 +27,16 @@ struct rest_protocol_t {
     sjd::parser parser{};
     std::variant<sjd::element, sjd::array> elements{};
 
-    inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
-        if (elm.is_bool())
-            return elm.get_bool().value_unsafe();
-        if (elm.is_int64())
-            return elm.get_int64().value_unsafe();
-        if (elm.is_double())
-            return elm.get_double().value_unsafe();
-        if (elm.is_string())
-            return elm.get_string().value_unsafe();
-        return nullptr;
-    }
+    inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept;
 
-    inline std::string_view get_content() const noexcept { return base_proto.get_content(); };
+    inline std::string_view get_content() const noexcept;
     request_type_t get_request_type() const noexcept;
 
-    inline any_param_t get_param(std::string_view name) const noexcept {
-        char json_pointer[json_pointer_capacity_k]{};
-        bool has_slash = name.size() && name.front() == '/';
-        std::size_t final_size = name.size() + 1u - has_slash;
-        if (final_size > json_pointer_capacity_k)
-            return nullptr;
-        std::memcpy((void*)(json_pointer), "/", 1);
-        std::memcpy((void*)(json_pointer + 1u - has_slash), name.data(), name.size());
-        auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
-        if (!std::holds_alternative<nullptr_t>(from_body))
-            return from_body;
+    inline any_param_t get_param(std::string_view name) const noexcept;
 
-        json_pointer[0] = '{';
-        json_pointer[final_size++] = '}';
-        size_t position_in_path = active_obj.method_name.find({json_pointer, final_size}, 0);
-        if (position_in_path == std::string_view::npos)
-            return nullptr;
-        size_t len = std::count_if(base_proto.parsed.path.begin() + position_in_path, base_proto.parsed.path.end(),
-                                   [](char sym) { return sym != '/'; });
-        return std::string_view{base_proto.parsed.path.data() + position_in_path, len};
-    }
+    inline any_param_t get_param(std::size_t position) const noexcept;
 
-    inline any_param_t get_param(std::size_t position) const noexcept { return nullptr; }
+    std::string_view get_header(std::string_view) const noexcept;
 
     std::optional<default_error_t> set_to(sjd::element const&) noexcept;
 
@@ -149,7 +121,49 @@ inline std::optional<default_error_t> rest_protocol_t::parse_content() noexcept 
     return std::nullopt;
 }
 
+inline any_param_t rest_protocol_t::as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
+    if (elm.is_bool())
+        return elm.get_bool().value_unsafe();
+    if (elm.is_int64())
+        return elm.get_int64().value_unsafe();
+    if (elm.is_double())
+        return elm.get_double().value_unsafe();
+    if (elm.is_string())
+        return elm.get_string().value_unsafe();
+    return nullptr;
+}
+
+inline std::string_view rest_protocol_t::get_content() const noexcept { return base_proto.get_content(); }
+
 inline request_type_t rest_protocol_t::get_request_type() const noexcept { return base_proto.get_request_type(); }
+
+inline any_param_t rest_protocol_t::get_param(std::string_view name) const noexcept {
+    char json_pointer[json_pointer_capacity_k]{};
+    bool has_slash = name.size() && name.front() == '/';
+    std::size_t final_size = name.size() + 1u - has_slash;
+    if (final_size > json_pointer_capacity_k)
+        return nullptr;
+    std::memcpy((void*)(json_pointer), "/", 1);
+    std::memcpy((void*)(json_pointer + 1u - has_slash), name.data(), name.size());
+    auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
+    if (!std::holds_alternative<nullptr_t>(from_body))
+        return from_body;
+
+    json_pointer[0] = '{';
+    json_pointer[final_size++] = '}';
+    size_t position_in_path = active_obj.method_name.find({json_pointer, final_size}, 0);
+    if (position_in_path == std::string_view::npos)
+        return nullptr;
+    size_t len = std::count_if(base_proto.parsed.path.begin() + position_in_path, base_proto.parsed.path.end(),
+                               [](char sym) { return sym != '/'; });
+    return std::string_view{base_proto.parsed.path.data() + position_in_path, len};
+}
+
+inline any_param_t rest_protocol_t::get_param(std::size_t position) const noexcept { return nullptr; }
+
+inline std::string_view rest_protocol_t::get_header(std::string_view header_name) const noexcept {
+    return base_proto.get_header(header_name);
+}
 
 std::optional<default_error_t> rest_protocol_t::set_to(sjd::element const& doc) noexcept {
     if (!doc.is_object())

@@ -25,10 +25,14 @@ static bool get_param_int_from_path(ucall_call_t call, char const* name, int64_t
 }
 
 static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
+    char const* user_agent = nullptr;
+    size_t user_agent_len = 0;
     int64_t a{}, b{};
     char c_str[256]{};
+
     bool got_a = ucall_param_named_i64(call, "user_id", 0, &a);
     bool got_b = get_param_int_from_path(call, "session_id", &b);
+    bool got_c = ucall_get_request_header(call, "User-Agent", 0, &user_agent, &user_agent_len);
     if (!got_a || !got_b)
         return ucall_call_reply_error_invalid_params(call);
 
