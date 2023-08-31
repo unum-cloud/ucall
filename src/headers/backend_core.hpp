@@ -184,4 +184,11 @@ bool ucall_get_request_header(ucall_call_t call, ucall_str_t header_name, size_t
     return true;
 }
 
+bool ucall_get_request_body(ucall_call_t call, ucall_str_t* output, size_t* output_length) {
+    unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
+    std::string_view body = automata.get_protocol().get_content();
+    *output = body.data();
+    *output_length = body.size();
+    return true;
+}
 #pragma endregion

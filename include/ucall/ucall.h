@@ -181,6 +181,9 @@ bool ucall_get_request_header(ucall_call_t call,         //
                               size_t header_name_length, //
                               ucall_str_t* output, size_t* output_length);
 
+bool ucall_get_request_body(ucall_call_t call, //
+                            ucall_str_t* output, size_t* output_length);
+
 /**
  * @param call Encapsulates the context and the arguments of the current request.
  * @param json_reply The response to send, which must be a valid JSON string.

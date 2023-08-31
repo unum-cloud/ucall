@@ -25,7 +25,7 @@ struct rest_protocol_t {
     http_protocol_t base_proto{};
     rest_obj active_obj{};
     sjd::parser parser{};
-    std::variant<sjd::element, sjd::array> elements{};
+    std::variant<std::nullptr_t, sjd::element, sjd::array> elements{};
 
     inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept;
 
@@ -37,8 +37,6 @@ struct rest_protocol_t {
     inline any_param_t get_param(std::size_t position) const noexcept;
 
     std::string_view get_header(std::string_view) const noexcept;
-
-    std::optional<default_error_t> set_to(sjd::element const&) noexcept;
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -99,9 +97,11 @@ inline std::optional<default_error_t> rest_protocol_t::parse_headers(std::string
 
 inline std::optional<default_error_t> rest_protocol_t::parse_content() noexcept {
     std::string_view json_doc = base_proto.get_content();
-    if (base_proto.parsed.content_type != "application/json")
-        return default_error_t{415, "Unsupported: Only application/json is currently supported"};
-
+    if (base_proto.parsed.content_type != "application/json") {
+        elements.emplace<std::nullptr_t>();
+        return std::nullopt; // Only json parser is currently implemented
+        // return default_error_t{415, "Unsupported: Only application/json is currently supported"};
+    }
     if (json_doc.size() > parser.capacity()) {
         if (parser.allocate(json_doc.size(), json_doc.size() / 2) != sj::SUCCESS)
             return default_error_t{500, "Out of memory"};
@@ -145,9 +145,11 @@ inline any_param_t rest_protocol_t::get_param(std::string_view name) const noexc
         return nullptr;
     std::memcpy((void*)(json_pointer), "/", 1);
     std::memcpy((void*)(json_pointer + 1u - has_slash), name.data(), name.size());
-    auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
-    if (!std::holds_alternative<nullptr_t>(from_body))
-        return from_body;
+    if (!std::holds_alternative<nullptr_t>(elements)) {
+        auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
+        if (!std::holds_alternative<nullptr_t>(from_body))
+            return from_body;
+    }
 
     json_pointer[0] = '{';
     json_pointer[final_size++] = '}';
@@ -165,15 +167,6 @@ inline std::string_view rest_protocol_t::get_header(std::string_view header_name
     return base_proto.get_header(header_name);
 }
 
-std::optional<default_error_t> rest_protocol_t::set_to(sjd::element const& doc) noexcept {
-    if (!doc.is_object())
-        return default_error_t{400, "The JSON sent is not a valid request object."};
-
-    active_obj.method_name = base_proto.parsed.path;
-    active_obj.element = doc;
-    return std::nullopt;
-}
-
 template <typename calle_at>
 inline std::optional<default_error_t> rest_protocol_t::populate_response(exchange_pipes_t& pipes,
                                                                          calle_at find_and_call) noexcept {
@@ -184,7 +177,10 @@ inline std::optional<default_error_t> rest_protocol_t::populate_response(exchang
     //             return default_error_t{-32601, "Method not found"};
     //     }
     // } else {
-    set_to(std::get<sjd::element>(elements));
+    active_obj.method_name = base_proto.parsed.path;
+    if (std::holds_alternative<sjd::element>(elements))
+        active_obj.element = std::get<sjd::element>(elements);
+
     if (!find_and_call(active_obj.method_name, get_request_type()))
         return default_error_t{404, "Method not found"};
     // }
