@@ -134,6 +134,7 @@ inline std::optional<default_error_t> http_protocol_t::parse_headers(std::string
     char const* path{};
     size_t path_len{};
     int minor_version{};
+    count_headers = http_max_headers_k;
 
     int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
                                 headers, &count_headers, 0);
