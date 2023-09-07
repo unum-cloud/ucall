@@ -117,7 +117,7 @@ void automata_t::operator()() noexcept {
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
-        connection.decrypt();
+        connection.decrypt(completed_result);
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
             server.engine.raise_request(connection.pipes, connection.protocol, this);
 

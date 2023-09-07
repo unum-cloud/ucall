@@ -246,6 +246,13 @@ class exchange_pipes_t {
         std::memmove(input_.embedded, input_.embedded + cnt, input_.embedded_used);
     }
 
+    void drop_last_input(size_t cnt) noexcept {
+        if (input_.dynamic.size() >= cnt)
+            input_.dynamic.pop_back(cnt);
+        else if (input_.embedded_used >= cnt)
+            input_.embedded_used -= cnt;
+    }
+
     bool shift_input_to_dynamic() noexcept {
         if (!input_.dynamic.append_n(input_.embedded, input_.embedded_used))
             return false;

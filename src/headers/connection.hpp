@@ -114,7 +114,7 @@ struct connection_t {
         }
     }
 
-    void decrypt() noexcept {
+    void decrypt(size_t received_amount) noexcept {
         if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
             return;
 
@@ -122,14 +122,18 @@ struct connection_t {
         int res = 0;
         size_t in_len = pipes.input_span().size();
         void const* input = pipes.input_span().data();
+        if (received_amount != in_len) {
+            input += (in_len - received_amount);
+            in_len = received_amount;
+        }
         while (in_len != 0 && res != -1) {
             size_t consumed = in_len;
             res = ptls_receive(tls_ctx, &work_buf, input, &consumed);
             in_len -= consumed;
             input += consumed;
         }
-        if (res != -1) {
-            pipes.release_current_input();
+        if (res != -1 && work_buf.off > 0) {
+            pipes.drop_last_input(received_amount);
             std::memcpy(pipes.next_input_address(), work_buf.base, work_buf.off);
             pipes.absorb_input(work_buf.off);
         }
