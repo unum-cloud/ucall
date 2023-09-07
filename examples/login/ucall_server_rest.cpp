@@ -25,8 +25,10 @@ static bool get_param_int_from_path(ucall_call_t call, char const* name, int64_t
 }
 
 static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
+
     int64_t a{}, b{};
     char c_str[256]{};
+
     bool got_a = ucall_param_named_i64(call, "user_id", 0, &a);
     bool got_b = get_param_int_from_path(call, "session_id", &b);
     if (!got_a || !got_b)
@@ -34,6 +36,24 @@ static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
 
     const char* res = ((a ^ b) % 23 == 0) ? "{\"response\": true}" : "{\"response\": false}";
     ucall_call_reply_content(call, res, strlen(res));
+}
+
+static void upload_binary(ucall_call_t call, ucall_callback_tag_t) {
+    char const* user_agent = nullptr;
+    char const* binary = nullptr;
+    char const* path = nullptr;
+    size_t user_agent_len = 0;
+    size_t binary_len = 0;
+    size_t path_len = 0;
+
+    bool got_path = ucall_param_named_str(call, "path", 0, &path, &path_len);
+    bool got_bin = ucall_get_request_body(call, &binary, &binary_len);
+    bool got_head = ucall_get_request_header(call, "User-Agent", 0, &user_agent, &user_agent_len);
+    if (!got_bin || !got_head)
+        return ucall_call_reply_error_invalid_params(call);
+
+    std::string res = "{\"uploaded_binary_size\": " + std::to_string(binary_len) + "}";
+    ucall_call_reply_content(call, res.data(), res.size());
 }
 
 static void get_books(ucall_call_t call, ucall_callback_tag_t punned_books) noexcept {
@@ -138,6 +158,8 @@ int main(int argc, char** argv) {
     ucall_add_procedure(server, "/books/{id}", &get_book_by_id, request_type_t::get_k, &books);
 
     ucall_add_procedure(server, "/validate_session/{session_id}", &validate_session, request_type_t::get_k, nullptr);
+
+    ucall_add_procedure(server, "/upload_binary/{path}", &upload_binary, request_type_t::put_k, nullptr);
 
     if (config.max_threads > 1) {
         std::vector<std::thread> threads;

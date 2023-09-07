@@ -31,6 +31,7 @@ class protocol_t {
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
+    std::string_view get_header(std::string_view) const noexcept;
 
     void prepare_response(exchange_pipes_t&) noexcept;
     bool append_response(exchange_pipes_t&, std::string_view) noexcept;
@@ -149,6 +150,23 @@ inline any_param_t protocol_t::get_param(std::string_view param_name) const noex
     }
 
     return nullptr;
+}
+
+inline std::string_view protocol_t::get_header(std::string_view header_name) const noexcept {
+    switch (type) {
+    case protocol_type_t::tcp_k:
+        return std::get<tcp_protocol_t>(sp_proto).get_header(header_name);
+    case protocol_type_t::http_k:
+        return std::get<http_protocol_t>(sp_proto).get_header(header_name);
+    case protocol_type_t::jsonrpc_tcp_k:
+        return std::get<jsonrpc_protocol_t<tcp_protocol_t>>(sp_proto).get_header(header_name);
+    case protocol_type_t::jsonrpc_http_k:
+        return std::get<jsonrpc_protocol_t<http_protocol_t>>(sp_proto).get_header(header_name);
+    case protocol_type_t::rest_k:
+        return std::get<rest_protocol_t>(sp_proto).get_header(header_name);
+    }
+
+    return std::string_view();
 }
 
 void protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {

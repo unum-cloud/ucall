@@ -1,27 +1,38 @@
 <h1 align="center">UCall</h1>
 <h3 align="center">
-JSON Remote Procedure Calls Library<br/>
-Up to 100x Faster than FastAPI<br/>
+Remote Procedure Calls Library<br/>
+Up to 100x Faster than FastAPI and gRPC<br/>
 </h3>
 <br/>
 
 <p align="center">
-<a href="https://discord.gg/xuDmpbEDnQ"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg" alt="Discord"></a>
+<a href="https://discord.gg/xuDmpbEDnQ"><img height="25" src="https://github.com/unum-cloud/ustore/raw/main/assets/icons/discord.svg" alt="Discord"></a>
 &nbsp;&nbsp;&nbsp;
-<a href="https://www.linkedin.com/company/unum-cloud/"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg" alt="LinkedIn"></a>
+<a href="https://www.linkedin.com/company/unum-cloud/"><img height="25" src="https://github.com/unum-cloud/ustore/raw/main/assets/icons/linkedin.svg" alt="LinkedIn"></a>
 &nbsp;&nbsp;&nbsp;
-<a href="https://twitter.com/unum_cloud"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg" alt="Twitter"></a>
+<a href="https://twitter.com/unum_cloud"><img height="25" src="https://github.com/unum-cloud/ustore/raw/main/assets/icons/twitter.svg" alt="Twitter"></a>
 &nbsp;&nbsp;&nbsp;
-<a href="https://unum.cloud/post"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg" alt="Blog"></a>
+<a href="https://unum.cloud/post"><img height="25" src="https://github.com/unum-cloud/ustore/raw/main/assets/icons/blog.svg" alt="Blog"></a>
 &nbsp;&nbsp;&nbsp;
-<a href="https://github.com/unum-cloud/ucall"><img height="25" src="https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg" alt="GitHub"></a>
+<a href="https://github.com/unum-cloud/ucall"><img height="25" src="https://github.com/unum-cloud/ustore/raw/main/assets/icons/github.svg" alt="GitHub"></a>
+</p>
+
+<p align="center">
+RESTful API • JSON-RPC / HTTPS • HTTP • TCP
+<br/>
+<a href="https://unum-cloud.github.io/ucall/c">C 99</a> •
+<a href="https://unum-cloud.github.io/ucall/python">Python 3</a> •
+<a href="https://unum-cloud.github.io/ucall/javascript">JavaScript</a> 🔜
+<br/>
+Linux • MacOS • Windows • WebAssembly
 </p>
 
 ---
 
-Most modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC.
-FastAPI, for example, looks very approachable.
-We aim to be equally or even simpler to use.
+Tired of slow REST backends or overly complex gRPC setups?
+UCall aims to be as approachable as FastAPI but significantly faster and more broadly applicable.
+
+## 📊 FastAPI UX Comparison
 
 <table width="100%">
 <tr>
@@ -48,7 +59,6 @@ pip install ucall
 
 ```python
 from fastapi import FastAPI
-import uvicorn
 
 server = FastAPI()
 
@@ -56,6 +66,7 @@ server = FastAPI()
 def sum(a: int, b: int):
     return a + b
 
+import uvicorn
 uvicorn.run(...)    
 ```
 
@@ -63,12 +74,11 @@ uvicorn.run(...)
 <td>
 
 ```python
-from ucall.posix import Server
-# from ucall.uring import Server on 5.19+
+from ucall.server import Server
 
 server = Server()
 
-@server
+@server.get('/sum')
 def sum(a: int, b: int):
     return a + b
 
@@ -79,19 +89,21 @@ server.run()
 </tr>
 </table>
 
+## 📈 Performance Metrics
+
 It takes over a millisecond to handle a trivial FastAPI call on a recent 8-core CPU.
 In that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.
 How does UCall compare to FastAPI and gRPC?
 
-| Setup                   |   🔁   | Server | Latency w 1 client | Throughput w 32 clients |
-| :---------------------- | :---: | :----: | -----------------: | ----------------------: |
-| Fast API over REST      |   ❌   |   🐍    |           1'203 μs |               3'184 rps |
-| Fast API over WebSocket |   ✅   |   🐍    |              86 μs |            11'356 rps ¹ |
-| gRPC ²                  |   ✅   |   🐍    |             164 μs |               9'849 rps |
-|                         |       |        |                    |                         |
-| UCall with POSIX        |   ❌   |   C    |              62 μs |              79'000 rps |
-| UCall with io_uring     |   ✅   |   🐍    |              40 μs |             210'000 rps |
-| UCall with io_uring     |   ✅   |   C    |              22 μs |             231'000 rps |
+| Setup                   |   🔁   | Server |     Protocol     | Latency w 1 client | Throughput w 32 clients |
+| :---------------------- | :---: | :----: | :--------------: | -----------------: | ----------------------: |
+| Fast API over REST      |   ❌   |   🐍    |       REST       |           1'203 μs |               3'184 rps |
+| Fast API over WebSocket |   ✅   |   🐍    |       REST       |              86 μs |            11'356 rps ¹ |
+| gRPC ²                  |   ✅   |   🐍    |       gRPC       |             164 μs |               9'849 rps |
+|                         |       |        |                  |                    |                         |
+| UCall with POSIX        |   ✅   |   C    | REST or JSON-RPC |              62 μs |              79'000 rps |
+| UCall with io_uring     |   ✅   |   🐍    | REST or JSON-RPC |              40 μs |             210'000 rps |
+| UCall with io_uring     |   ✅   |   C    | REST or JSON-RPC |              22 μs |             231'000 rps |
 
 <details>
   <summary>Table legend</summary>
@@ -111,7 +123,7 @@ These specific numbers were obtained on `c7g.metal` beefy instances with Gravito
 
 </details>
 
-## How is that possible?
+## 🛠 How Does UCall Achieve This?
 
 How can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?
 **UCall stands on the shoulders of Giants**:
@@ -137,9 +149,9 @@ def echo(data: bytes):
     return data
 ```
 
-## More Functionality than FastAPI
+## 🎨 Rich Type Pallete
 
-FastAPI supports native type, while UCall supports `numpy.ndarray`, `PIL.Image` and other custom types.
+FastAPI supports native types, while UCall also supports `numpy.ndarray`, `PIL.Image` and other custom types.
 This comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).
 
 ```python
@@ -158,7 +170,9 @@ def vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:
     return joint_embedding.cpu().detach().numpy()
 ```
 
-We also have our own optional `Client` class that helps with those custom types.
+## 🖥 Client Libraries
+
+UCall offers a Python `Client` class and a CLI tool for easy interaction with UCall servers.
 
 ```python
 from ucall.client import Client
@@ -177,8 +191,6 @@ response = client({
 # Or the same with syntactic sugar:
 response = client.vectorize(description=description, image=image) 
 ```
-
-## CLI like [cURL](https://curl.se/docs/manpage.html)
 
 Aside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ucall`.
 It allow you to call a remote server, upload files, with direct support for images and NumPy arrays.
@@ -225,7 +237,7 @@ ucall auth id:int=256
 ucall auth id:str=256
 ```
 
-## Free Tier Throughput
+## 📊 AWS Free Tier Performance
 
 We will leave bandwidth measurements to enthusiasts, but will share some more numbers.
 The general logic is that you can't squeeze high performance from Free-Tier machines.
@@ -238,23 +250,18 @@ This library is so fast, that it doesn't need more than 1 core, so you can run a
 | Fast API over WebSocket |   ✅   |   🐍    |    1    |  1'504 rps |   3'051 rps |
 | gRPC                    |   ✅   |   🐍    |    1    |  1'169 rps |   1'974 rps |
 |                         |       |        |         |            |             |
-| UCall with POSIX        |   ❌   |   C    |    1    |  1'082 rps |   2'438 rps |
+| UCall with POSIX        |   ✅   |   C    |    1    |  1'082 rps |   2'438 rps |
 | UCall with io_uring     |   ✅   |   C    |    1    |          - |   5'864 rps |
-| UCall with POSIX        |   ❌   |   C    |   32    |  3'399 rps |  39'877 rps |
+| UCall with POSIX        |   ✅   |   C    |   32    |  3'399 rps |  39'877 rps |
 | UCall with io_uring     |   ✅   |   C    |   32    |          - |  88'455 rps |
 
 In this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.
 If you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].
 
-## Quick Start
+## 📝 C API Example
 
-For Python:
-
-```sh
-pip install ucall
-```
-
-For CMake projects:
+UCall provides an ABI-stable C 99 interface.
+To use it with the CMake build system:
 
 ```cmake
 include(FetchContent)
@@ -300,30 +307,8 @@ int main(int argc, char** argv) {
 }
 ```
 
-## Roadmap
-
-- [x] Batch Requests
-- [x] JSON-RPC over raw TCP sockets
-- [x] JSON-RPC over TCP with HTTP
-- [x] Concurrent sessions
-- [x] NumPy `array` and Pillow serialization
-- [ ] HTTP**S** support
-- [ ] Batch-capable endpoints for ML
-- [ ] Zero-ETL relay calls
-- [ ] Integrating with [UKV][ukv]
-- [ ] WebSockets for web interfaces
-- [ ] AF_XDP and UDP-based analogs on Linux
-
-> Want to affect the roadmap and request a feature? Join the discussions on Discord.
-
-## Why JSON-RPC?
-
-- Transport independent: UDP, TCP, bring what you want.
-- Application layer is optional: use HTTP or not.
-- Unlike REST APIs, there is just one way to pass arguments.
-
 [simdjson]: https://github.com/simdjson/simdjson
 [base64]: https://github.com/powturbo/Turbo-Base64
 [picohttpparser]: https://github.com/h2o/picohttpparser
 [sum-examples]: https://github.com/unum-cloud/ucall/tree/dev/examples/sum
-[ukv]: https://github.com/unum-cloud/ukv
+[ustore]: https://github.com/unum-cloud/ustore

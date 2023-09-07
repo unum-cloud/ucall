@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import httpx
 import os
 import struct
 import random
@@ -17,7 +18,7 @@ PROCESS_ID = os.getpid()
 
 class ClientREST:
 
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8000, identity: int = PROCESS_ID) -> None:
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
         self.identity = identity
         self.url = f'http://{uri}:{port}/'
 
@@ -26,9 +27,26 @@ class ClientREST:
         b = random.randint(1, 1000) if b is None else b
         result = requests.get(
             f'{self.url}validate_session?user_id={a}&session_id={b}').text
-        c = int(result)
+        c = False if result == 'false' else True
         assert ((a ^ b) % 23 == 0) == c, 'Wrong Answer'
         return c
+
+
+class ClientTLSREST:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.url = f'https://{uri}:{port}/'
+
+    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+        with httpx.Client(verify=False) as client:
+            a = random.randint(1, 1000) if a is None else a
+            b = random.randint(1, 1000) if b is None else b
+            result = client.get(
+                f'{self.url}validate_session?user_id={a}&session_id={b}').text
+            c = False if result == 'false' else True
+            assert ((a ^ b) % 23 == 0) == c, 'Wrong Answer'
+            return c
 
 
 class ClientRESTReddit:

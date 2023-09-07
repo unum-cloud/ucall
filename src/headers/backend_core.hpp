@@ -172,4 +172,23 @@ bool ucall_param_positional_str(ucall_call_t call, size_t position, ucall_str_t*
         return false;
 }
 
+bool ucall_get_request_header(ucall_call_t call, ucall_str_t header_name, size_t header_name_length,
+                              ucall_str_t* output, size_t* output_length) {
+    unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
+    size_t name_len = unum::ucall::string_length(header_name, header_name_length);
+    std::string_view res = automata.get_protocol().get_header({header_name, name_len});
+    if (res.size() == 0)
+        return false;
+    *output = res.data();
+    *output_length = res.size();
+    return true;
+}
+
+bool ucall_get_request_body(ucall_call_t call, ucall_str_t* output, size_t* output_length) {
+    unum::ucall::automata_t& automata = *reinterpret_cast<unum::ucall::automata_t*>(call);
+    std::string_view body = automata.get_protocol().get_content();
+    *output = body.data();
+    *output_length = body.size();
+    return true;
+}
 #pragma endregion

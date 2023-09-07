@@ -17,6 +17,7 @@ struct tcp_protocol_t {
     request_type_t get_request_type() const noexcept;
     any_param_t get_param(size_t) const noexcept;
     any_param_t get_param(std::string_view) const noexcept;
+    std::string_view get_header(std::string_view) const noexcept;
 
     inline void prepare_response(exchange_pipes_t& pipes) noexcept;
 
@@ -45,6 +46,8 @@ inline request_type_t tcp_protocol_t::get_request_type() const noexcept { return
 inline any_param_t tcp_protocol_t::get_param(size_t) const noexcept { return any_param_t(); }
 
 inline any_param_t tcp_protocol_t::get_param(std::string_view) const noexcept { return any_param_t(); }
+
+inline std::string_view tcp_protocol_t::get_header(std::string_view) const noexcept { return std::string_view(); }
 
 inline void tcp_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept {}
 
