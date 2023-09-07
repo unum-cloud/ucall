@@ -1,3 +1,4 @@
+import httpx
 import os
 import json
 import errno
@@ -151,6 +152,57 @@ class CaseTLS:
     def recv(self):
         assert self.response.json == self.expected
         return self.response.json
+
+
+class CaseTLSNoReuse:
+    """JSON-RPC Client that operates directly over TCP/IPv4 stack, without HTTP"""
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.expected = -1
+        self.client = ClientTLS(uri, port, allow_self_signed=True)
+        self.response = None
+
+    def __call__(self) -> str:
+        self.send()
+        res = self.recv()
+        self.client.sock.close()
+        self.client.sock = None
+        return res
+
+    def send(self):
+        user_id = random.randint(1, 1000)
+        session_id = random.randint(1, 1000)
+        self.expected = ((user_id ^ session_id) % 23) == 0
+
+        self.response = self.client.validate_session(
+            user_id=user_id, session_id=session_id)
+
+    def recv(self):
+        assert self.response.json == self.expected
+        return self.response.json
+
+
+class CaseTLSNoReuseX:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.url = f'https://{uri}:{port}/'
+
+    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+
+        with httpx.Client(verify=False) as client:
+            a = random.randint(1, 1000) if a is None else a
+            b = random.randint(1, 1000) if b is None else b
+            jsonrpc = {"jsonrpc": "2.0", "id": self.identity,
+                       "method": "validate_session", "params": {"user_id": a, "session_id": b}}
+            result = client.post(
+                f'{self.url}', json=jsonrpc,
+                headers={"Connection": "close"},
+            )
+            result = result.text
+            c = False if result == 'false' else True
+            return c
 
 
 class CaseTCPHTTP:

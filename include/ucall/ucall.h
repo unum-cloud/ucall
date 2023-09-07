@@ -147,34 +147,42 @@ void ucall_take_call(ucall_server_t server, uint16_t thread_idx);
  */
 void ucall_take_calls(ucall_server_t server, uint16_t thread_idx);
 
-bool ucall_param_named_bool(    //
-    ucall_call_t call,          //
-    ucall_str_t json_pointer,   //
-    size_t json_pointer_length, //
+bool ucall_param_named_bool(  //
+    ucall_call_t call,        //
+    ucall_str_t param_name,   //
+    size_t param_name_length, //
     bool* output);
 
-bool ucall_param_named_i64(     //
-    ucall_call_t call,          //
-    ucall_str_t json_pointer,   //
-    size_t json_pointer_length, //
+bool ucall_param_named_i64(   //
+    ucall_call_t call,        //
+    ucall_str_t param_name,   //
+    size_t param_name_length, //
     int64_t* output);
 
-bool ucall_param_named_f64(     //
-    ucall_call_t call,          //
-    ucall_str_t json_pointer,   //
-    size_t json_pointer_length, //
+bool ucall_param_named_f64(   //
+    ucall_call_t call,        //
+    ucall_str_t param_name,   //
+    size_t param_name_length, //
     double* output);
 
-bool ucall_param_named_str(     //
-    ucall_call_t call,          //
-    ucall_str_t json_pointer,   //
-    size_t json_pointer_length, //
+bool ucall_param_named_str(   //
+    ucall_call_t call,        //
+    ucall_str_t param_name,   //
+    size_t param_name_length, //
     ucall_str_t* output, size_t* output_length);
 
 bool ucall_param_positional_bool(ucall_call_t, size_t, bool*);
 bool ucall_param_positional_i64(ucall_call_t, size_t, int64_t*);
 bool ucall_param_positional_f64(ucall_call_t, size_t, double*);
 bool ucall_param_positional_str(ucall_call_t, size_t, ucall_str_t*, size_t*);
+
+bool ucall_get_request_header(ucall_call_t call,         //
+                              ucall_str_t header_name,   //
+                              size_t header_name_length, //
+                              ucall_str_t* output, size_t* output_length);
+
+bool ucall_get_request_body(ucall_call_t call, //
+                            ucall_str_t* output, size_t* output_length);
 
 /**
  * @param call Encapsulates the context and the arguments of the current request.

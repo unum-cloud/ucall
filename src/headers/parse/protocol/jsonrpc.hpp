@@ -26,41 +26,16 @@ template <typename base_protocol_t> struct jsonrpc_protocol_t {
     sjd::parser parser{};
     std::variant<sjd::element, sjd::array> elements{};
 
-    inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
-        if (elm.is_bool())
-            return elm.get_bool().value_unsafe();
-        if (elm.is_int64())
-            return elm.get_int64().value_unsafe();
-        if (elm.is_double())
-            return elm.get_double().value_unsafe();
-        if (elm.is_string())
-            return elm.get_string().value_unsafe();
-        return nullptr;
-    }
+    inline any_param_t as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept;
 
-    inline std::string_view get_content() const noexcept { return base_proto.get_content(); };
+    inline std::string_view get_content() const noexcept;
     request_type_t get_request_type() const noexcept;
 
-    inline any_param_t get_param(std::string_view name) const noexcept {
-        char json_pointer[json_pointer_capacity_k]{};
-        bool has_slash = name.size() && name.front() == '/';
-        std::size_t final_size = name.size() + 8u - has_slash;
-        if (final_size > json_pointer_capacity_k)
-            return nullptr;
-        std::memcpy((void*)json_pointer, "/params/", 8u);
-        std::memcpy((void*)(json_pointer + 8u - has_slash), name.data(), name.size());
-        return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
-    }
+    inline any_param_t get_param(std::string_view name) const noexcept;
 
-    inline any_param_t get_param(std::size_t position) const noexcept {
-        char json_pointer[json_pointer_capacity_k]{};
-        std::memcpy((void*)json_pointer, "/params/", 8u);
-        std::to_chars_result res = std::to_chars(json_pointer + 8u, json_pointer + json_pointer_capacity_k, position);
-        if (res.ec != std::errc(0))
-            return nullptr;
-        std::size_t final_size = res.ptr - json_pointer;
-        return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
-    }
+    inline any_param_t get_param(std::size_t position) const noexcept;
+
+    std::string_view get_header(std::string_view) const noexcept;
 
     std::optional<default_error_t> set_to(sjd::element const&) noexcept;
 
@@ -184,8 +159,55 @@ inline std::optional<default_error_t> jsonrpc_protocol_t<base_protocol_t>::parse
 }
 
 template <typename base_protocol_t>
+inline any_param_t
+jsonrpc_protocol_t<base_protocol_t>::as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
+    if (elm.is_bool())
+        return elm.get_bool().value_unsafe();
+    if (elm.is_int64())
+        return elm.get_int64().value_unsafe();
+    if (elm.is_double())
+        return elm.get_double().value_unsafe();
+    if (elm.is_string())
+        return elm.get_string().value_unsafe();
+    return nullptr;
+}
+
+template <typename base_protocol_t>
+inline std::string_view jsonrpc_protocol_t<base_protocol_t>::get_content() const noexcept {
+    return base_proto.get_content();
+}
+
+template <typename base_protocol_t>
 inline request_type_t jsonrpc_protocol_t<base_protocol_t>::get_request_type() const noexcept {
     return base_proto.get_request_type();
+}
+
+template <typename base_protocol_t>
+inline any_param_t jsonrpc_protocol_t<base_protocol_t>::get_param(std::string_view name) const noexcept {
+    char json_pointer[json_pointer_capacity_k]{};
+    bool has_slash = name.size() && name.front() == '/';
+    std::size_t final_size = name.size() + 8u - has_slash;
+    if (final_size > json_pointer_capacity_k)
+        return nullptr;
+    std::memcpy((void*)json_pointer, "/params/", 8u);
+    std::memcpy((void*)(json_pointer + 8u - has_slash), name.data(), name.size());
+    return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
+}
+
+template <typename base_protocol_t>
+inline any_param_t jsonrpc_protocol_t<base_protocol_t>::get_param(std::size_t position) const noexcept {
+    char json_pointer[json_pointer_capacity_k]{};
+    std::memcpy((void*)json_pointer, "/params/", 8u);
+    std::to_chars_result res = std::to_chars(json_pointer + 8u, json_pointer + json_pointer_capacity_k, position);
+    if (res.ec != std::errc(0))
+        return nullptr;
+    std::size_t final_size = res.ptr - json_pointer;
+    return as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
+}
+
+template <typename base_protocol_t>
+inline std::string_view jsonrpc_protocol_t<base_protocol_t>::get_header(std::string_view header_name) const noexcept {
+    return base_proto.get_header(header_name);
 }
 
 template <typename base_protocol_t>

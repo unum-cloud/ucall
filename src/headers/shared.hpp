@@ -49,7 +49,6 @@ template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) 
 struct parsed_request_t {
     request_type_t type{};
     std::string_view path{};
-    std::string_view keep_alive{};
     std::string_view content_type{};
     std::string_view content_length{};
     std::string_view body{};

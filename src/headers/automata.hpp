@@ -117,7 +117,7 @@ void automata_t::operator()() noexcept {
         // If we have reached the end of the stream,
         // it is time to analyze the contents
         // and send back a response.
-        connection.decrypt();
+        connection.decrypt(completed_result);
         if (connection.protocol.is_input_complete(connection.pipes.input_span())) {
             server.engine.raise_request(connection.pipes, connection.protocol, this);
 
@@ -165,10 +165,10 @@ void automata_t::operator()() noexcept {
         connection.pipes.mark_submitted_outputs(completed_result);
         if (!connection.pipes.has_remaining_outputs()) {
             connection.exchanges++;
-            // if (connection.exchanges >= server.max_lifetime_exchanges) TODO Why?
-            //     return close_gracefully();
-            // else
-            return receive_next();
+            if (connection.must_close())
+                return close_gracefully();
+            else
+                return receive_next();
         } else {
             connection.pipes.prepare_more_outputs();
             return send_next();
