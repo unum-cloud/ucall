@@ -123,16 +123,17 @@ struct connection_t {
         size_t in_len = pipes.input_span().size();
         void const* input = pipes.input_span().data();
         if (received_amount != in_len) {
-            input += (in_len - received_amount);
+            input = static_cast<char const*>(input) + (in_len - received_amount);
             in_len = received_amount;
         }
         while (in_len != 0 && res != -1) {
             size_t consumed = in_len;
             res = ptls_receive(tls_ctx, &work_buf, input, &consumed);
             in_len -= consumed;
-            input += consumed;
+            input = static_cast<char const*>(input) + consumed;
         }
         if (res != -1 && work_buf.off > 0) {
+            printf("WB: %i\n", work_buf.off);
             pipes.drop_last_input(received_amount);
             std::memcpy(pipes.next_input_address(), work_buf.base, work_buf.off);
             pipes.absorb_input(work_buf.off);
