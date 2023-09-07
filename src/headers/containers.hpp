@@ -218,6 +218,9 @@ class exchange_pipes_t {
         input_.dynamic.reset();
         input_.embedded_used = 0;
     }
+
+    void release_current_input() noexcept { input_.embedded_used = 0; }
+
     void release_outputs() noexcept {
         output_.dynamic.reset();
         output_.embedded_used = 0;

@@ -165,10 +165,10 @@ void automata_t::operator()() noexcept {
         connection.pipes.mark_submitted_outputs(completed_result);
         if (!connection.pipes.has_remaining_outputs()) {
             connection.exchanges++;
-            // if (connection.exchanges >= server.max_lifetime_exchanges) TODO Why?
-            //     return close_gracefully();
-            // else
-            return receive_next();
+            if (connection.must_close())
+                return close_gracefully();
+            else
+                return receive_next();
         } else {
             connection.pipes.prepare_more_outputs();
             return send_next();

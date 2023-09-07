@@ -72,9 +72,14 @@ struct connection_t {
     bool expired() const noexcept {
         return std::chrono::high_resolution_clock::now().time_since_epoch().count() - last_active_ns >
                max_inactive_duration_ns_k;
-    };
+    }
 
     bool is_ready() const noexcept { return tls_ctx == nullptr || ptls_handshake_is_complete(tls_ctx); }
+
+    bool must_close() const noexcept {
+        auto conn = protocol.get_header("Connection");
+        return conn == "Close" || conn == "close";
+    }
 
     bool prepare_step() noexcept {
         if (is_ready())
@@ -114,10 +119,17 @@ struct connection_t {
             return;
 
         work_buf.off = 0;
+        int res = 0;
         size_t in_len = pipes.input_span().size();
-        int res = ptls_receive(tls_ctx, &work_buf, pipes.input_span().data(), &in_len);
+        void const* input = pipes.input_span().data();
+        while (in_len != 0 && res != -1) {
+            size_t consumed = in_len;
+            res = ptls_receive(tls_ctx, &work_buf, input, &consumed);
+            in_len -= consumed;
+            input += consumed;
+        }
         if (res != -1) {
-            pipes.release_inputs();
+            pipes.release_current_input();
             std::memcpy(pipes.next_input_address(), work_buf.base, work_buf.off);
             pipes.absorb_input(work_buf.off);
         }
