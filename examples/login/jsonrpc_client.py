@@ -1,3 +1,4 @@
+import httpx
 import os
 import json
 import errno
@@ -180,6 +181,28 @@ class CaseTLSNoReuse:
     def recv(self):
         assert self.response.json == self.expected
         return self.response.json
+
+
+class CaseTLSNoReuseX:
+
+    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, identity: int = PROCESS_ID) -> None:
+        self.identity = identity
+        self.url = f'https://{uri}:{port}/'
+
+    def __call__(self, *, a: Optional[int] = None, b: Optional[int] = None) -> int:
+
+        with httpx.Client(verify=False) as client:
+            a = random.randint(1, 1000) if a is None else a
+            b = random.randint(1, 1000) if b is None else b
+            jsonrpc = {"jsonrpc": "2.0", "id": self.identity,
+                       "method": "validate_session", "params": {"user_id": a, "session_id": b}}
+            result = client.post(
+                f'{self.url}', json=jsonrpc,
+                headers={"Connection": "close"},
+            )
+            result = result.text
+            c = False if result == 'false' else True
+            return c
 
 
 class CaseTCPHTTP:
