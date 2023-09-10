@@ -229,6 +229,7 @@ void network_engine_t::send_packet(connection_t& connection, void* buffer, size_
 
 void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buffer_length,
                                    size_t buf_index) noexcept {
+
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     event_data_t& data = ctx->data_at(connection.descriptor);
     if (!data.active)

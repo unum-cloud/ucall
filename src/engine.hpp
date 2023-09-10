@@ -7,7 +7,7 @@
 #include "containers.hpp"
 #include "log.hpp"
 #include "network.hpp"
-#include "parse/protocol/protocol.hpp"
+#include "protocol_protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {

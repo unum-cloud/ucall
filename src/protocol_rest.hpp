@@ -1,19 +1,19 @@
 #pragma once
-
 #include <charconv>
 #include <optional>
 
-#include "containers.hpp"
-#include "parse/protocol/http.hpp"
-#include "shared.hpp"
 #include <simdjson.h>
+
+#include "containers.hpp"
+#include "protocol_http.hpp"
+#include "shared.hpp"
 
 namespace unum::ucall {
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
 
-struct rest_obj {
+struct request_rest_t {
     char printed_int_id[max_integer_length_k]{};
 
     sjd::element element{};
@@ -21,9 +21,9 @@ struct rest_obj {
     std::string_view method_name{};
 };
 
-struct rest_protocol_t {
-    http_protocol_t base_proto{};
-    rest_obj active_obj{};
+struct protocol_rest_t {
+    http_protocol_t base_protocol{};
+    request_rest_t active_request{};
     sjd::parser parser{};
     std::variant<std::nullptr_t, sjd::element, sjd::array> elements{};
 
@@ -56,15 +56,17 @@ struct rest_protocol_t {
     std::optional<default_error_t> populate_response(exchange_pipes_t&, callback_at) noexcept;
 };
 
-inline void rest_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept { base_proto.prepare_response(pipes); }
+inline void protocol_rest_t::prepare_response(exchange_pipes_t& pipes) noexcept {
+    base_protocol.prepare_response(pipes);
+}
 
-inline bool rest_protocol_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
+inline bool protocol_rest_t::append_response(exchange_pipes_t& pipes, std::string_view response) noexcept {
     if (!pipes.append_outputs(response))
         return false;
     return true;
 }
 
-inline bool rest_protocol_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
+inline bool protocol_rest_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {
 
     if (!pipes.append_outputs({R"({"error":)", 9}))
@@ -80,25 +82,25 @@ inline bool rest_protocol_t::append_error(exchange_pipes_t& pipes, std::string_v
     return true;
 };
 
-inline void rest_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
+inline void protocol_rest_t::finalize_response(exchange_pipes_t& pipes) noexcept {
     // Drop last comma.
     if (pipes.output_span()[pipes.output_span().size() - 1] == ',')
         pipes.output_pop_back();
 
-    base_proto.finalize_response(pipes);
+    base_protocol.finalize_response(pipes);
 }
 
-bool rest_protocol_t::is_input_complete(span_gt<char> input) noexcept { return base_proto.is_input_complete(input); }
+bool protocol_rest_t::is_input_complete(span_gt<char> input) noexcept { return base_protocol.is_input_complete(input); }
 
-void rest_protocol_t::reset() noexcept { base_proto.reset(); }
+void protocol_rest_t::reset() noexcept { base_protocol.reset(); }
 
-inline std::optional<default_error_t> rest_protocol_t::parse_headers(std::string_view body) noexcept {
-    return base_proto.parse_headers(body);
+inline std::optional<default_error_t> protocol_rest_t::parse_headers(std::string_view body) noexcept {
+    return base_protocol.parse_headers(body);
 }
 
-inline std::optional<default_error_t> rest_protocol_t::parse_content() noexcept {
-    std::string_view json_doc = base_proto.get_content();
-    if (base_proto.parsed.content_type != "application/json") {
+inline std::optional<default_error_t> protocol_rest_t::parse_content() noexcept {
+    std::string_view json_doc = base_protocol.get_content();
+    if (base_protocol.parsed.content_type != "application/json") {
         elements.emplace<std::nullptr_t>();
         return std::nullopt; // Only json parser is currently implemented
         // return default_error_t{415, "Unsupported: Only application/json is currently supported"};
@@ -122,7 +124,7 @@ inline std::optional<default_error_t> rest_protocol_t::parse_content() noexcept 
     return std::nullopt;
 }
 
-inline any_param_t rest_protocol_t::as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
+inline any_param_t protocol_rest_t::as_variant(sj::simdjson_result<sjd::element> const& elm) const noexcept {
     if (elm.is_bool())
         return elm.get_bool().value_unsafe();
     if (elm.is_int64())
@@ -134,11 +136,11 @@ inline any_param_t rest_protocol_t::as_variant(sj::simdjson_result<sjd::element>
     return nullptr;
 }
 
-inline std::string_view rest_protocol_t::get_content() const noexcept { return base_proto.get_content(); }
+inline std::string_view protocol_rest_t::get_content() const noexcept { return base_protocol.get_content(); }
 
-inline request_type_t rest_protocol_t::get_request_type() const noexcept { return base_proto.get_request_type(); }
+inline request_type_t protocol_rest_t::get_request_type() const noexcept { return base_protocol.get_request_type(); }
 
-inline any_param_t rest_protocol_t::get_param(std::string_view name) const noexcept {
+inline any_param_t protocol_rest_t::get_param(std::string_view name) const noexcept {
     char json_pointer[json_pointer_capacity_k]{};
     bool has_slash = name.size() && name.front() == '/';
     std::size_t final_size = name.size() + 1u - has_slash;
@@ -147,29 +149,29 @@ inline any_param_t rest_protocol_t::get_param(std::string_view name) const noexc
     std::memcpy((void*)(json_pointer), "/", 1);
     std::memcpy((void*)(json_pointer + 1u - has_slash), name.data(), name.size());
     if (!std::holds_alternative<nullptr_t>(elements)) {
-        auto from_body = as_variant(active_obj.element.at_pointer({json_pointer, final_size}));
+        auto from_body = as_variant(active_request.element.at_pointer({json_pointer, final_size}));
         if (!std::holds_alternative<nullptr_t>(from_body))
             return from_body;
     }
 
     json_pointer[0] = '{';
     json_pointer[final_size++] = '}';
-    size_t position_in_path = active_obj.method_name.find({json_pointer, final_size}, 0);
+    size_t position_in_path = active_request.method_name.find({json_pointer, final_size}, 0);
     if (position_in_path == std::string_view::npos)
         return nullptr;
-    size_t len = std::count_if(base_proto.parsed.path.begin() + position_in_path, base_proto.parsed.path.end(),
+    size_t len = std::count_if(base_protocol.parsed.path.begin() + position_in_path, base_protocol.parsed.path.end(),
                                [](char sym) { return sym != '/'; });
-    return std::string_view{base_proto.parsed.path.data() + position_in_path, len};
+    return std::string_view{base_protocol.parsed.path.data() + position_in_path, len};
 }
 
-inline any_param_t rest_protocol_t::get_param(std::size_t position) const noexcept { return nullptr; }
+inline any_param_t protocol_rest_t::get_param(std::size_t position) const noexcept { return nullptr; }
 
-inline std::string_view rest_protocol_t::get_header(std::string_view header_name) const noexcept {
-    return base_proto.get_header(header_name);
+inline std::string_view protocol_rest_t::get_header(std::string_view header_name) const noexcept {
+    return base_protocol.get_header(header_name);
 }
 
 template <typename callback_at>
-inline std::optional<default_error_t> rest_protocol_t::populate_response(exchange_pipes_t& pipes,
+inline std::optional<default_error_t> protocol_rest_t::populate_response(exchange_pipes_t& pipes,
                                                                          callback_at find_and_call) noexcept {
     // if (std::holds_alternative<sjd::array>(elements)) {
     //     for (auto const& elm : std::get<sjd::array>(elements)) {
@@ -178,11 +180,11 @@ inline std::optional<default_error_t> rest_protocol_t::populate_response(exchang
     //             return default_error_t{-32601, "Method not found"};
     //     }
     // } else {
-    active_obj.method_name = base_proto.parsed.path;
+    active_request.method_name = base_protocol.parsed.path;
     if (std::holds_alternative<sjd::element>(elements))
-        active_obj.element = std::get<sjd::element>(elements);
+        active_request.element = std::get<sjd::element>(elements);
 
-    if (!find_and_call(active_obj.method_name, get_request_type()))
+    if (!find_and_call(active_request.method_name, get_request_type()))
         return default_error_t{404, "Method not found"};
     // }
 

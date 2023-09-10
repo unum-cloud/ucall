@@ -1,6 +1,6 @@
 /**
- * @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
- * @author Ash Vardanian
+ *  @brief JSON-RPC implementation for TCP/IP stack with POSIX calls.
+ *  @author Ash Vardanian
  */
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
