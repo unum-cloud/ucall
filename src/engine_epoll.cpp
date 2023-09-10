@@ -18,7 +18,7 @@ using namespace unum::ucall;
 struct event_data_t {
     connection_t* connection{};
     void* buffer{};
-    size_t buf_len{};
+    size_t buffer_length{};
     bool active{false};
     descriptor_t timer_fd{invalid_descriptor_k};
 
@@ -26,7 +26,7 @@ struct event_data_t {
         connection = nullptr;
         timer_fd = invalid_descriptor_k;
         buffer = nullptr;
-        buf_len = 0;
+        buffer_length = 0;
         active = false;
     }
 };
@@ -216,23 +216,25 @@ void network_engine_t::close_connection_gracefully(connection_t& connection) noe
     epoll_ctl_add(ctx->epoll, EPOLLIN | EPOLLONESHOT, timer_fd, connection.descriptor);
 }
 
-void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
+void network_engine_t::send_packet(connection_t& connection, void* buffer, size_t buffer_length,
+                                   size_t buf_index) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     event_data_t& data = ctx->data_at(connection.descriptor);
     if (!data.active)
         return;
     data.buffer = buffer;
-    data.buf_len = buf_len;
+    data.buffer_length = buffer_length;
     epoll_ctl_add(ctx->epoll, EPOLLOUT | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
 
-void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buf_len, size_t buf_index) noexcept {
+void network_engine_t::recv_packet(connection_t& connection, void* buffer, size_t buffer_length,
+                                   size_t buf_index) noexcept {
     epoll_ctx_t* ctx = reinterpret_cast<epoll_ctx_t*>(network_data);
     event_data_t& data = ctx->data_at(connection.descriptor);
     if (!data.active)
         return;
     data.buffer = buffer;
-    data.buf_len = buf_len;
+    data.buffer_length = buffer_length;
     epoll_ctl_add(ctx->epoll, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP | EPOLLONESHOT, connection.descriptor);
 }
 
@@ -273,13 +275,13 @@ template <size_t max_count_ak> std::size_t network_engine_t::pop_completed_event
                 continue;
             } else { // Recv
                 events[completed].connection_ptr = connection;
-                events[completed].result = recv(connection->descriptor, data.buffer, data.buf_len, MSG_NOSIGNAL);
+                events[completed].result = recv(connection->descriptor, data.buffer, data.buffer_length, MSG_NOSIGNAL);
                 ++completed;
                 epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection->descriptor, NULL);
             }
         } else if (ep_events[i].events & EPOLLOUT) { // Send
             events[completed].connection_ptr = connection;
-            events[completed].result = send(connection->descriptor, data.buffer, data.buf_len, MSG_NOSIGNAL);
+            events[completed].result = send(connection->descriptor, data.buffer, data.buffer_length, MSG_NOSIGNAL);
             ++completed;
             epoll_ctl(ctx->epoll, EPOLL_CTL_DEL, connection->descriptor, NULL);
         }

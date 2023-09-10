@@ -3,16 +3,17 @@
 #include <charconv>
 #include <optional>
 
+#include <simdjson.h>
+
 #include "containers.hpp"
 #include "shared.hpp"
-#include <simdjson.h>
 
 namespace unum::ucall {
 
 namespace sj = simdjson;
 namespace sjd = sj::dom;
 
-struct jsonrpc_obj_t {
+struct jsonrpc_object_t {
     char printed_int_id[max_integer_length_k]{};
 
     sjd::element element{};
@@ -22,7 +23,7 @@ struct jsonrpc_obj_t {
 
 template <typename base_protocol_t> struct jsonrpc_protocol_t {
     base_protocol_t base_proto{};
-    jsonrpc_obj_t active_obj{};
+    jsonrpc_object_t active_obj{};
     sjd::parser parser{};
     std::variant<sjd::element, sjd::array> elements{};
 

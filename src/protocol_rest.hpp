@@ -52,7 +52,8 @@ struct rest_protocol_t {
     inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
     inline std::optional<default_error_t> parse_content() noexcept;
 
-    template <typename calle_at> std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept;
+    template <typename callback_at>
+    std::optional<default_error_t> populate_response(exchange_pipes_t&, callback_at) noexcept;
 };
 
 inline void rest_protocol_t::prepare_response(exchange_pipes_t& pipes) noexcept { base_proto.prepare_response(pipes); }
@@ -167,9 +168,9 @@ inline std::string_view rest_protocol_t::get_header(std::string_view header_name
     return base_proto.get_header(header_name);
 }
 
-template <typename calle_at>
+template <typename callback_at>
 inline std::optional<default_error_t> rest_protocol_t::populate_response(exchange_pipes_t& pipes,
-                                                                         calle_at find_and_call) noexcept {
+                                                                         callback_at find_and_call) noexcept {
     // if (std::holds_alternative<sjd::array>(elements)) {
     //     for (auto const& elm : std::get<sjd::array>(elements)) {
     //         set_to(elm);

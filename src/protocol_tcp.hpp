@@ -9,7 +9,7 @@
 namespace unum::ucall {
 
 struct tcp_protocol_t {
-    static constexpr char tcp_termination_symbol = '\0';
+    static constexpr char tcp_termination_symbol_k = '\0';
     /// @brief Active parsed request
     parsed_request_t parsed{};
 
@@ -61,11 +61,11 @@ inline bool tcp_protocol_t::append_error(exchange_pipes_t& pipes, std::string_vi
 };
 
 inline void tcp_protocol_t::finalize_response(exchange_pipes_t& pipes) noexcept {
-    pipes.push_back_reserved(tcp_termination_symbol);
+    pipes.push_back_reserved(tcp_termination_symbol_k);
 }
 
 bool tcp_protocol_t::is_input_complete(span_gt<char> input) noexcept {
-    return input[input.size() - 1] == tcp_termination_symbol;
+    return input[input.size() - 1] == tcp_termination_symbol_k;
 }
 
 void tcp_protocol_t::reset() noexcept {}
