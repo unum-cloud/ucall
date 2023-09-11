@@ -1,5 +1,5 @@
-from python.uring import Server
-from python.server import Protocol
+from ucall.uring import Server
+from ucall.server import Protocol
 from typing import Optional
 
 server = Server(

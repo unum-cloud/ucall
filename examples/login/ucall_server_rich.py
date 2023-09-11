@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image
-from python.server import Server
+from ucall.server import Server
 
 server = Server(
     uring_if_possible=True,

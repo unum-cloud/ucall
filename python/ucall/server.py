@@ -1,3 +1,4 @@
+import select
 import platform
 import inspect
 from typing import Callable, Union, get_type_hints
@@ -17,6 +18,12 @@ def supports_io_uring() -> bool:
     if major > 5 or (major == 5 and minor >= 19):
         return True
     return False
+
+
+def supports_epoll() -> bool:
+    if platform.system() != "Linux":
+        return False
+    return hasattr(select, "epoll")
 
 
 def only_native_types(hints: dict[str, type]) -> bool:
@@ -39,11 +46,11 @@ class Server:
         self, uring_if_possible=True, epoll_if_possible=False, **kwargs
     ) -> None:
         if uring_if_possible and supports_io_uring():
-            from python import uring as backend
-        elif epoll_if_possible and platform.system() == "Linux":
-            from python import epoll as backend
+            from ucall import uring as backend
+        elif epoll_if_possible and supports_epoll():
+            from ucall import epoll as backend
         else:
-            from python import posix as backend
+            from ucall import posix as backend
 
         self.native = backend.Server(**kwargs)
 
