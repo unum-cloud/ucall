@@ -24,6 +24,16 @@ jobs:
       matrix:
         os: [ubuntu-20.04, macOS-11, windows-2022]
         python-version: ["3.11"]
+        arch: [x86, x64, arm64]  # Add ARM64 architecture
+        exclude:
+          - os: ubuntu-20.04
+            arch: x86
+          - os: macOS-11
+            arch: x86
+          - os: windows-2022
+            arch: arm64  # Exclude ARM64 for Windows as it's not natively supported
+          - os: windows-2022
+            arch: x86  # Exclude x86 for Windows if you want to skip win32
 
     steps:
       - uses: actions/checkout@v3
