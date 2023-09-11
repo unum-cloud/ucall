@@ -43,5 +43,7 @@ jobs:
       - name: Add msbuild to PATH
         if: matrix.os == 'windows-2022'
         uses: microsoft/setup-msbuild@v1
+        with:
+          msbuild-architecture: x64
       - name: Build locally
         run: python -m pip install .
