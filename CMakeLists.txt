@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(ucall LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -174,6 +174,7 @@ if(MSVC)
 
     include_directories(${PICOTLS_DIR}/include/ ${PICOTLSVS_DIR}/picotls)
     set(URING_LIBS uring_internal)
+elseif()
 else()
     FetchContent_Declare(
     picotls
