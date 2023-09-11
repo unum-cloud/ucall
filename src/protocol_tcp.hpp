@@ -32,8 +32,8 @@ struct protocol_tcp_t {
     inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
     inline std::optional<default_error_t> parse_content() noexcept;
 
-    template <typename calle_at>
-    std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept {
+    template <typename caller_at>
+    std::optional<default_error_t> populate_response(exchange_pipes_t&, caller_at) noexcept {
         return std::nullopt;
     }
 };

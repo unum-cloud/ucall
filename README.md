@@ -20,11 +20,11 @@ Up to 100x Faster than FastAPI and gRPC<br/>
 <p align="center">
 RESTful API • JSON-RPC / HTTPS • HTTP • TCP
 <br/>
+Linux • MacOS • Windows • WebAssembly
+<br/>
 <a href="https://unum-cloud.github.io/ucall/c">C 99</a> •
 <a href="https://unum-cloud.github.io/ucall/python">Python 3</a> •
 <a href="https://unum-cloud.github.io/ucall/javascript">JavaScript</a> 🔜
-<br/>
-Linux • MacOS • Windows • WebAssembly
 </p>
 
 ---

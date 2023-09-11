@@ -53,7 +53,8 @@ template <typename base_protocol_t> struct protocol_jsonrpc_t {
     inline std::optional<default_error_t> parse_headers(std::string_view body) noexcept;
     inline std::optional<default_error_t> parse_content() noexcept;
 
-    template <typename calle_at> std::optional<default_error_t> populate_response(exchange_pipes_t&, calle_at) noexcept;
+    template <typename caller_at>
+    std::optional<default_error_t> populate_response(exchange_pipes_t&, caller_at) noexcept;
 };
 
 template <typename base_protocol_t>
@@ -255,9 +256,9 @@ std::optional<default_error_t> protocol_jsonrpc_t<base_protocol_t>::set_to(sjd::
 }
 
 template <typename base_protocol_t>
-template <typename calle_at>
+template <typename caller_at>
 inline std::optional<default_error_t>
-protocol_jsonrpc_t<base_protocol_t>::populate_response(exchange_pipes_t& pipes, calle_at find_and_call) noexcept {
+protocol_jsonrpc_t<base_protocol_t>::populate_response(exchange_pipes_t& pipes, caller_at find_and_call) noexcept {
     if (std::holds_alternative<sjd::array>(elements)) {
         for (auto const& elm : std::get<sjd::array>(elements)) {
             set_to(elm);

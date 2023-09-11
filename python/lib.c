@@ -16,11 +16,11 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-
 #include <turbob64.h>
 
-#include "headers/parse/py_to_json.h"
 #include "ucall/ucall.h"
+
+#include "py_to_json.h"
 
 #define stringify_value_m(a) stringify_m(a)
 #define stringify_m(a) #a
@@ -132,7 +132,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
         // TODO: What?
     }
 
-    long non_default_count = abs(pos_count - pos_default_count);
+    long non_default_count = labs(pos_count - pos_default_count);
     long posonly_left = posonly_count;
 
     // if (posonly_count != pos_count) {
@@ -225,7 +225,7 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
-            Py_ssize_t res;
+            int64_t res;
             if (may_have_name && name_length > 0)
                 got_named = ucall_param_named_i64(call, name, name_length, &res);
 
@@ -277,9 +277,9 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
         PyErr_Fetch(&ptype, &pvalue, &ptraceback);
         if (ptype != NULL) {
             PyObject* pvalue_str = PyObject_Str(pvalue);
-            size_t sz = 0;
-            ucall_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
-            ucall_call_reply_error(call, 500, error_str, sz);
+            size_t size = 0;
+            ucall_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &size);
+            ucall_call_reply_error(call, 500, error_str, size);
             Py_DECREF(pvalue_str);
         } else
             ucall_call_reply_error_unknown(call);
@@ -494,7 +494,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
-        self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
+        self->config.ssl_certificates_paths = (char const**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
         for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
             self->config.ssl_certificates_paths[i] = PyUnicode_AsUTF8AndSize(PySequence_GetItem(certs_path, i), NULL);
     }
