@@ -78,7 +78,8 @@ class CMakeBuild(build_ext):
 
         backend = ext.name.split(".")[-1]
         submodules_folder = os.path.join(extension_dir, "ucall")
-        os.mkdir(submodules_folder)
+        if not os.path.exists(submodules_folder):
+            os.mkdir(submodules_folder)
         expected_output = os.path.join(
             submodules_folder,
             f"{backend}.cpython-{sys.version_info.major}{sys.version_info.minor}-{suffix}",
