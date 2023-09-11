@@ -27,7 +27,7 @@
 #endif
 
 #include "containers.hpp"
-#include "parse/protocol/protocol.hpp"
+#include "protocol.hpp"
 #include "shared.hpp"
 
 namespace unum::ucall {
@@ -52,17 +52,17 @@ struct connection_t {
     std::size_t empty_transmits{};
 
     /// @brief TLS related data
-    ptls_t* tls_ctx{};
-    ptls_buffer_t work_buf{};
-    uint8_t ptls_buf[ram_page_size_k];
-    ptls_handshake_properties_t hand_props{};
+    ptls_t* tls_context{};
+    ptls_buffer_t work_buffer{};
+    uint8_t ptls_buffer[ram_page_size_k];
+    ptls_handshake_properties_t handshake_properties{};
 
     /// @brief Relative time set for the last wake-up call.
     ssize_t next_wakeup = wakeup_initial_frequency_ns_k;
 
     void make_tls(ptls_context_t* ssl_ctx) noexcept {
-        tls_ctx = ptls_new(ssl_ctx, true);
-        ptls_buffer_init(&work_buf, ptls_buf, ram_page_size_k);
+        tls_context = ptls_new(ssl_ctx, true);
+        ptls_buffer_init(&work_buffer, ptls_buffer, ram_page_size_k);
     }
 
     void record_activity() noexcept {
@@ -74,7 +74,7 @@ struct connection_t {
                max_inactive_duration_ns_k;
     }
 
-    bool is_ready() const noexcept { return tls_ctx == nullptr || ptls_handshake_is_complete(tls_ctx); }
+    bool is_ready() const noexcept { return tls_context == nullptr || ptls_handshake_is_complete(tls_context); }
 
     bool must_close() const noexcept {
         auto conn = protocol.get_header("Connection");
@@ -86,16 +86,16 @@ struct connection_t {
             return true;
 
         ssize_t ret = 0;
-        work_buf.off = 0;
+        work_buffer.off = 0;
         const char* in_buf = pipes.input_span().data();
         size_t in_len = pipes.input_span().size();
 
-        ret = ptls_handshake(tls_ctx, &work_buf, in_buf, &in_len, &hand_props);
-        pipes.append_outputs({(char*)work_buf.base, work_buf.off});
+        ret = ptls_handshake(tls_context, &work_buffer, in_buf, &in_len, &handshake_properties);
+        pipes.append_outputs({(char*)work_buffer.base, work_buffer.off});
         if (ret != PTLS_ERROR_IN_PROGRESS && ret != PTLS_ALERT_CLOSE_NOTIFY)
             return false;
 
-        if (ptls_handshake_is_complete(tls_ctx)) {
+        if (ptls_handshake_is_complete(tls_context)) {
             pipes.drop_embedded_n(in_len);
             return true;
         }
@@ -103,22 +103,22 @@ struct connection_t {
     }
 
     void encrypt() noexcept {
-        if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
+        if (tls_context == nullptr || !ptls_handshake_is_complete(tls_context))
             return;
 
-        work_buf.off = 0;
-        int res = ptls_send(tls_ctx, &work_buf, pipes.output_span().data(), pipes.output_span().size());
+        work_buffer.off = 0;
+        int res = ptls_send(tls_context, &work_buffer, pipes.output_span().data(), pipes.output_span().size());
         if (res != -1) {
             pipes.release_outputs();
-            pipes.append_outputs({(char*)work_buf.base, work_buf.off});
+            pipes.append_outputs({(char*)work_buffer.base, work_buffer.off});
         }
     }
 
     void decrypt(size_t received_amount) noexcept {
-        if (tls_ctx == nullptr || !ptls_handshake_is_complete(tls_ctx))
+        if (tls_context == nullptr || !ptls_handshake_is_complete(tls_context))
             return;
 
-        work_buf.off = 0;
+        work_buffer.off = 0;
         int res = 0;
         size_t in_len = pipes.input_span().size();
         void const* input = pipes.input_span().data();
@@ -128,15 +128,14 @@ struct connection_t {
         }
         while (in_len != 0 && res != -1) {
             size_t consumed = in_len;
-            res = ptls_receive(tls_ctx, &work_buf, input, &consumed);
+            res = ptls_receive(tls_context, &work_buffer, input, &consumed);
             in_len -= consumed;
             input = static_cast<char const*>(input) + consumed;
         }
-        if (res != -1 && work_buf.off > 0) {
-            printf("WB: %i\n", work_buf.off);
+        if (res != -1 && work_buffer.off > 0) {
             pipes.drop_last_input(received_amount);
-            std::memcpy(pipes.next_input_address(), work_buf.base, work_buf.off);
-            pipes.absorb_input(work_buf.off);
+            std::memcpy(pipes.next_input_address(), work_buffer.base, work_buffer.off);
+            pipes.absorb_input(work_buffer.off);
         }
     }
 
@@ -147,16 +146,16 @@ struct connection_t {
         pipes.release_inputs();
         pipes.release_outputs();
 
-        if (tls_ctx) {
-            ptls_free(tls_ctx);
-            tls_ctx = nullptr;
-            ptls_buffer_dispose(&work_buf);
+        if (tls_context) {
+            ptls_free(tls_context);
+            tls_context = nullptr;
+            ptls_buffer_dispose(&work_buffer);
         }
 
         exchanges = 0;
         empty_transmits = 0;
         next_wakeup = wakeup_initial_frequency_ns_k;
-    };
+    }
 };
 
 struct ssl_context_t {

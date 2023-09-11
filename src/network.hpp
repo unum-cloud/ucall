@@ -5,6 +5,7 @@
 #include "connection.hpp"
 
 namespace unum::ucall {
+
 struct network_engine_t {
     network_data_t network_data;
 

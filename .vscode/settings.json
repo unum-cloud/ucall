@@ -96,11 +96,14 @@
         "stack": "cpp",
         "typeindex": "cpp",
         "source_location": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "__memory": "c",
+        "filesystem": "c"
     },
     "cSpell.words": [
         "cxxopts",
         "endregion",
+        "epoll",
         "fastapi",
         "iovecs",
         "ndarray",
@@ -112,6 +115,7 @@
         "ucall",
         "uring",
         "uvicorn",
+        "Vardanian",
         "vectorize"
     ]
 }
