@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(ucall LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -275,5 +275,6 @@ foreach(backend IN LISTS BACKENDS)
     Python3_add_library(${py_lib_name} python/lib.c)
     target_include_directories(${py_lib_name} PUBLIC src/ include/ python/)
     target_link_libraries(${py_lib_name} PRIVATE ${backend} base64)
+    set_target_properties(${py_lib_name} PROPERTIES OUTPUT_NAME ${backend_name})
     target_compile_definitions(${py_lib_name} PRIVATE UCALL_PYTHON_MODULE_NAME=${backend_name})
 endforeach()
