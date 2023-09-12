@@ -47,3 +47,5 @@ jobs:
           msbuild-architecture: x64
       - name: Build locally
         run: python -m pip install .
+      - name: Check Imports
+        run: python -c "from ucall.posix import Server; from ucall.server import Server; from ucall.client import Client"
