@@ -1,3 +1,4 @@
+import select
 import platform
 import inspect
 from typing import Callable, Union, get_type_hints
@@ -9,14 +10,20 @@ from PIL import Image
 
 
 def supports_io_uring() -> bool:
-    if platform.system() != 'Linux':
+    if platform.system() != "Linux":
         return False
-    major, minor, _ = platform.release().split('.', 3)
+    major, minor, _ = platform.release().split(".", 3)
     major = int(major)
     minor = int(minor)
     if major > 5 or (major == 5 and minor >= 19):
         return True
     return False
+
+
+def supports_epoll() -> bool:
+    if platform.system() != "Linux":
+        return False
+    return hasattr(select, "epoll")
 
 
 def only_native_types(hints: dict[str, type]) -> bool:
@@ -26,7 +33,7 @@ def only_native_types(hints: dict[str, type]) -> bool:
     return True
 
 
-class Protocol():
+class Protocol:
     TCP = 0
     HTTP = 1
     JSONRPC_TCP = 2
@@ -35,11 +42,12 @@ class Protocol():
 
 
 class Server:
-
-    def __init__(self, uring_if_possible=True, epoll_if_possible=False, **kwargs) -> None:
+    def __init__(
+        self, uring_if_possible=True, epoll_if_possible=False, **kwargs
+    ) -> None:
         if uring_if_possible and supports_io_uring():
             from ucall import uring as backend
-        elif epoll_if_possible and platform.system() == 'Linux':
+        elif epoll_if_possible and supports_epoll():
             from ucall import epoll as backend
         else:
             from ucall import posix as backend
@@ -72,8 +80,8 @@ class Server:
         if isinstance(res, Image.Image):
             buf = BytesIO()
             if not res.format:
-                res.format = 'tiff'
-            res.save(buf, res.format, compression='raw', compression_level=0)
+                res.format = "tiff"
+            res.save(buf, res.format, compression="raw", compression_level=0)
 
             return buf.getvalue()
 
@@ -82,7 +90,7 @@ class Server:
     def route(self, func: Callable):
         hints = get_type_hints(func)
         for name, hint in hints.items():
-            assert isinstance(hint, type), f'Hint for {name} must be a type!'
+            assert isinstance(hint, type), f"Hint for {name} must be a type!"
 
         # Let's optimize, avoiding the need for the second layer of decorators:
         if only_native_types(hints):

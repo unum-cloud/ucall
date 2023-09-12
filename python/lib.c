@@ -1,6 +1,6 @@
 /**
  * @file python.c
- * @author Ashot Vardanian
+ * @author Ash Vardanian
  * @date 2023-01-30
  * @copyright Copyright (c) 2023
  *
@@ -16,11 +16,11 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-
 #include <turbob64.h>
 
-#include "headers/parse/py_to_json.h"
 #include "ucall/ucall.h"
+
+#include "py_to_json.h"
 
 #define stringify_value_m(a) stringify_m(a)
 #define stringify_m(a) #a
@@ -44,11 +44,11 @@ typedef enum {
 } py_param_kind_t;
 
 typedef struct {
-    const char* name;     // Name or NULL
-    Py_ssize_t name_len;  // Name Length
-    PyObject* value;      // Any or NULL
-    PyTypeObject* type;   // Type or NULL
-    py_param_kind_t kind; // Kind
+    const char* name;       // Name or NULL
+    Py_ssize_t name_length; // Name Length
+    PyObject* value;        // Any or NULL
+    PyTypeObject* type;     // Type or NULL
+    py_param_kind_t kind;   // Kind
 } py_param_t;
 
 typedef struct {
@@ -93,7 +93,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
             PyObject* def = PyObject_GetAttrString(py_param, "default");
 
             py_param_t param;
-            param.name = PyUnicode_AsUTF8AndSize(name, &param.name_len);
+            param.name = PyUnicode_AsUTF8AndSize(name, &param.name_length);
             param.value = def;
             param.type = (PyTypeObject*)type;
             param.kind = PyLong_AsLong(kind);
@@ -132,7 +132,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
         // TODO: What?
     }
 
-    long non_default_count = abs(pos_count - pos_default_count);
+    long non_default_count = labs(pos_count - pos_default_count);
     long posonly_left = posonly_count;
 
     // if (posonly_count != pos_count) {
@@ -149,7 +149,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     // Non-keyword-only parameters w/o defaults.
     for (Py_ssize_t i = 0; i < non_default_count; ++i) {
         py_param_t param;
-        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_length);
         param.value = NULL;
         param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
@@ -159,7 +159,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     //... w / defaults.
     for (Py_ssize_t i = non_default_count; i < pos_count; ++i) {
         py_param_t param;
-        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_length);
         param.value = PyTuple_GetItem(defaults, i - non_default_count);
         param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = posonly_left-- > 0 ? POSITIONAL_ONLY : POSITIONAL_OR_KEYWORD;
@@ -169,7 +169,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     if (has_vararg) {
         py_param_t param;
         param.name =
-            PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, pos_count + keyword_only_count), &param.name_len);
+            PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, pos_count + keyword_only_count), &param.name_length);
         param.value = NULL;
         param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = VAR_POSITIONAL;
@@ -179,7 +179,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     // Keyword - only parameters.
     for (Py_ssize_t i = pos_count; i < pos_count + keyword_only_count; ++i) {
         py_param_t param;
-        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_len);
+        param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, i), &param.name_length);
         param.value = PyDict_GetItemString(kwdefaults, param.name);
         param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = KEYWORD_ONLY;
@@ -189,7 +189,7 @@ static int prepare_wrapper(PyObject* callable, py_wrapper_t* wrap) {
     if (has_varkeyarg) {
         py_param_t param;
         param.name = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(arg_names, pos_count + keyword_only_count + has_vararg),
-                                             &param.name_len);
+                                             &param.name_length);
         param.value = NULL;
         param.type = (PyTypeObject*)PyDict_GetItemString(annotations, param.name);
         param.kind = VAR_KEYWORD;
@@ -211,13 +211,13 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
         bool may_have_name = (kind & POSITIONAL_OR_KEYWORD) | (kind & KEYWORD_ONLY) | (kind & VAR_KEYWORD);
         bool may_have_pos = (kind & POSITIONAL_OR_KEYWORD) | (kind & POSITIONAL_ONLY) | (kind & VAR_POSITIONAL);
         bool got_named = false;
-        Py_ssize_t name_len = wrap->u_params[i].name_len;
+        Py_ssize_t name_length = wrap->u_params[i].name_length;
         ucall_str_t name = wrap->u_params[i].name;
 
         if (PyType_IsSubtype(type, &PyBool_Type)) {
             bool res;
-            if (may_have_name && name_len > 0)
-                got_named = ucall_param_named_bool(call, name, name_len, &res);
+            if (may_have_name && name_length > 0)
+                got_named = ucall_param_named_bool(call, name, name_length, &res);
 
             if ((may_have_pos && !got_named) && //
                 !ucall_param_positional_bool(call, i, &res))
@@ -225,9 +225,9 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
 
             PyTuple_SetItem(args, i, res ? Py_True : Py_False);
         } else if (PyType_IsSubtype(type, &PyLong_Type)) {
-            Py_ssize_t res;
-            if (may_have_name && name_len > 0)
-                got_named = ucall_param_named_i64(call, name, name_len, &res);
+            int64_t res;
+            if (may_have_name && name_length > 0)
+                got_named = ucall_param_named_i64(call, name, name_length, &res);
 
             if ((may_have_pos && !got_named) && //
                 !ucall_param_positional_i64(call, i, &res))
@@ -236,8 +236,8 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
             PyTuple_SetItem(args, i, PyLong_FromSsize_t(res));
         } else if (PyType_IsSubtype(type, &PyFloat_Type)) {
             double res;
-            if (may_have_name && name_len > 0)
-                got_named = ucall_param_named_f64(call, name, name_len, &res);
+            if (may_have_name && name_length > 0)
+                got_named = ucall_param_named_f64(call, name, name_length, &res);
 
             if ((may_have_pos && !got_named) && //
                 !ucall_param_positional_f64(call, i, &res))
@@ -247,8 +247,8 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
         } else if (PyType_IsSubtype(type, &PyUnicode_Type)) {
             ucall_str_t res;
             size_t len;
-            if (may_have_name && name_len > 0)
-                got_named = ucall_param_named_str(call, name, name_len, &res, &len);
+            if (may_have_name && name_length > 0)
+                got_named = ucall_param_named_str(call, name, name_length, &res, &len);
 
             if ((may_have_pos && !got_named) && //
                 !ucall_param_positional_str(call, i, &res, &len))
@@ -259,8 +259,8 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
             // For non native type, assume binary.
             ucall_str_t res;
             size_t len;
-            if (may_have_name && name_len > 0)
-                got_named = ucall_param_named_str(call, name, name_len, &res, &len);
+            if (may_have_name && name_length > 0)
+                got_named = ucall_param_named_str(call, name, name_length, &res, &len);
 
             if ((may_have_pos && !got_named) && //
                 !ucall_param_positional_str(call, i, &res, &len))
@@ -277,9 +277,9 @@ static void wrapper(ucall_call_t call, ucall_callback_tag_t callback_tag) {
         PyErr_Fetch(&ptype, &pvalue, &ptraceback);
         if (ptype != NULL) {
             PyObject* pvalue_str = PyObject_Str(pvalue);
-            size_t sz = 0;
-            ucall_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &sz);
-            ucall_call_reply_error(call, 500, error_str, sz);
+            size_t size = 0;
+            ucall_str_t error_str = PyUnicode_AsUTF8AndSize(pvalue_str, &size);
+            ucall_call_reply_error(call, 500, error_str, size);
             Py_DECREF(pvalue_str);
         } else
             ucall_call_reply_error_unknown(call);
@@ -494,7 +494,7 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
         self->config.ssl_certificates_count = PySequence_Length(certs_path);
-        self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
+        self->config.ssl_certificates_paths = (char const**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
         for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
             self->config.ssl_certificates_paths[i] = PyUnicode_AsUTF8AndSize(PySequence_GetItem(certs_path, i), NULL);
     }

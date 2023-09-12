@@ -24,6 +24,10 @@ jobs:
       matrix:
         os: [ubuntu-20.04, macOS-11, windows-2022]
         python-version: ["3.11"]
+        arch: [x64, arm64]
+        exclude:
+          - os: windows-2022
+            arch: arm64  # Exclude ARM64 for Windows as it's not natively supported
 
     steps:
       - uses: actions/checkout@v3
@@ -39,5 +43,7 @@ jobs:
       - name: Add msbuild to PATH
         if: matrix.os == 'windows-2022'
         uses: microsoft/setup-msbuild@v1
+        with:
+          msbuild-architecture: x64
       - name: Build locally
         run: python -m pip install .

@@ -95,7 +95,7 @@ static int to_string(PyObject* obj, char* data, size_t* len) {
             case 31: {
                 memcpy(begin, "\\u0000", 6);
                 begin += 6;
-                char_to_hex(c, begin - 2);
+                char_to_hex(c, (uint8_t*)begin - 2);
                 break;
             }
             default:
