@@ -15,7 +15,7 @@ typedef SSIZE_T ssize_t;
 namespace unum::ucall {
 
 using descriptor_t = ssize_t;
-using connectino_data_t = void*;
+using connection_data_t = void*;
 using network_data_t = void*;
 
 /// @brief To avoid dynamic memory allocations on tiny requests,

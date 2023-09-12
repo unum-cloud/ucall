@@ -1,10 +1,10 @@
 #pragma once
+#include <stdlib.h>
 
 #include <cstddef>
 #include <cstring>
 #include <memory>
 #include <numeric>
-#include <stdlib.h>
 #include <string_view>
 #include <type_traits>
 
@@ -311,7 +311,8 @@ class exchange_pipes_t {
 
     void append_reserved(char const* c, std::size_t n) noexcept {
         if (output_.dynamic.size())
-            output_.dynamic.append_n(c, n);
+            // This can't fail, so avoid the returned value:
+            (void)output_.dynamic.append_n(c, n);
         else
             std::memcpy(output_.embedded + output_.embedded_used, c, n), output_.embedded_used += n;
     }

@@ -1,6 +1,6 @@
 /**
  * @file ucall.h
- * @author Ashot Vardanian
+ * @author Ash Vardanian
  * @date Feb 3, 2023
  * @addtogroup C
  *
