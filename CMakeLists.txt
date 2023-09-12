@@ -174,7 +174,6 @@ if(MSVC)
 
     include_directories(${PICOTLS_DIR}/include/ ${PICOTLSVS_DIR}/picotls)
     set(URING_LIBS uring_internal)
-elseif()
 else()
     FetchContent_Declare(
     picotls

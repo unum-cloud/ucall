@@ -71,25 +71,6 @@ class CMakeBuild(build_ext):
             ["cmake", "--build", ".", "--target", build_name] + build_args
         )
 
-        # # Add these lines to copy the .so file to the expected directory
-        # if sys.platform.startswith("darwin"):
-        #     suffix = "darwin.so"
-        # elif sys.platform.startswith("linux"):
-        #     suffix = "linux-gnu.so"
-        # else:
-        #     raise RuntimeError(f"Unsupported platform: {sys.platform}")
-
-        # backend = ext.name.split(".")[-1]
-        # submodules_folder = os.path.join(extension_dir, ext.name)
-        # if not os.path.exists(submodules_folder):
-        #     os.mkdir(submodules_folder)
-        # expected_output = os.path.join(
-        #     submodules_folder,
-        #     f"{backend}.cpython-{sys.version_info.major}{sys.version_info.minor}-{suffix}",
-        # )
-        # actual_output = os.path.join(extension_dir, build_name + ".so")
-        # shutil.copyfile(actual_output, expected_output)
-
     def run(self):
         build_ext.run(self)
 
