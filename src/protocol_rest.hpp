@@ -68,16 +68,15 @@ inline bool protocol_rest_t::append_response(exchange_pipes_t& pipes, std::strin
 
 inline bool protocol_rest_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {
-
     if (!pipes.append_outputs({R"({"error":)", 9}))
         return false;
     if (!pipes.append_outputs(error_code))
         return false;
-    if (!pipes.append_outputs({R"(,"message":)", 11}))
+    if (!pipes.append_outputs({R"(,"message":")", 11}))
         return false;
     if (!pipes.append_outputs(message))
         return false;
-    if (!pipes.append_outputs({"}", 1}))
+    if (!pipes.append_outputs({R"("})", 1}))
         return false;
     return true;
 };
