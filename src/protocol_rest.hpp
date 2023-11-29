@@ -68,6 +68,8 @@ inline bool protocol_rest_t::append_response(exchange_pipes_t& pipes, std::strin
 
 inline bool protocol_rest_t::append_error(exchange_pipes_t& pipes, std::string_view error_code,
                                           std::string_view message) noexcept {
+    std::string wrappedMessage = std::string("\"") + std::string(message) + "\"";
+
 
     if (!pipes.append_outputs({R"({"error":)", 9}))
         return false;
@@ -75,7 +77,7 @@ inline bool protocol_rest_t::append_error(exchange_pipes_t& pipes, std::string_v
         return false;
     if (!pipes.append_outputs({R"(,"message":)", 11}))
         return false;
-    if (!pipes.append_outputs(message))
+    if (!pipes.append_outputs(wrappedMessage))
         return false;
     if (!pipes.append_outputs({"}", 1}))
         return false;
