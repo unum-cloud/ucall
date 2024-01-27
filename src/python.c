@@ -1,16 +1,16 @@
 /**
- * @file python.c
- * @author Ashot Vardanian
- * @date 2023-01-30
- * @copyright Copyright (c) 2023
- *
- * @brief Pure CPython bindings for UCall.
- *
- * @see Reading Materials
- * https://pythoncapi.readthedocs.io/type_object.html
- * https://numpy.org/doc/stable/reference/c-api/types-and-structures.html
- * https://pythonextensionpatterns.readthedocs.io/en/latest/refcount.html
- * https://docs.python.org/3/extending/newtypes_tutorial.html#adding-data-and-methods-to-the-basic-example
+ *  @brief  Pure CPython bindings for UCall.
+ *  @author Ash Vardanian
+ *  @file   python.c
+ *  @date   2023-01-30
+ * 
+ *  @copyright Copyright (c) 2023
+ * 
+ *  @see Reading Materials
+ *  https://pythoncapi.readthedocs.io/type_object.html
+ *  https://numpy.org/doc/stable/reference/c-api/types-and-structures.html
+ *  https://pythonextensionpatterns.readthedocs.io/en/latest/refcount.html
+ *  https://docs.python.org/3/extending/newtypes_tutorial.html#adding-data-and-methods-to-the-basic-example
  */
 #include <time.h>
 
@@ -533,6 +533,15 @@ int main(int argc, char* argv[]) {
         PyErr_Print();
         fprintf(stderr, "Error: could not import module 'ucall'\n");
     }
+
+    // Add version metadata
+    {
+        char version_str[50];
+        sprintf(version_str, "%d.%d.%d", UCALL_VERSION_MAJOR, UCALL_VERSION_MINOR,
+                UCALL_VERSION_PATCH);
+        PyModule_AddStringConstant(pmodule, "__version__", version_str);
+    }
+
     PyMem_RawFree(program);
     return 0;
 }

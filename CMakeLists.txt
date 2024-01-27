@@ -1,6 +1,12 @@
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
-project(ucall LANGUAGES CXX C)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+project(
+    ucall
+    VERSION 0.7.1
+    LANGUAGES C CXX
+    DESCRIPTION "Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings"
+    HOMEPAGE_URL "https://github.com/unum-cloud/ucall")
 
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
@@ -31,7 +37,6 @@ else()
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 endif()
-
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1")

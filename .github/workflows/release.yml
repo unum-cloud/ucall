@@ -11,7 +11,7 @@ env:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -25,7 +25,7 @@ jobs:
       with:
         persist-credentials: false
     - uses: actions/setup-node@v3
-    - run: cp .github/workflows/package.json . && npm install && npx semantic-release
+    - run: npm install --save-dev @semantic-release/exec @semantic-release/git conventional-changelog-eslint semantic-release && npx semantic-release
 
 
   build_wheels:
