@@ -12,7 +12,7 @@ filterwarnings = ["error"]
 build-verbosity = 0
 before-build = [
     "rm -rf {project}/CMakeCache.txt {project}/build {project}/build_debug {project}/CMakeFiles.txt {project}/_deps",
-    "mkdir -p build/ucall"
+    "mkdir -p build/ucall",
 ]
 
 skip = ["*musllinux*", "*i686*", "pp*", "cp36-*", "cp37-*", "cp38-*"]
@@ -22,9 +22,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 archs = ["x86_64", "aarch64"]
-before-all = [
-    "yum install -y glibc-devel wget python3-devel"
-]
+before-all = ["yum install -y glibc-devel wget python3-devel"]
 repair-wheel-command = "auditwheel repair --lib-sdir . -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
@@ -34,7 +32,7 @@ repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest
 [tool.cibuildwheel.windows]
 before-build = [
     "rd /s /q {project}\\CMakeCache.txt {project}\\build {project}\\build_debug {project}\\CMakeFiles.txt {project}\\_deps || echo Done",
-    "md build\\ucall"
+    "md build\\ucall",
 ]
 archs = ["x86", "AMD64"]
 skip = ["*win32*", "pp*"]

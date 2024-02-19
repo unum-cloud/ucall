@@ -79,7 +79,7 @@ setup(
     name=__lib_name__,
     version=__version__,
 
-    author='Ashot Vardanian',
+    author='Ash Vardanian',
     author_email='info@unum.cloud',
     url='https://github.com/unum-cloud/ucall',
     description='Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings',
