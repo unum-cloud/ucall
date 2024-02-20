@@ -16,19 +16,19 @@ def _receive_all(sock, buffer_size=4096):
     body = None
     content_len = -1
 
-    if header == b'HTTP':
-        while b'\r\n\r\n' not in header:
+    if header == b"HTTP":
+        while b"\r\n\r\n" not in header:
             chunk = sock.recv(1024)
             if not chunk:
                 break
             header += chunk
 
-        header, body = header.split(b'\r\n\r\n', 1)
+        header, body = header.split(b"\r\n\r\n", 1)
 
-        pref = b'Content-Length:'
+        pref = b"Content-Length:"
         for line in header.splitlines():
             if line.startswith(pref):
-                content_len = int(line[len(pref):].strip())
+                content_len = int(line[len(pref) :].strip())
                 break
     else:
         body = header
@@ -52,11 +52,11 @@ class Response:
     @property
     def json(self) -> Union[bool, int, float, str, dict, list, tuple]:
         self.raise_for_status()
-        return self.data['result']
+        return self.data["result"]
 
     def raise_for_status(self):
-        if 'error' in self.data:
-            raise RuntimeError(self.data['error'])
+        if "error" in self.data:
+            raise RuntimeError(self.data["error"])
 
     @property
     def bytes(self) -> bytes:
@@ -91,27 +91,27 @@ class Request:
     def _pack_pillow(self, image):
         buf = BytesIO()
         if not image.format:
-            image.format = 'tiff'
-        image.save(buf, image.format,  compression='raw', compression_level=0)
+            image.format = "tiff"
+        image.save(buf, image.format, compression="raw", compression_level=0)
         buf.seek(0)
         return base64.b64encode(buf.getvalue()).decode()
 
     def pack(self, req):
         keys = None
-        if isinstance(req['params'], dict):
-            keys = req['params'].keys()
+        if isinstance(req["params"], dict):
+            keys = req["params"].keys()
         else:
-            keys = range(0, len(req['params']))
+            keys = range(0, len(req["params"]))
 
         for k in keys:
-            if isinstance(req['params'][k], np.ndarray):
-                req['params'][k] = self._pack_numpy(req['params'][k])
+            if isinstance(req["params"][k], np.ndarray):
+                req["params"][k] = self._pack_numpy(req["params"][k])
 
-            elif isinstance(req['params'][k], Image.Image):
-                req['params'][k] = self._pack_pillow(req['params'][k])
+            elif isinstance(req["params"][k], Image.Image):
+                req["params"][k] = self._pack_pillow(req["params"][k])
 
-            elif isinstance(req['params'][k], bytes):
-                req['params'][k] = self._pack_bytes(req['params'][k])
+            elif isinstance(req["params"][k], bytes):
+                req["params"][k] = self._pack_bytes(req["params"][k])
 
         return req
 
@@ -119,26 +119,29 @@ class Request:
 class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
-    def __init__(self, uri: str = '127.0.0.1', port: int = 8545, use_http: bool = True) -> None:
+    def __init__(
+        self, uri: str = "127.0.0.1", port: int = 8545, use_http: bool = True
+    ) -> None:
         self.uri = uri
         self.port = port
         self.use_http = use_http
         self.sock = None
-        self.http_template = f'POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n'
+        self.http_template = f"POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n"
 
     def __getattr__(self, name):
         def call(*args, **kwargs):
             params = kwargs
             if len(args) != 0:
-                assert len(
-                    kwargs) == 0, 'Can\'t mix positional and keyword parameters!'
+                assert len(kwargs) == 0, "Can't mix positional and keyword parameters!"
                 params = args
 
-            return self.__call__({
-                'method': name,
-                'params': params,
-                'jsonrpc': '2.0',
-            })
+            return self.__call__(
+                {
+                    "method": name,
+                    "params": params,
+                    "jsonrpc": "2.0",
+                }
+            )
 
         return call
 
@@ -156,7 +159,7 @@ class Client:
             return True
         try:
             buf = self.sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
-            if buf == b'':
+            if buf == b"":
                 return True
         except BlockingIOError as exc:
             if exc.errno != errno.EAGAIN:
@@ -164,7 +167,7 @@ class Client:
         return False
 
     def _send(self, json_data: dict):
-        json_data['id'] = random.randint(1, 2**16)
+        json_data["id"] = random.randint(1, 2**16)
         req_obj = Request(json_data)
         request = json.dumps(req_obj.packed)
         if self.use_http:
@@ -185,8 +188,13 @@ class Client:
 
 class ClientTLS(Client):
     def __init__(
-            self, uri: str = '127.0.0.1', port: int = 8545, ssl_context: ssl.SSLContext = None,
-            allow_self_signed: bool = False, enable_session_resumption: bool = True) -> None:
+        self,
+        uri: str = "127.0.0.1",
+        port: int = 8545,
+        ssl_context: ssl.SSLContext = None,
+        allow_self_signed: bool = False,
+        enable_session_resumption: bool = True,
+    ) -> None:
 
         super().__init__(uri, port, use_http=True)
 
@@ -205,7 +213,8 @@ class ClientTLS(Client):
             return
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock = self.ssl_context.wrap_socket(
-            self.sock, server_hostname=self.uri, session=self.session)
+            self.sock, server_hostname=self.uri, session=self.session
+        )
         self.sock.connect((self.uri, self.port))
         if self.session_resumption:
             self.session = self.sock.session
