@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(
     ucall
-    VERSION 0.5.3
+    VERSION 0.5.4
     LANGUAGES C CXX
     DESCRIPTION "Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings"
     HOMEPAGE_URL "https://github.com/unum-cloud/ucall")
