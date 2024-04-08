@@ -1,4 +1,42 @@
-# Summation Examples and Benchmarks
+# UCall Examples and Benchmarks
+
+## Echo and Summation
+
+The `echo` example is a simple demonstration of a server that echoes back the request.
+To make it a bit more challenging, the same server also contains the `sum` endpoint, which accepts two numbers and returns their aggregate.
+
+- `echo_server_ucall.cpp` - UCall server implementation in C++
+- `echo_server_ucall.py` - UCall server implementation in Python
+- `echo_server_fastapi.py` - UCall server implementation in FastAPI
+- `echo_client.py` - shared client implementation for benchmarking
+
+To run those:
+
+```sh
+
+```
+
+## Redis
+
+Redis example is a basic in-memory key-value store implementation with just two endpoints - `set` and `get`.
+The server implementations are available in C++ and Python for UCall.
+
+- `redis_server_ucall.cpp` - UCall server implementation in C++
+- `redis_server_ucall.py` - UCall server implementation in Python
+- `redis_server_fastapi.py` - UCall server implementation in FastAPI
+- `redis_client.py` - shared client implementation for benchmarking
+
+## Multimedia
+
+Multimedia example showcases the more edvanced UCall functionality, like built-in support for NumPy arrays and Pillow images.
+It also uses batch endpoints for AI inference and image processing, the functionality not available in FastAPI.
+
+- `multimedia_server_ucall.cpp` - UCall server implementation in C++
+- `multimedia_server_ucall.py` - UCall server implementation in Python
+- `multimedia_client.py` - shared client implementation for benchmarking
+
+
+===
 
 The simplest possible endpoint after `hello-world` and `echo`, is probably `sum`.
 We would just accept two numbers and return their aggregate.

@@ -18,7 +18,7 @@ static void validate_session(ucall_call_t call, ucall_callback_tag_t) {
     if (!got_a || !got_b)
         return ucall_call_reply_error_invalid_params(call);
 
-    const char* res = ((a ^ b) % 23 == 0) ? "true" : "false";
+    char const* res = ((a ^ b) % 23 == 0) ? "true" : "false";
     ucall_call_reply_content(call, res, strlen(res));
 }
 
@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     config.logs_format = "human";
     // config.use_ssl = true;
     // config.ssl_private_key_path = "./examples/login/certs/main.key";
-    // const char* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
+    // char const* crts[] = {"./examples/login/certs/srv.crt", "./examples/login/certs/cas.pem"};
     // config.ssl_certificates_paths = crts;
     // config.ssl_certificates_count = 2;
 

@@ -71,7 +71,7 @@ struct ucall_ssl_context_t {
         mbedtls_entropy_free(&entropy);
     }
 
-    int init(const char* pk_path, const char** crts_path, size_t crts_cnt) {
+    int init(char const* pk_path, char const** crts_path, size_t crts_cnt) {
         mbedtls_ssl_init(&ssl);
         mbedtls_ssl_config_init(&conf);
         mbedtls_ssl_cache_init(&cache);
