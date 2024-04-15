@@ -34,7 +34,7 @@
 
 #define UCALL_VERSION_MAJOR 0
 #define UCALL_VERSION_MINOR 5
-#define UCALL_VERSION_PATCH 4
+#define UCALL_VERSION_PATCH 5
 
 #ifdef __cplusplus
 extern "C" {
