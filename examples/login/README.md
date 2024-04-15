@@ -12,16 +12,16 @@ Packets are tiny, so it is great for benchmarking the request latency.
 pip install uvicorn fastapi websocket-client requests tqdm fire
 cd examples && uvicorn sum.fastapi_server:app --log-level critical &
 cd ..
-python examples/bench.py "sum.fastapi_client.ClientREST" --progress
-python examples/bench.py "sum.fastapi_client.ClientWebSocket" --progress
+python examples/bench.py "fastapi_client.ClientREST" --progress
+python examples/bench.py "fastapi_client.ClientWebSocket" --progress
 kill %%
 ```
 
 Want to dispatch more clients and aggregate statistics?
 
 ```sh
-python examples/bench.py "sum.fastapi_client.ClientREST" --threads 8
-python examples/bench.py "sum.fastapi_client.ClientWebSocket" --threads 8
+python examples/bench.py "fastapi_client.ClientREST" --threads 8
+python examples/bench.py "fastapi_client.ClientWebSocket" --threads 8
 ```
 
 ### UCall
@@ -34,9 +34,9 @@ sudo apt-get install cmake g++ build-essential
 cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
 ./build_release/build/bin/ucall_example_sum_posix &
 ./build_release/build/bin/ucall_example_sum_uring &
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --progress
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --progress
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --progress
+python examples/bench.py "jsonrpc_client.CaseTCP" --progress
+python examples/bench.py "jsonrpc_client.CaseHTTP" --progress
+python examples/bench.py "jsonrpc_client.CaseHTTPBatches" --progress
 kill %%
 ```
 
@@ -49,31 +49,39 @@ Want to customize server settings?
 Want to dispatch more clients and aggregate more accurate statistics?
 
 ```sh
-python examples/bench.py "sum.jsonrpc_client.ClientTCP" --threads 32 --seconds 100
-python examples/bench.py "sum.jsonrpc_client.ClientHTTP" --threads 32 --seconds 100
-python examples/bench.py "sum.jsonrpc_client.ClientHTTPBatches" --threads 32 --seconds 100
+python examples/bench.py "jsonrpc_client.CaseTCP" --threads 32 --seconds 100
+python examples/bench.py "jsonrpc_client.CaseHTTP" --threads 32 --seconds 100
+python examples/bench.py "jsonrpc_client.CaseHTTPBatches" --threads 32 --seconds 100
 ```
 
 A lot has been said about the speed of Python code ~~or the lack of~~.
-To get more accurate numbers for mean request latency, you can use the GoLang version:
+To get more accurate numbers for mean request latency, you can use wrk for html requests
 
 ```sh
-go run ./examples/sum/ucall_client.go
+wrk -t1 -c32 -d2s http://localhost:8545/ -s json.lua
+wrk -t1 -c32 -d2s http://localhost:8545/ -s json16.lua
+```
+
+Or the GoLang version for jsonRPC requests:
+
+```sh
+go run ./examples/login/jsonrpc_client.go -h
+go run ./examples/login/jsonrpc_client.go -b 100
 ```
 
 Or push it even further dispatching dozens of processes with GNU `parallel` utility:
 
 ```sh
 sudo apt install parallel
-parallel go run ./examples/sum/ucall_client.go run ::: {1..32}
+parallel go run ./examples/login/jsonrpc_client.go run ::: {1..32}
 ```
 
 ### gRPC Results
 
 ```sh
 pip install grpcio grpcio-tools
-python ./examples/sum/grpc_server.py &
-python examples/bench.py "sum.grpc_client.gRPCClient" --progress
-python examples/bench.py "sum.grpc_client.gRPCClient" --threads 32
+python ./examples/login/grpc_server.py &
+python examples/bench.py "grpc_client.ValidateClient" --progress
+python examples/bench.py "grpc_client.ValidateClient" --threads 32
 kill %%
 ```
