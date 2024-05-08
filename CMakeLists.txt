@@ -123,21 +123,6 @@ FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-FetchContent_Declare(
-    mbedtls
-    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls/
-    GIT_TAG v3.4.0
-    CMAKE_ARGS
-    -DENABLE_PROGRAMS=OFF
-    -DENABLE_TESTING=OFF
-    -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
-    -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-)
-
-FetchContent_MakeAvailable(mbedtls)
-include_directories(${mbedtls_SOURCE_DIR}/include)
-set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
-
 # LibUring
 if(LINUX)
     set(URING_DIR ${CMAKE_BINARY_DIR}/_deps/liburing-ep)
@@ -168,7 +153,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads )
 set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)

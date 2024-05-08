@@ -58,6 +58,7 @@
 #include <charconv> // `std::to_chars`
 #include <mutex>    // `std::mutex`
 #include <optional> // `std::optional`
+#include <map>
 
 #include <simdjson.h>
 
@@ -215,8 +216,9 @@ struct engine_t {
     std::int32_t logs_file_descriptor{};
     std::string_view logs_format{};
 
-    /// @brief An array of function callbacks. Can be in dozens.
-    array_gt<named_callback_t> callbacks{};
+    /// @brief A map of function callbacks. 
+    std::map<std::string_view, named_callback_t> cbmap{};
+
     /// @brief A circular container of reusable connections. Can be in millions.
     pool_gt<connection_t> connections{};
     /// @brief Same number of them, as max physical threads. Can be in hundreds.
@@ -326,7 +328,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     // uring_params.flags |= config.max_threads == 1 ? IORING_SETUP_SINGLE_ISSUER : 0; // 6.0+
     engine_t* server_ptr{};
     pool_gt<connection_t> connections{};
-    array_gt<named_callback_t> callbacks{};
+    //array_gt<named_callback_t> callbacks{};
     buffer_gt<scratch_space_t> spaces{};
     buffer_gt<struct iovec> registered_buffers{};
     memory_map_t fixed_buffers{};
@@ -346,8 +348,8 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
     if (!server_ptr)
         goto cleanup;
-    if (!callbacks.reserve(config.max_callbacks))
-        goto cleanup;
+    //if (!callbacks.reserve(config.max_callbacks))
+        //goto cleanup;
     if (!fixed_buffers.reserve(ram_page_size_k * 2u * config.max_concurrent_connections))
         goto cleanup;
     if (!connections.reserve(config.max_concurrent_connections))
@@ -403,7 +405,7 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     server_ptr->socket = descriptor_t{socket_descriptor};
     server_ptr->max_lifetime_micro_seconds = config.max_lifetime_micro_seconds;
     server_ptr->max_lifetime_exchanges = config.max_lifetime_exchanges;
-    server_ptr->callbacks = std::move(callbacks);
+    //server_ptr->callbacks = std::move(callbacks);
     server_ptr->connections = std::move(connections);
     server_ptr->spaces = std::move(spaces);
     server_ptr->uring = uring;
@@ -426,8 +428,10 @@ cleanup:
 void ucall_add_procedure(ucall_server_t server, ucall_str_t name, ucall_callback_t callback,
                          ucall_callback_tag_t callback_tag) {
     engine_t& engine = *reinterpret_cast<engine_t*>(server);
-    if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
-        engine.callbacks.push_back_reserved({name, callback, callback_tag});
+    //if (engine.callbacks.size() + 1 < engine.callbacks.capacity())
+        //engine.callbacks.push_back_reserved({name, callback, callback_tag});
+    engine.cbmap[name] = {name, callback, callback_tag};
+
 }
 
 void ucall_free(ucall_server_t server) {
@@ -653,7 +657,7 @@ bool automata_t::received_full_request() const noexcept {
 }
 
 void automata_t::raise_call() noexcept {
-    auto callback_or_error = find_callback(engine.callbacks, scratch);
+    auto callback_or_error = find_callback(engine.cbmap, scratch);
     if (auto error_ptr = std::get_if<default_error_t>(&callback_or_error); error_ptr)
         return ucall_call_reply_error(this, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
 

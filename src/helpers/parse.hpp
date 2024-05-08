@@ -60,8 +60,7 @@ template <std::size_t step_ak> constexpr std::size_t round_up_to(std::size_t n) 
 /**
  * @brief Validates the contents of the JSON call DOM, and finds a matching callback.
  */
-template <typename named_callbacks_at>
-inline std::variant<named_callback_t, default_error_t> find_callback(named_callbacks_at const& callbacks,
+inline std::variant<named_callback_t, default_error_t> find_callback(std::map<std::string_view, named_callback_t> & cbmap,
                                                                      scratch_space_t& scratch) noexcept {
     sjd::element const& doc = scratch.tree;
     if (!doc.is_object())
@@ -100,15 +99,12 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
         scratch.dynamic_id = "";
 
     // Make sure we have such a method:
-    auto method_name = method.get_string().value_unsafe();
-    auto callbacks_end = callbacks.data() + callbacks.size();
-    auto callback_it = std::find_if(callbacks.data(), callbacks_end, [=](named_callback_t const& callback) noexcept {
-        return callback.name == method_name;
-    });
-    if (callback_it == callbacks_end)
+    auto it = cbmap.find( method.get_string().value_unsafe() );
+    if (it == cbmap.end())
         return default_error_t{-32601, "Method not found."};
 
-    return *callback_it;
+    return it->second;
+
 }
 
 struct parsed_request_t {
