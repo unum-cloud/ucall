@@ -91,20 +91,13 @@ sj::simdjson_result<sjd::element> param_at(ucall_call_t call, size_t position) n
 }
 
 void send_message(engine_t& engine, array_gt<char> const& message) noexcept {
-    char const* buf = message.data();
-    size_t const len = message.size();
-    long idx = 0;
-    long res = 0;
-
-    while (idx < len && (res = send(engine.connection, buf + idx, len - idx, 0)) > 0)
-        idx += res;
-
+    int res = net_send_message( engine.connection, message );
     if (res < 0) {
         if (errno == EMSGSIZE)
             ucall_call_reply_error_out_of_memory(&engine);
         return;
     }
-    engine.stats.bytes_sent += idx;
+    engine.stats.bytes_sent += message.size();
     engine.stats.packets_sent++;
 }
 

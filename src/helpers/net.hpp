@@ -93,4 +93,23 @@ inline void net_shutdown(ucall_server_t &server) noexcept {
     close(socket_fd);
 }
 
+/**
+ * @brief 
+ */
+int net_send_message(int fd, array_gt<char> const& message) noexcept {
+    char const* buf = message.data();
+    size_t const len = message.size();
+    long idx = 0;
+    long res = 0;
+                              
+    while (idx < len && (res = send(fd, buf + idx, len - idx, 0)) > 0)
+        idx += res;
+
+    if (res < 0) {
+        return res;
+    }
+    return 0;
+}
+
+
 } // namespace
