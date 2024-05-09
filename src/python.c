@@ -333,6 +333,17 @@ static bool pycheck_take_call(py_server_t* self, uint16_t thread_idx) {
     ucall_take_call(self->server, thread_idx);
     return true;
 }
+static bool pycheck_take_calls(py_server_t* self, uint16_t thread_idx) {
+    if (PyErr_CheckSignals() != 0) { // Must be called from the main thread only!
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyErr_SetString(PyExc_KeyboardInterrupt, "Server Stopped");
+        PyGILState_Release(gstate);
+        return false;
+    }
+    ucall_take_calls(self->server, thread_idx);
+    return true;
+}
+
 
 static PyObject* server_run(py_server_t* self, PyObject* args) {
     Py_ssize_t max_cycles = -1;
@@ -343,31 +354,7 @@ static PyObject* server_run(py_server_t* self, PyObject* args) {
         PyErr_SetString(PyExc_TypeError, "Expecting a cycle count and timeout.");
         return NULL;
     }
-    if (max_cycles == -1 && max_seconds == -1) {
-        while (pycheck_take_call(self, 0))
-            ;
-    } else if (max_seconds == -1) {
-        while (max_cycles > 0 && pycheck_take_call(self, 0))
-            --max_cycles;
-    } else if (max_cycles == -1) {
-        time_t start, end;
-        time(&start);
-        while (max_seconds > 0 && pycheck_take_call(self, 0)) {
-            time(&end);
-            max_seconds -= difftime(end, start);
-            start = end;
-        }
-    } else {
-        time_t start, end;
-        time(&start);
-        while (max_cycles > 0 && max_seconds > 0 && pycheck_take_call(self, 0)) {
-            --max_cycles;
-            time(&end);
-            max_seconds -= difftime(end, start);
-            start = end;
-        }
-    }
-
+    pycheck_take_calls(self, 0);
     return NULL;
 }
 

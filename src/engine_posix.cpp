@@ -45,6 +45,7 @@
 #include "helpers/parse.hpp"
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
+#include "helpers/net.hpp"
 
 using namespace unum::ucall;
 
@@ -56,7 +57,7 @@ static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 struct engine_t {
     ~engine_t() noexcept { }
 
-    descriptor_t socket{};
+    int socket{};
 
     /// @brief The file descriptor of the stateful connection over TCP.
     descriptor_t connection{};
@@ -120,13 +121,16 @@ void forward_call(engine_t& engine) noexcept {
 /**
  * @brief Analyzes the contents of the packet, bifurcating batched and singular JSON-RPC requests.
  */
-void forward_call_or_calls(engine_t& engine) noexcept {
+int forward_call_or_calls(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     sjd::parser& parser = *scratch.dynamic_parser;
     std::string_view json_body = scratch.dynamic_packet;
-    auto one_or_many = parser.parse(json_body.data(), json_body.size(), false);
-    if (one_or_many.error() != sj::SUCCESS)
-        return ucall_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
+    auto doc = parser.parse(json_body.data(), json_body.size(), false);
+
+    if (doc.error() != sj::SUCCESS) {
+        //if ( doc.error() ) printf(" error %d %s\n", doc.error(), simdjson::error_message(doc.error()));
+        return -2; //ucall_call_reply_error(&engine, -32700, "Invalid JSON was received by the server.", 40);
+    }
 
     // The major difference between batch and single-request paths is that
     // in the first case we need to keep a copy of the data somewhere,
@@ -134,8 +138,8 @@ void forward_call_or_calls(engine_t& engine) noexcept {
     // simultaneously.
     // Linux supports `MSG_MORE` flag for submissions, which could have helped,
     // but it is less effective than assembling a copy here.
-    if (one_or_many.is_array()) {
-        sjd::array many = one_or_many.get_array().value_unsafe();
+    if (doc.is_array()) {
+        sjd::array many = doc.get_array().value_unsafe();
         scratch.is_batch = false;
 
         // Start a JSON array.
@@ -156,8 +160,10 @@ void forward_call_or_calls(engine_t& engine) noexcept {
 
         res &= engine.buffer.append_n("]", 1);
 
-        if (!res)
-            return ucall_call_reply_error_out_of_memory(&engine);
+        if (!res) {
+            ucall_call_reply_error_out_of_memory(&engine); 
+            return 0;
+        }
 
         if (scratch.is_http)
             set_http_content_length(engine.buffer.data(), engine.buffer.size() - http_header_size_k);
@@ -167,22 +173,24 @@ void forward_call_or_calls(engine_t& engine) noexcept {
         engine.buffer.reset();
     } else {
         scratch.is_batch = false;
-        scratch.tree = one_or_many.value_unsafe();
+        scratch.tree = doc.value_unsafe();
         forward_call(engine);
         engine.buffer.reset();
     }
+    return 0;
 }
 
 void forward_packet(engine_t& engine) noexcept {
     scratch_space_t& scratch = engine.scratch;
     auto json_or_error = split_body_headers(scratch.dynamic_packet);
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
+    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr){
         return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+    }
 
     auto request = std::get<parsed_request_t>(json_or_error);
     scratch.is_http = request.type.size();
     scratch.dynamic_packet = request.body;
-    return forward_call_or_calls(engine);
+    forward_call_or_calls(engine);
 }
 
 int recv_all(engine_t& engine, char* buf, size_t len) {
@@ -195,9 +203,11 @@ int recv_all(engine_t& engine, char* buf, size_t len) {
     return idx;
 }
 
-void ucall_take_call(ucall_server_t server, uint16_t) {
-    engine_t& engine = *reinterpret_cast<engine_t*>(server);
+int on_data(conn_t *conn, char *buf, int data_left) {
+    //printf("DELME on_data sz %d str:\n%.*s\n", data_left, data_left, buf);
+    engine_t& engine = *reinterpret_cast<engine_t*>(conn->user_data);
     scratch_space_t& scratch = engine.scratch;
+    engine.connection = descriptor_t{conn->fd};
 
     // Log stats, if enough time has passed since last call.
     if (engine.logs_file_descriptor > 0) {
@@ -212,87 +222,51 @@ void ucall_take_call(ucall_server_t server, uint16_t) {
         }
     }
 
-    // If no pending connections are present on the queue, and the
-    // socket is not marked as nonblocking, accept() blocks the caller
-    // until a connection is present. If the socket is marked
-    // nonblocking and no pending connections are present on the queue,
-    // accept() fails with the error EAGAIN or EWOULDBLOCK.
-    int connection_fd = accept(engine.socket, (struct sockaddr*)NULL, NULL);
-    if (connection_fd < 0) {
-        // Drop the last error.
-        errno;
-        return;
-    }
+        
+    if ( buf[0] == '{' || buf[0] == '[' ) { // JSON
 
-
-    // Wait until we have input.
-    engine.connection = descriptor_t{connection_fd};
-    engine.stats.added_connections++;
-    engine.stats.closed_connections++;
-    char* buffer_ptr = &engine.packet_buffer[0];
-
-    size_t bytes_received = 0, bytes_expected = 0;
-    bytes_received = recv(engine.connection, buffer_ptr, http_head_max_size_k, 0);
-
-    auto json_or_error = split_body_headers(std::string_view(buffer_ptr, bytes_received));
-    if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr)
-        return ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
-    parsed_request_t request = std::get<parsed_request_t>(json_or_error);
-    auto res = std::from_chars(request.content_length.data(),
-                               request.content_length.data() + request.content_length.size(), bytes_expected);
-    bytes_expected += (request.body.data() - buffer_ptr);
-
-    if (res.ec == std::errc::invalid_argument || bytes_expected <= 0)
-#if !defined(UCALL_IS_WINDOWS)
-        if (ioctl(engine.connection, FIONREAD, &bytes_expected) == -1 || bytes_expected == 0)
-#endif
-            bytes_expected = bytes_received; // TODO what?
-
-    // Either process it in the statically allocated memory,
-    // or allocate dynamically, if the message is too long.
-    size_t bytes_left = bytes_expected - bytes_received;
-
-    if (bytes_expected <= ram_page_size_k) {
-        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
         scratch.dynamic_parser = &scratch.parser;
-        scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
-        engine.stats.bytes_received += bytes_received;
+        scratch.dynamic_packet = std::string_view(buf, data_left);
+        engine.stats.bytes_received += data_left;
         engine.stats.packets_received++;
-        forward_packet(engine);
+        //forward_packet(engine);
+        scratch.is_http = false;
+        int ret = forward_call_or_calls(engine);
+        if ( ret == -2 ) {
+            return data_left;
+        } 
+        
     } else {
-        sjd::parser parser;
-        if (parser.allocate(bytes_expected, bytes_expected / 2) != sj::SUCCESS)
-            return ucall_call_reply_error_out_of_memory(&engine);
 
-#if defined(UCALL_IS_WINDOWS)
-        buffer_ptr = (char*)_aligned_malloc(round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING), align_k);
-#else
-        buffer_ptr = (char*)std::aligned_alloc(align_k, round_up_to<align_k>(bytes_expected + sj::SIMDJSON_PADDING));
-#endif
-        if (!buffer_ptr)
-            return ucall_call_reply_error_out_of_memory(&engine);
 
-        memcpy(buffer_ptr, &engine.packet_buffer[0], bytes_received);
-
-        bytes_received += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
-        scratch.dynamic_parser = &parser;
-        scratch.dynamic_packet = std::string_view(buffer_ptr, bytes_received);
-        engine.stats.bytes_received += bytes_received;
-        engine.stats.packets_received++;
-        forward_packet(engine);
-#if defined(UCALL_IS_WINDOWS)
-        _aligned_free(buffer_ptr);
-#else
-        std::free(buffer_ptr);
-#endif
-        buffer_ptr = nullptr;
+        auto json_or_error = split_body_headers(std::string_view(buf, data_left));
+        if (auto error_ptr = std::get_if<default_error_t>(&json_or_error); error_ptr) {
+            ucall_call_reply_error(&engine, error_ptr->code, error_ptr->note.data(), error_ptr->note.size());
+            return 0;
+        }
+        size_t bytes_expected = 0;
+        parsed_request_t request = std::get<parsed_request_t>(json_or_error);
+        auto res = std::from_chars(request.content_length.data(),
+                                request.content_length.data() + request.content_length.size(), bytes_expected);
+        bytes_expected += (request.body.data() - buf);
+    
+        size_t bytes_left = bytes_expected - data_left;
+    
+        // TODO What if the json is short
+        if (bytes_expected <= ram_page_size_k) {
+            //data_left += recv_all(engine, buffer_ptr + bytes_received, bytes_left);
+            scratch.dynamic_parser = &scratch.parser;
+            scratch.dynamic_packet = std::string_view(buf, data_left);
+            engine.stats.bytes_received += data_left;
+            engine.stats.packets_received++;
+            forward_packet(engine);
+        }
     }
 
-    shutdown(connection_fd, SHUT_WR);
-    // If later on some UB is detected for client not recieving full data,
-    // then it may be required to put a `recv` with timeout between `shutdown` and `close`
-    close(connection_fd);
+    return 0;
 }
+
+void ucall_take_call(ucall_server_t server, uint16_t) { } // TODO?
 
 void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
@@ -318,17 +292,10 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
     config.max_lifetime_exchanges = 1u;
 
     int received_errno{};
-    int socket_options{1};
-    int socket_descriptor{-1};
+    int fd;
     engine_t* server_ptr = nullptr;
     array_gt<char> buffer;
     sjd::parser parser;
-
-    // By default, let's open TCP port for IPv4.
-    struct sockaddr_in address;
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(config.hostname);
-    address.sin_port = htons(config.port);
 
     // Try allocating all the necessary memory.
     server_ptr = (engine_t*)std::malloc(sizeof(engine_t));
@@ -336,23 +303,17 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
         goto cleanup;
     if (!buffer.reserve(initial_buffer_size_k))
         goto cleanup;
-    socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_descriptor < 0)
+
+    fd = net_init(config, on_data);
+    if ( fd <= 0 )
         goto cleanup;
-    // Optionally configure the socket, but don't always expect it to succeed.
-    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-                   reinterpret_cast<char const*>(&socket_options), sizeof(socket_options)) == -1)
-        errno;
-    if (bind(socket_descriptor, (struct sockaddr*)&address, sizeof(address)) < 0)
-        goto cleanup;
-    if (listen(socket_descriptor, config.queue_depth) < 0)
-        goto cleanup;
-    if (parser.allocate(ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
+
+    if (parser.allocate(4*ram_page_size_k, ram_page_size_k / 2) != sj::SUCCESS)
         goto cleanup;
 
     // Initialize all the members.
     new (server_ptr) engine_t();
-    server_ptr->socket = descriptor_t{socket_descriptor};
+    server_ptr->socket = fd;
     server_ptr->scratch.parser = std::move(parser);
     server_ptr->buffer = std::move(buffer);
     server_ptr->logs_file_descriptor = config.logs_file_descriptor;
@@ -363,8 +324,6 @@ void ucall_init(ucall_config_t* config_inout, ucall_server_t* server_out) {
 
 cleanup:
     received_errno = errno;
-    if (socket_descriptor >= 0)
-        close(socket_descriptor);
     std::free(server_ptr);
     *server_out = nullptr;
 }
@@ -377,14 +336,17 @@ void ucall_add_procedure(ucall_server_t server, ucall_str_t name, ucall_callback
 }
 
 void ucall_take_calls(ucall_server_t server, uint16_t) {
-    while (true)
-        ucall_take_call(server, 0);
+    engine_t& engine = *reinterpret_cast<engine_t*>(server);
+    net_run(&engine);
+    //while (true)
+        //ucall_take_call(server, 0);
 }
 
 void ucall_free(ucall_server_t server) {
     if (!server)
         return;
 
+    net_shutdown(server);
     engine_t* engine = reinterpret_cast<engine_t*>(server);
     close(engine->socket);
     delete engine;

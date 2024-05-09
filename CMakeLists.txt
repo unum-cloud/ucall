@@ -33,6 +33,7 @@ if(MSVC)
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
@@ -107,7 +108,8 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
     picohttpparser
-    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
+    #GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
+    GIT_REPOSITORY https://github.com/MarkReedZ/picohttpparser.git
     GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(picohttpparser)

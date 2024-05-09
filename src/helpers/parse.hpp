@@ -139,7 +139,6 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
 
     int res = phr_parse_request(body.data(), body.size(), &method, &method_len, &path, &path_len, &minor_version,
                                 headers, &count_headers, 0);
-
     if (res == -2)
         return default_error_t{-2, "Partial HTTP request"};
 
@@ -164,7 +163,7 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
         req.body = body.substr(pos + 4);
     } else
         req.body = body;
-
+    
     return req;
 }
 
