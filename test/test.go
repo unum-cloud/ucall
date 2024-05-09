@@ -54,16 +54,16 @@ func test_rpc(tcpAddr *net.TCPAddr ) {
         println("write error: %v\n", err)
         return
     }
-    _, err = conn.Read(reply)
+    n, err := conn.Read(reply)
     if err != nil && !errors.Is(err, io.EOF) {
         println("read error: %v\n", err)
         return
     }
     rep := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":true}`)
-    if strings.Compare( rep, string(reply[:]) ) == 0 {
+    if rep != string(reply[:n]) {
         println("unexpected reply")
         println("    exp: ", rep)
-        println("    act: ", string(reply[:]))
+        println("    act: ", string(reply[:n]))
         return
     }
 
@@ -79,23 +79,24 @@ func test_html(tcpAddr *net.TCPAddr ) {
     reply := make([]byte, 4096)
 
     jrpc := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":46,"session_id":0},"id":0}`)
-    req := fmt.Sprintf(`POST / HTTP/1.1\r\nHost: localhost:8558\r\nUser-Agent: python-requests/2.31.0\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s`, len(jrpc), jrpc)
+    req := fmt.Sprintf("POST / HTTP/1.1\r\nHost: localhost:8558\r\nUser-Agent: python-requests/2.31.0\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(jrpc), jrpc)
 
     _, err = conn.Write([]byte(req))
     if err != nil {
         println("write error: %v\n", err)
         return
     }
-    _, err = conn.Read(reply)
+    n, err := conn.Read(reply)
     if err != nil && !errors.Is(err, io.EOF) {
         println("read error: %v\n", err)
         return
     }
-    rep := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":true}`)
-    if rep != string(reply[:]) {
+    rep := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length: 38       \r\nContent-Type: application/json\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":true}")
+
+    if rep != string(reply[:n]) {
         println("unexpected reply")
         println("    exp: ", rep)
-        println("    act: ", string(reply[:]))
+        println("    act: ", string(reply[:n]))
         return
     }
 
@@ -116,16 +117,16 @@ func test_big(tcpAddr *net.TCPAddr ) {
         println("write error: %v\n", err)
         return
     }
-    _, err = conn.Read(reply)
+    n, err := conn.Read(reply)
     if err != nil && !errors.Is(err, io.EOF) {
         println("read error: %v\n", err)
         return
     }
-    rep := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":true}`)
-    if strings.Compare( rep, string(reply[:]) ) == 0 {
+    rep := `{"jsonrpc":"2.0","id":0,"result":true}`
+    if strings.Compare( rep, string(reply[:n]) ) != 0 {
         println("unexpected reply")
         println("    exp: ", rep)
-        println("    act: ", string(reply[:]))
+        println("    act: ", string(reply[:n]))
         return
     }
 
@@ -153,16 +154,16 @@ func test_partial(tcpAddr *net.TCPAddr ) {
         println("write second part error: %v\n", err)
         return
     }
-    _, err = conn.Read(reply)
+    n, err := conn.Read(reply)
     if err != nil && !errors.Is(err, io.EOF) {
         println("read error: %v\n", err)
         return
     }
     rep := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":true}`)
-    if strings.Compare( rep, string(reply[:]) ) == 0 {
+    if strings.Compare( rep, string(reply[:n]) ) != 0 {
         println("unexpected reply")
         println("    exp: ", rep)
-        println("    act: ", string(reply[:]))
+        println("    act: ", string(reply[:n]))
         return
     }
 
