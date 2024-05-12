@@ -107,7 +107,8 @@ include_directories(${cxxopts_SOURCE_DIR}/include)
 # export CPATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/
 FetchContent_Declare(
     picohttpparser
-    GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
+    #GIT_REPOSITORY https://github.com/unum-cloud/picohttpparser.git
+    GIT_REPOSITORY https://github.com/MarkReedZ/picohttpparser.git
     GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(picohttpparser)
@@ -122,21 +123,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(tb64)
 include_directories(${tb64_SOURCE_DIR})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-FetchContent_Declare(
-    mbedtls
-    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls/
-    GIT_TAG v3.4.0
-    CMAKE_ARGS
-    -DENABLE_PROGRAMS=OFF
-    -DENABLE_TESTING=OFF
-    -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
-    -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-)
-
-FetchContent_MakeAvailable(mbedtls)
-include_directories(${mbedtls_SOURCE_DIR}/include)
-set(mbedtls_LIBS mbedtls mbedcrypto mbedx509)
 
 # LibUring
 if(LINUX)
@@ -168,7 +154,7 @@ find_package(Threads REQUIRED)
 include_directories(include/ src/)
 
 add_library(ucall_server_posix src/engine_posix.cpp)
-target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads ${mbedtls_LIBS})
+target_link_libraries(ucall_server_posix simdjson::simdjson Threads::Threads )
 set(PYTHON_BACKEND ucall_server_posix)
 
 add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
