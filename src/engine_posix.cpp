@@ -53,7 +53,7 @@ using time_point_t = std::chrono::time_point<time_clock_t>;
 static constexpr std::size_t initial_buffer_size_k = ram_page_size_k * 4;
 
 struct engine_t {
-    ~engine_t() noexcept { }
+    ~engine_t() noexcept {}
 
     descriptor_t socket{};
 
