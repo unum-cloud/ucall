@@ -35,7 +35,7 @@
  * - `IORING_SETUP_COOP_TASKRUN` > 5.19.
  * - `IORING_SETUP_SINGLE_ISSUER` > 6.0.
  *
- * @author Ashot Vardanian
+ * @author Ash Vardanian
  *
  * @see Notable links:
  * https://man7.org/linux/man-pages/dir_by_project.html#liburing

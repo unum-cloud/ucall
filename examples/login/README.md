@@ -31,9 +31,10 @@ You would either run `ucall_example_sum_posix` or `ucall_example_sum_uring`.
 
 ```sh
 sudo apt-get install cmake g++ build-essential
-cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
-./build_release/build/bin/ucall_example_sum_posix &
-./build_release/build/bin/ucall_example_sum_uring &
+cmake -DCMAKE_BUILD_TYPE=Release -B build_release
+cmake --build build_release --config Release
+build_release/build/bin/ucall_example_sum_posix &
+build_release/build/bin/ucall_example_sum_uring &
 python examples/bench.py "jsonrpc_client.CaseTCP" --progress
 python examples/bench.py "jsonrpc_client.CaseHTTP" --progress
 python examples/bench.py "jsonrpc_client.CaseHTTPBatches" --progress
@@ -43,7 +44,7 @@ kill %%
 Want to customize server settings?
 
 ```sh
-./build_release/build/bin/ucall_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
+build_release/build/bin/ucall_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
 ```
 
 Want to dispatch more clients and aggregate more accurate statistics?
