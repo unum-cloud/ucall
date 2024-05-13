@@ -281,14 +281,16 @@ endif()
 
 if(UCALL_BUILD_EXAMPLES)
   add_executable(ucall_example_server_posix examples/ucall_server.cpp)
-  target_link_libraries(ucall_example_server_posix ucall_server_posix cxxopts)
+  target_link_libraries(ucall_example_server_posix ucall_server_posix cxxopts
+                        fmt::fmt)
   target_compile_options(ucall_example_server_posix
                          PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 endif()
 
 if(UCALL_BUILD_EXAMPLES AND UCALL_BUILD_LIB_URING)
   add_executable(ucall_example_server_uring examples/ucall_server.cpp)
-  target_link_libraries(ucall_example_server_uring ucall_server_uring cxxopts)
+  target_link_libraries(ucall_example_server_uring ucall_server_uring cxxopts
+                        fmt::fmt)
   target_compile_options(ucall_example_server_uring
                          PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 endif()
