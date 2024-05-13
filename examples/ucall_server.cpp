@@ -18,6 +18,7 @@
 
 #include <cxxopts.hpp> // Parsing CLI arguments
 
+#include <fmt/ranges.h>
 #include <ucall/ucall.h>
 
 /**
@@ -103,7 +104,30 @@ static void validate_user_identity(ucall_call_t call, ucall_callback_tag_t) {
     }
 
     char result[1024];
-    ucall_call_reply_content(call, result, strlen(result));
+    std::vector<double> suggested_session_ids;
+    // TODO: populate suggested_session_ids
+    auto format_result = fmt::format_to_n(
+        result,
+        sizeof(result),
+        "{{\n"
+        "  \"session_ids\": [{0}],\n"
+        "  \"user\": {{\n"
+        "    \"name\": \"{1}\",\n"
+        "    \"age\": {2},\n"
+        "    \"user_id\": {3},\n"
+        "    \"access_token\": \"{4}\",\n"
+        "    \"repeated_sesson_ids\": [{0}]\n"
+        "  }}\n"
+        "}}",
+        fmt::join(suggested_session_ids, ", "),
+        fmt::string_view(name_ptr, name_len),
+        age,
+        user_id,
+        fmt::string_view(token_ptr, token_len));
+    if (format_result.size > sizeof(result)) {
+      return ucall_call_reply_error_out_of_memory(call);
+    }
+    ucall_call_reply_content(call, result, format_result.size);
 }
 
 struct key_value_pair {
