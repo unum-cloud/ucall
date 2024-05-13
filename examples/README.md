@@ -20,12 +20,43 @@ All of them implement identical endpoints:
 
 ## Reproducing Benchmarks
 
+```sh
+cd examples
+```
+
+### Debugging FastAPI
+
+To start the server:
+
+```sh
+uvicorn fastapi_server:app --port 8000 --reload
+```
+
+To run the client tests using HTTPX:
+
+```sh
+pytest fastapi_client.py -s -x
+pytest fastapi_client.py -s -x -k set_get # for a single test
+```
+
+To run HTTPX stress tests and benchmarks:
+
+```sh
+
+```
+
 ### FastAPI
 
 ```sh
 pip install uvicorn fastapi websocket-client requests tqdm fire
-cd examples && uvicorn fastapi_server:app --log-level critical &
-cd ..
+
+# To start the server in the background
+uvicorn fastapi_server:app --log-level critical --port 8000 &
+
+# To check if it works as expected
+pytest fastapi_client.py
+
+
 python examples/bench.py "fastapi_client.ClientREST" --progress
 python examples/bench.py "fastapi_client.ClientWebSocket" --progress
 kill %%

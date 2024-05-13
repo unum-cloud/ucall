@@ -1,53 +1,79 @@
+#!/usr/bin/env python
 import io
 import base64
 import random
 from typing import List
+import logging
 
 import numpy as np
 from PIL import Image
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
+from pydantic import BaseModel
 
 app = FastAPI()
 
 
+class EchoItem(BaseModel):
+    data: str
+
+
 @app.post("/echo")
-async def echo(data: bytes) -> bytes:
-    return data
+async def echo(item: EchoItem = Body(...)):
+    return {"data": item.data}
 
 
-@app.get("/validate_session")
-async def validate_session(user_id: int, session_id: int) -> bool:
-    return (user_id ^ session_id) % 23 == 0
+class ValidateSessionItem(BaseModel):
+    user_id: int
+    session_id: int
+
+
+@app.post("/validate_session")
+async def validate_session(item: ValidateSessionItem = Body(...)):
+    return (item.user_id ^ item.session_id) % 23 == 0
+
+
+class CreateUserItem(BaseModel):
+    name: str
+    age: int
+    bio: str
+    avatar: str  # in reality - a binary string
 
 
 @app.post("/create_user")
-async def create_user(age: int, name: str, avatar: str, bio: str):
-    avatar_bytes = base64.b64decode(avatar)
-    return (
-        f"Created {name} aged {age} with bio {bio} and avatar_size {len(avatar_bytes)}"
-    )
+async def create_user(item: CreateUserItem = Body(...)) -> str:
+    avatar_bytes = base64.b64decode(item.avatar)
+    return f"Created {item.name} aged {item.age} with bio {item.bio} and avatar_size {len(avatar_bytes)}"
+
+
+class ValidateUserIdentityItem(BaseModel):
+    user_id: int
+    name: str
+    age: float
+    access_token: str
 
 
 @app.post("/validate_user_identity")
-async def validate_user_identity(
-    user_id: int,
-    name: str,
-    age: float,
-    access_token: str,
-):
-    if age < 18:
-        raise HTTPException(status_code=400, detail=f"{name} must be older than 18")
-    access_token_bytes = base64.b64decode(access_token)
-    if not access_token_bytes.decode().startswith(name):
-        raise HTTPException(status_code=400, detail=f"Invalid access token for {name}")
+async def validate_user_identity(item: ValidateUserIdentityItem = Body(...)):
+    if item.age < 18:
+        raise HTTPException(
+            status_code=400, detail=f"{item.name} must be older than 18"
+        )
 
-    suggested_session_ids = [random.random() * age * user_id for _ in range(round(age))]
+    access_token_bytes = base64.b64decode(item.access_token)
+    if not access_token_bytes.decode().startswith(item.name):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid access token for {item.name}"
+        )
+
+    suggested_session_ids = [
+        random.random() * item.age * item.user_id for _ in range(round(item.age))
+    ]
     return {
         "session_ids": suggested_session_ids,
         "user": {
-            "name": name,
-            "age": age,
-            "user_id": user_id,
+            "name": item.name,
+            "age": item.age,
+            "user_id": item.user_id,
             "access_token": access_token_bytes,
             "repeated_sesson_ids": suggested_session_ids,
         },
@@ -57,53 +83,60 @@ async def validate_user_identity(
 redis = {}
 
 
-@app.put("/set")
-async def set(key: str, value: str) -> bool:
-    redis[key] = value
+class SetItem(BaseModel):
+    key: str
+    value: str
+
+
+@app.post("/set")
+async def set(item: SetItem = Body(...)) -> bool:
+    redis[item.key] = item.value
     return True
 
 
-@app.get("/get")
-async def get(key: str) -> str:
-    return redis.get(key, None)
+class GetItem(BaseModel):
+    key: str
+
+
+@app.post("/get")
+async def get(item: GetItem = Body(...)) -> str:
+    return redis.get(item.key, None)
+
+
+class ResizeItem(BaseModel):
+    image: bytes
+    width: int
+    height: int
 
 
 @app.post("/resize")
-async def resize(image: str, width: int, height: int) -> str:
-    image_bytes = base64.b64decode(image)
+async def resize(item: ResizeItem = Body(...)) -> bytes:
+    image_bytes = base64.b64decode(item.image)
     pil_image = Image.open(io.BytesIO(image_bytes))
-    resized_image = pil_image.resize((width, height))
+    resized_image = pil_image.resize((item.width, item.height))
     buf = io.BytesIO()
     resized_image.save(buf, format="PNG")
     image_base64 = base64.b64encode(buf.getvalue()).decode()
     return image_base64
 
 
-@app.post("/resize_batch")
-async def resize_batch(images: List[str], width: int, height: int) -> List[str]:
-    resized_images = []
-    for image_data in images:
-        image_bytes = base64.b64decode(image_data)
-        pil_image = Image.open(io.BytesIO(image_bytes))
-        resized_image = pil_image.resize((width, height))
-        buf = io.BytesIO()
-        resized_image.save(buf, format="PNG")
-        resized_images.append(base64.b64encode(buf.getvalue()).decode())
-    return resized_images
+class DotProductItem(BaseModel):
+    a: bytes
+    b: bytes
 
 
 @app.post("/dot_product")
-async def dot_product(a: str, b: str) -> float:
-    a_array = np.frombuffer(base64.b64decode(a), dtype=np.float32)
-    b_array = np.frombuffer(base64.b64decode(b), dtype=np.float32)
+async def dot_product(item: DotProductItem = Body(...)) -> float:
+    a_array = np.frombuffer(base64.b64decode(item.a), dtype=np.float32)
+    b_array = np.frombuffer(base64.b64decode(item.b), dtype=np.float32)
     return float(np.dot(a_array, b_array))
 
 
-@app.post("/dot_product_batch")
-async def dot_product_batch(a: List[str], b: List[str]) -> List[float]:
-    results = []
-    for a_data, b_data in zip(a, b):
-        a_array = np.frombuffer(base64.b64decode(a_data), dtype=np.float32)
-        b_array = np.frombuffer(base64.b64decode(b_data), dtype=np.float32)
-        results.append(float(np.dot(a_array, b_array)))
-    return results
+# Setup basic logging
+logging.basicConfig(level=logging.INFO)
+
+
+@app.get("/")
+async def root():
+    logging.info("Handling request to the root endpoint")
+    return {"message": "Hello World"}
