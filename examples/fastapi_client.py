@@ -10,25 +10,39 @@ import numpy as np
 BASE_URL = "http://localhost:8000"
 
 
+def echo(client, data: str) -> bool:
+    response = client.post("/echo", json={"data": data})
+    assert response.status_code == 200
+    return response.json() == {"data": data}
+
+
 def test_echo():
     with httpx.Client(base_url=BASE_URL) as client:
         data = "Hello, World!"
-        payload = {"data": data}
-        response = client.post("/echo", json=payload)
-        assert response.status_code == 200
-        assert response.json() == payload
+        assert echo(client, data)
+
+
+def validate_session(client, user_id: int, session_id: int) -> bool:
+    response = client.post(
+        "/validate_session",
+        json={"user_id": user_id, "session_id": session_id},
+    )
+    assert response.status_code == 200
+    return response.json() == True
 
 
 def test_validate_session():
     with httpx.Client(base_url=BASE_URL) as client:
         user_id = 111
-        session_id = 111  # This pair should return True as (111 ^ 111) % 23 == 0
-        response = client.post(
-            "/validate_session",
-            json={"user_id": user_id, "session_id": session_id},
-        )
-        assert response.status_code == 200
-        assert response.json() == True
+        session_id = 111
+        assert validate_session(client, user_id, session_id)
+
+
+def create_user(client, name: str, age: int, bio: str, avatar: str) -> bool:
+    data = {"name": name, "age": age, "bio": bio, "avatar": avatar}
+    response = client.post("/create_user", json=data)
+    assert response.status_code == 200
+    return "avatar_size" in response.json()
 
 
 def test_create_user():
@@ -37,10 +51,16 @@ def test_create_user():
         age = 25
         bio = "Lorem ipsum"
         avatar = create_avatar_base64_string()
-        data = {"name": name, "age": age, "bio": bio, "avatar": avatar}
-        response = client.post("/create_user", json=data)
-        assert response.status_code == 200
-        assert "avatar_size" in response.json()
+        assert create_user(client, name, age, bio, avatar)
+
+
+def validate_user_identity(
+    client, name: str, age: float, user_id: int, access_token: str
+) -> bool:
+    data = {"name": name, "age": age, "user_id": user_id, "access_token": access_token}
+    response = client.post("/validate_user_identity", json=data)
+    assert response.status_code == 200
+    return True
 
 
 def test_validate_user_identity():
@@ -49,62 +69,61 @@ def test_validate_user_identity():
         age = 25.0
         user_id = 123
         access_token = base64.b64encode(f"{name} Token".encode()).decode()
-        data = {
-            "name": name,
-            "age": age,
-            "user_id": user_id,
-            "access_token": access_token,
-        }
-        response = client.post("/validate_user_identity", json=data)
-        assert response.status_code == 200
+        assert validate_user_identity(client, name, age, user_id, access_token)
+
+
+def set_get(client, key: str, value: str) -> bool:
+    set_response = client.post("/set", json={"key": key, "value": value})
+    assert set_response.status_code == 200
+    assert set_response.json() == True
+
+    get_response = client.post("/get", json={"key": key})
+    assert get_response.status_code == 200
+    return get_response.json() == value
 
 
 def test_set_get():
     with httpx.Client(base_url=BASE_URL) as client:
         key = "testkey"
         value = "testvalue"
-        set_response = client.post("/set", json={"key": key, "value": value})
-        assert set_response.status_code == 200
-        assert set_response.json() == True
+        assert set_get(client, key, value)
 
-        get_response = client.post(f"/get", json={"key": key})
-        assert get_response.status_code == 200
-        assert get_response.json() == value
+
+def resize(client, image: str, width: int, height: int) -> bool:
+    response = client.post(
+        "/resize", json={"image": image, "width": width, "height": height}
+    )
+    assert response.status_code == 200
+
+    image_bytes = base64.b64decode(response.json())
+    pil_image = Image.open(io.BytesIO(image_bytes))
+    return pil_image.size == (width, height)
 
 
 def test_resize():
     with httpx.Client(base_url=BASE_URL) as client:
         width, height = 100, 100
         image = create_avatar_base64_string()
-        response = client.post(
-            "/resize",
-            json={
-                "image": image,
-                "width": width,
-                "height": height,
-            },
-        )
-        assert response.status_code == 200
+        assert resize(client, image, width, height)
 
-        image_bytes = base64.b64decode(response.json())
-        pil_image = Image.open(io.BytesIO(image_bytes))
-        assert pil_image.size == (width, height)
+
+def dot_product(client, a: np.ndarray, b: np.ndarray) -> bool:
+    a_base64 = base64.b64encode(a.tobytes()).decode()
+    b_base64 = base64.b64encode(b.tobytes()).decode()
+    response = client.post("/dot_product", json={"a": a_base64, "b": b_base64})
+    assert response.status_code == 200
+    expected_dot_product = float(np.dot(a, b))
+    return abs(response.json() - expected_dot_product) < 1e-6
 
 
 def test_dot_product():
     with httpx.Client(base_url=BASE_URL) as client:
         a = np.random.rand(10).astype(np.float32)
         b = np.random.rand(10).astype(np.float32)
-        a_base64 = base64.b64encode(a.tobytes()).decode()
-        b_base64 = base64.b64encode(b.tobytes()).decode()
-        response = client.post("/dot_product", json={"a": a_base64, "b": b_base64})
-        assert response.status_code == 200
-        expected_dot_product = float(np.dot(a, b))
-        assert abs(response.json() - expected_dot_product) < 1e-6
+        assert dot_product(client, a, b)
 
 
 def create_avatar_base64_string() -> str:
-    # Create a simple image and encode it to base64
     image = Image.new("RGB", (10, 10), color="red")
     buf = io.BytesIO()
     image.save(buf, format="PNG")
