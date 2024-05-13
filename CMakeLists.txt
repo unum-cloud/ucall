@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
 # Detect software capabilities before setting options
-if(LINUX)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   execute_process(
     COMMAND uname -r
     OUTPUT_VARIABLE UNAME_RESULT
@@ -29,19 +29,20 @@ if(LINUX)
 
   # Check if the Linux kernel version is 5.19 or newer
   if(${LINUX_VERSION} VERSION_GREATER_EQUAL "5.19")
-    set(SUPPORTS_IO_URING TRUE)
+    set(SUPPORTS_IO_URING ON)
   else()
-    set(SUPPORTS_IO_URING FALSE)
+    set(SUPPORTS_IO_URING OFF)
   endif()
 endif()
 
-# Then, set the default values for options based on whether io_uring is
-# supported
+# Set the default values for options based on whether io_uring is supported
 option(UCALL_BUILD_LIB_POSIX "Builds the C library for the `posix` backend" ON)
-option(UCALL_BUILD_LIB_URING "Builds the C library for the `uring` backend"
-       ${SUPPORTS_IO_URING})
 option(UCALL_BUILD_PYTHON_POSIX
        "Builds CPython bindings for the `posix` backend" ON)
+
+# Options depending on SUPPORTS_IO_URING
+option(UCALL_BUILD_LIB_URING "Builds the C library for the `uring` backend"
+       ${SUPPORTS_IO_URING})
 option(UCALL_BUILD_PYTHON_URING
        "Builds CPython bindings for the `uring` backend" ${SUPPORTS_IO_URING})
 
@@ -53,15 +54,33 @@ option(UCALL_BUILD_EXAMPLES
 option(UCALL_BUILD_TESTS "Builds unit tests for the C library" OFF)
 option(UCALL_BUILD_ALL "Builds all supported target" OFF)
 
+# Enforce options based on SUPPORTS_IO_URING after its value is known
+if(SUPPORTS_IO_URING)
+  set(UCALL_BUILD_LIB_URING
+      ON
+      CACHE BOOL "Force enable UCALL_BUILD_LIB_URING" FORCE)
+  set(UCALL_BUILD_PYTHON_URING
+      ON
+      CACHE BOOL "Force enable UCALL_BUILD_PYTHON_URING" FORCE)
+endif()
+
 if(UCALL_BUILD_PYTHON_URING)
   set(UCALL_BUILD_LIB_URING ON)
 endif()
 
 if(UCALL_BUILD_ALL)
-  set(UCALL_BUILD_BENCHMARKS OFF)
+  set(UCALL_BUILD_BENCHMARKS ON)
   set(UCALL_BUILD_EXAMPLES ON)
   set(UCALL_BUILD_TESTS ON)
 endif()
+
+message(STATUS "Supports io_uring: ${SUPPORTS_IO_URING}")
+message(STATUS "Building ucall_server_posix: ${UCALL_BUILD_LIB_POSIX}")
+message(STATUS "Building ucall_server_uring: ${UCALL_BUILD_LIB_URING}")
+message(STATUS "Building py_ucall_posix: ${UCALL_BUILD_PYTHON_POSIX}")
+message(STATUS "Building py_ucall_uring: ${UCALL_BUILD_PYTHON_URING}")
+message(STATUS "Building benchmarks: ${UCALL_BUILD_BENCHMARKS}")
+message(STATUS "Building examples: ${UCALL_BUILD_EXAMPLES}")
 
 # Make Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -226,10 +245,6 @@ if(UCALL_BUILD_LIB_URING)
   set(PYTHON_BACKEND ucall_server_uring)
   target_link_libraries(ucall_server_uring simdjson::simdjson Threads::Threads
                         ${URING_LIBS})
-  add_executable(ucall_example_login_uring examples/login/ucall_server.cpp)
-  target_link_libraries(ucall_example_login_uring ucall_server_uring cxxopts)
-  target_compile_options(ucall_example_login_uring
-                         PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 endif()
 
 # Python bindings
@@ -265,7 +280,15 @@ if(UCALL_BUILD_PYTHON_URING)
 endif()
 
 if(UCALL_BUILD_EXAMPLES)
-  add_executable(ucall_example_server examples/ucall_server.cpp)
-  target_link_libraries(ucall_example_server ucall_server_posix cxxopts)
-  target_compile_options(ucall_example_server PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+  add_executable(ucall_example_server_posix examples/ucall_server.cpp)
+  target_link_libraries(ucall_example_server_posix ucall_server_posix cxxopts)
+  target_compile_options(ucall_example_server_posix
+                         PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
+endif()
+
+if(UCALL_BUILD_EXAMPLES AND UCALL_BUILD_LIB_URING)
+  add_executable(ucall_example_server_uring examples/ucall_server.cpp)
+  target_link_libraries(ucall_example_server_uring ucall_server_uring cxxopts)
+  target_compile_options(ucall_example_server_uring
+                         PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 endif()
