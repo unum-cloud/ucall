@@ -947,7 +947,8 @@ void automata_t::receive_next() noexcept {
 void automata_t::operator()() noexcept {
 
     if (is_corrupted())
-        return close_gracefully();
+        if ( connection.stage != stage_t::waiting_to_close_k )
+            return close_gracefully();
 
     switch (connection.stage) {
 
