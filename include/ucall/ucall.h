@@ -78,6 +78,7 @@ typedef struct ucall_config_t {
     /// > STDOUT_FILENO: console output.
     /// > STDERR_FILENO: errors.
     int32_t logs_file_descriptor;
+
     /// @brief Can be:
     /// > "human" will print human-readable unit-normalized lines.
     /// > "json" will output newline-delimited JSONs documents.
@@ -88,14 +89,6 @@ typedef struct ucall_config_t {
     uint32_t max_lifetime_micro_seconds;
     uint32_t max_lifetime_exchanges;
 
-    /// @brief Enable SSL.
-    bool use_ssl;
-    /// @brief Private Key required for SSL.
-    char const* ssl_private_key_path;
-    /// @brief At least one certificate is required for SSL.
-    char const** ssl_certificates_paths;
-    /// @brief Certificates count.
-    size_t ssl_certificates_count;
 } ucall_config_t;
 
 /**
@@ -276,7 +269,11 @@ void ucall_batch_add_procedure(       //
     ucall_batch_callback_t callback,  //
     ucall_callback_tag_t callback_tag);
 
+/**
+ *  @brief  Introspects the structure of the batch request.
+ */
 size_t ucall_batch_size(ucall_batch_call_t batch);
+
 void ucall_batch_unpack(ucall_batch_call_t batch, ucall_call_t* call);
 
 #ifdef __cplusplus

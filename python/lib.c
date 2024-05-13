@@ -402,7 +402,6 @@ static PyMappingMethods server_mapping_methods = {
 
 static void server_dealloc(py_server_t* self) {
     free(self->wrappers);
-    free(self->config.ssl_certificates_paths);
     ucall_free(self->server);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -429,19 +428,11 @@ static int server_init(py_server_t* self, PyObject* args, PyObject* keywords) {
 
     PyObject* certs_path = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnpsO", (char**)keywords_list, //
+    if (!PyArg_ParseTupleAndKeywords(args, keywords, "|snnnnnp", (char**)keywords_list, //
                                      &self->config.hostname, &self->config.port, &self->config.queue_depth,
                                      &self->config.max_callbacks, &self->config.max_threads, &self->count_threads,
-                                     &self->quiet, &self->config.ssl_private_key_path, &certs_path))
+                                     &self->quiet))
         return -1;
-
-    if (self->config.ssl_private_key_path && certs_path && PySequence_Check(certs_path)) {
-        self->config.use_ssl = true;
-        self->config.ssl_certificates_count = PySequence_Length(certs_path);
-        self->config.ssl_certificates_paths = (char**)malloc(sizeof(char*) * self->config.ssl_certificates_count);
-        for (size_t i = 0; i < self->config.ssl_certificates_count; i++)
-            self->config.ssl_certificates_paths[i] = PyUnicode_AsUTF8AndSize(PySequence_GetItem(certs_path, i), NULL);
-    }
 
     self->wrapper_capacity = 16;
     self->wrappers = (py_wrapper_t*)malloc(self->wrapper_capacity * sizeof(py_wrapper_t));
