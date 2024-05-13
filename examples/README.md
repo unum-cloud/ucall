@@ -1,4 +1,21 @@
-# UCall Examples and Benchmarks
+# UCall Example & Benchmark
+
+This folder implements a group of different servers with identical functionality, but using different RPC frameworks, including:
+
+- FastAPI server in Python, compatible with WSGI: `fastapi_server.py`
+- UCall server in Python: `ucall_server.py`
+- UCall server in C++: `ucall_server.cpp`
+- gRPC server in Python: `grpc_server.py`
+
+All of them implement identical endpoints:
+
+- `echo` - return back the payload it received for throughput benchmarks
+- `validate_session` - lightweight operation on two integers, returning a boolean, to benchmark the request latency on tiny tasks
+- `create_user` - more complex operation on flat dictionary input with strings and integers
+- `validate_user_identity` - that validates arguments, raises exceptions, and returns complex nested objects
+- `set` & `get` - key-value store operations, similar to Redis
+- `resize` - batch-capable image processing operation for Base64-encoded images
+- `dot_product` - batch-capable matrix vector-vector multiplication operation
 
 ## Echo and Summation
 

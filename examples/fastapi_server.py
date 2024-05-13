@@ -30,7 +30,10 @@ async def create_user(age: int, name: str, avatar: str, bio: str):
 
 @app.post("/validate_user_identity")
 async def validate_user_identity(
-    user_id: int, name: str, age: float, access_token: str
+    user_id: int,
+    name: str,
+    age: float,
+    access_token: str,
 ):
     if age < 18:
         raise HTTPException(status_code=400, detail=f"{name} must be older than 18")
