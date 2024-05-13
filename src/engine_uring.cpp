@@ -69,7 +69,6 @@
 #include "helpers/reply.hpp"
 #include "helpers/shared.hpp"
 
-
 #pragma region Cpp Declaration
 
 namespace sj = simdjson;
@@ -831,7 +830,6 @@ void engine_t::submit_stats_heartbeat() noexcept {
 
     uring_sqe = io_uring_get_sqe(&uring);
     io_uring_prep_timeout(uring_sqe, &connection.next_wakeup, 0, 0);
-    //io_uring_sqe_set_data(uring_sqe, &connection);
     io_uring_sqe_set_data(uring_sqe, (void*)((uring_stat_tag_k<<60) | uint64_t(&connection)));
     uring_result = io_uring_submit(&uring);
     submission_mutex.unlock();
@@ -1000,7 +998,6 @@ void automata_t::operator()() noexcept {
         if (completed_result == 0) {
             connection.empty_transmits++;
             return should_release() ? close_gracefully() : receive_next();
-            //return close_gracefully();
         }
 
         // Absorb the arrived data.
