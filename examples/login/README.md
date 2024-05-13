@@ -1,7 +1,6 @@
-# Summation Examples and Benchmarks
+# Login Examples and Benchmarks
 
-The simplest possible endpoint after `hello-world` and `echo`, is probably `sum`.
-We would just accept two numbers and return their aggregate.
+This is an example of a simple login client and server.
 Packets are tiny, so it is great for benchmarking the request latency.
 
 ## Reproducing Benchmarks
@@ -10,7 +9,7 @@ Packets are tiny, so it is great for benchmarking the request latency.
 
 ```sh
 pip install uvicorn fastapi websocket-client requests tqdm fire
-cd examples && uvicorn sum.fastapi_server:app --log-level critical &
+cd examples && uvicorn login.fastapi_server:app --log-level critical &
 cd ..
 python examples/bench.py "fastapi_client.ClientREST" --progress
 python examples/bench.py "fastapi_client.ClientWebSocket" --progress
@@ -27,13 +26,13 @@ python examples/bench.py "fastapi_client.ClientWebSocket" --threads 8
 ### UCall
 
 UCall can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.
-You would either run `ucall_example_sum_posix` or `ucall_example_sum_uring`.
+You would either run `ucall_example_login_posix` or `ucall_example_login_uring`.
 
 ```sh
 sudo apt-get install cmake g++ build-essential
 cmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release
-./build_release/build/bin/ucall_example_sum_posix &
-./build_release/build/bin/ucall_example_sum_uring &
+./build_release/build/bin/ucall_example_login_posix &
+./build_release/build/bin/ucall_example_login_uring &
 python examples/bench.py "jsonrpc_client.CaseTCP" --progress
 python examples/bench.py "jsonrpc_client.CaseHTTP" --progress
 python examples/bench.py "jsonrpc_client.CaseHTTPBatches" --progress
@@ -43,7 +42,7 @@ kill %%
 Want to customize server settings?
 
 ```sh
-./build_release/build/bin/ucall_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
+./build_release/build/bin/ucall_example_login_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false
 ```
 
 Want to dispatch more clients and aggregate more accurate statistics?

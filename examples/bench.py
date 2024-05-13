@@ -131,7 +131,10 @@ def bench_parallel(
 
 def main(class_name: str, *, threads: int = 1, requests: int = 100_000, seconds: float = 10, progress: bool = False):
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
     sys.path.append(f'{script_dir}/login')
+    sys.path.append(os.path.join(project_dir, 'src'))
+
     class_ = locate(class_name)
     stats = bench_parallel(
         callable=class_(),
