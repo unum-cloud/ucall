@@ -8,7 +8,7 @@ project(
   HOMEPAGE_URL "https://github.com/unum-cloud/ucall")
 
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
@@ -265,17 +265,7 @@ if(UCALL_BUILD_PYTHON_URING)
 endif()
 
 if(UCALL_BUILD_EXAMPLES)
-  add_executable(ucall_example_login_posix examples/login/ucall_server.cpp)
-  target_link_libraries(ucall_example_login_posix ucall_server_posix cxxopts)
-  target_compile_options(ucall_example_login_posix
-                         PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
-
-  add_executable(ucall_example_redis examples/redis/ucall_server.cpp)
-  target_link_libraries(ucall_example_redis ucall_server_posix)
-  target_compile_options(ucall_example_redis PUBLIC -fexceptions)
-
-  find_package(Torch)
-  add_executable(ucall_example_pytorcs examples/pytorch/ucall_server.cpp)
-  target_link_libraries(ucall_example_pytorcs ucall_server_posix
-                        "${TORCH_LIBRARIES}")
+  add_executable(ucall_example_server examples/ucall_server.cpp)
+  target_link_libraries(ucall_example_server ucall_server_posix cxxopts)
+  target_compile_options(ucall_example_server PUBLIC -DCXXOPTS_NO_EXCEPTIONS=ON)
 endif()
