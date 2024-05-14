@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 	"bytes"
-  "flag"
-  "strconv"
+    "flag"
+    "strconv"
 )
 
 var(
@@ -28,15 +28,10 @@ func load_buffer() {
     for i := 0; i < batch; i++ {
         a := rand.Intn(1000)
         b := rand.Intn(1000)
-        if ( batch > 1 ) { buffer.WriteString(fmt.Sprintf(`[`)) }
-        if i < batch-1 {
-          buffer.WriteString(fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":%d},`, a, b, i))
-        } else {
-          buffer.WriteString(fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":%d}`, a, b, i))
-        }
+        jRPC := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":0}`, a, b)
+        buffer.WriteString(fmt.Sprintf("POST / HTTP/1.1\r\nHost: localhost:8545\r\nUser-Agent: python-requests/2.31.0\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(jRPC), jRPC))
     }
-    if ( batch > 1 ) { buffer.WriteString(fmt.Sprintf(`]`)) }
-    //fmt.Printf("%s\n",buffer.String())
+    fmt.Printf("%s\n",buffer.String())
 }
 
 func client(c chan int, tcpAddr *net.TCPAddr, tid int ) {
@@ -86,41 +81,40 @@ func formatInt(number int64) string {
 
 func main() {
 
-  flag.StringVar(&hostname,    "h", "localhost", "hostname")
-  flag.IntVar(&port,           "p", 8545,        "port")
-  flag.IntVar(&numConnections, "c", 16,          "Number of connections")
-  flag.IntVar(&limitSeconds,   "s", 2,           "Stop after n seconds")
-  flag.IntVar(&batch,          "b", 1,           "Batch n requests together")
-  flag.BoolVar(&html,          "html", false,    "Send an html request instead of jsonrpc")
-  flag.Parse()
+    flag.StringVar(&hostname,    "h", "localhost", "hostname")
+    flag.IntVar(&port,           "p", 8545,        "port")
+    flag.IntVar(&numConnections, "c", 16,          "Number of connections")
+    flag.IntVar(&limitSeconds,   "s", 2,           "Stop after n seconds")
+    flag.IntVar(&batch,          "b", 1,           "Batch n requests together")
+    flag.BoolVar(&html,          "html", false,    "Send an html request instead of jsonrpc")
+    flag.Parse()
 
-  fmt.Printf("DELME before connecting")
-  servAddr := fmt.Sprintf(`%s:%d`,hostname,port)
+    load_buffer();
+
+    servAddr := fmt.Sprintf(`%s:%d`,hostname,port)
 	tcpAddr, err := net.ResolveTCPAddr("tcp", servAddr)
 	if err != nil {
 		  println("ResolveTCPAddr failed:", err.Error())
 		  os.Exit(1)
 	}
 
-  load_buffer();
-
-  fmt.Printf("Benchmarking jsonrpc for %d seconds with %d connections and a batch size of %d \n", limitSeconds, numConnections, batch);
+    fmt.Printf("Benchmarking jsonrpc for %d seconds with %d connections and a batch size of %d \n", limitSeconds, numConnections, batch);
 
 	start := time.Now()
-  c := make(chan int)
+    c := make(chan int)
 	for i := 0; i < numConnections; i++ {
       go client( c, tcpAddr, i )
 	}
 
-  // Wait for all connections to finish
-  transmits := 0
+    // Wait for all connections to finish
+    transmits := 0
 	for i := 0; i < numConnections; i++ {
       transmits += <-c
 	}
 
-  elapsed := time.Since(start)
-  latency := float64(elapsed.Microseconds()) / float64(transmits)
-  speed := int64((float64(transmits) / float64(elapsed.Seconds())) * float64(batch))
-  fmt.Printf("    %s commands/second, mean latency %.1fu\n", formatInt(speed), latency)
+    elapsed := time.Since(start)
+    latency := float64(elapsed.Microseconds()) / float64(transmits)
+    speed := int64((float64(transmits) / float64(elapsed.Seconds())) * float64(batch))
+    fmt.Printf("    %s commands/second, mean latency %.1fu\n", formatInt(speed), latency)
 
 }
