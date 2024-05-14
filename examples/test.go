@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"os"
 	"time"
@@ -24,53 +23,17 @@ var(
     buffer bytes.Buffer
 )
 
-func load_buffer( n int) {
-    for i := 0; i < n; i++ {
-        a := rand.Intn(1000)
-        b := rand.Intn(1000)
-        if ( n > 1 ) { buffer.WriteString(fmt.Sprintf(`[`)) }
-        if i < n-1 {
-          buffer.WriteString(fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":%d},`, a, b, i))
-        } else {
-          buffer.WriteString(fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":%d}`, a, b, i))
-        }
-    }
-    if ( n > 1 ) { buffer.WriteString(fmt.Sprintf(`]`)) }
+func load_buffer() {
+    a := 46
+    b := 23
+    jRPC := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":%d,"session_id":%d},"id":0}`, a, b)
+    buffer.WriteString(fmt.Sprintf("POST / HTTP/1.1\r\nHost: localhost:8545\r\nUser-Agent: python-requests/2.31.0\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(jRPC), jRPC))
     //fmt.Printf("%s\n",buffer.String())
 }
 
-func test_rpc(tcpAddr *net.TCPAddr ) {
-    print("  Test rpc ... ")    
-    conn, err := net.DialTCP("tcp", nil, tcpAddr)
-    if err != nil {
-        println("connection failed:", err.Error())
-        return
-    }
-    reply := make([]byte, 4096)
 
-    req = fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":46,"session_id":0},"id":0}`)
-    _, err = conn.Write([]byte(req))
-    if err != nil {
-        println("write error: %v\n", err)
-        return
-    }
-    n, err := conn.Read(reply)
-    if err != nil && !errors.Is(err, io.EOF) {
-        println("read error: %v\n", err)
-        return
-    }
-    rep := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":true}`)
-    if rep != string(reply[:n]) {
-        println("unexpected reply")
-        println("    exp: ", rep)
-        println("    act: ", string(reply[:n]))
-        return
-    }
-
-    println("successful")
-}
-func test_html(tcpAddr *net.TCPAddr ) {
-    print("  Test html ... ")    
+func test_http(tcpAddr *net.TCPAddr ) {
+    print("  Test http ... ")    
     conn, err := net.DialTCP("tcp", nil, tcpAddr)
     if err != nil {
         println("connection failed:", err.Error())
@@ -170,6 +133,20 @@ func test_partial(tcpAddr *net.TCPAddr ) {
     println("successful")
 }
 
+func test_close(tcpAddr *net.TCPAddr ) {
+    conn, err := net.DialTCP("tcp", nil, tcpAddr)
+    if err != nil {
+        println("connection failed:", err.Error())
+        return
+    }
+    _, err = conn.Write(buffer.Bytes())
+    if err != nil {
+        fmt.Printf("Write Error: %v\n", err)
+    }
+    conn.Close()
+}
+
+
 
 func client(c chan int, tcpAddr *net.TCPAddr, tid int ) {
 	  reply := make([]byte, 4096)
@@ -203,38 +180,8 @@ func client(c chan int, tcpAddr *net.TCPAddr, tid int ) {
     conn.Close()
     c <- transmits
 }
-func test_echo(tcpAddr *net.TCPAddr ) {
-    print("  Test rpc ... ")    
-    conn, err := net.DialTCP("tcp", nil, tcpAddr)
-    if err != nil {
-        println("connection failed:", err.Error())
-        return
-    }
-    reply := make([]byte, 4096)
 
-    req := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":46,"session_id":0},"id":0}`)
-    _, err = conn.Write([]byte(req))
-    if err != nil {
-        println("write error: %v\n", err)
-        return
-    }
-    n, err := conn.Read(reply)
-    if err != nil && !errors.Is(err, io.EOF) {
-        println("read error: %v\n", err)
-        return
-    }
-    rep := fmt.Sprintf(`{"jsonrpc":"2.0","method":"validate_session","params":{"user_id":46,"session_id":0},"id":0}`)
-    if rep != string(reply[:n]) {
-        println("unexpected reply")
-        println("    exp: ", rep)
-        println("    act: ", string(reply[:n]))
-        return
-    }
-
-    println("successful")
-}
-
-func test_generic(name string, tcpAddr *net.TCPAddr, req []byte, reply []byte ) {
+func test_generic(name string, tcpAddr *net.TCPAddr, req []byte, rep []byte ) {
     print("  Test ",name," ... ")    
     conn, err := net.DialTCP("tcp", nil, tcpAddr)
     if err != nil {
@@ -242,8 +189,9 @@ func test_generic(name string, tcpAddr *net.TCPAddr, req []byte, reply []byte ) 
         return
     }
     rbuf := make([]byte, 4096)
+    request := fmt.Sprintf("POST / HTTP/1.1\r\nHost: localhost:8558\r\nUser-Agent: python-requests/2.31.0\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(req), req)
 
-    _, err = conn.Write([]byte(req))
+    _, err = conn.Write([]byte(request))
     if err != nil {
         println("write error: %v\n", err)
         return
@@ -253,10 +201,11 @@ func test_generic(name string, tcpAddr *net.TCPAddr, req []byte, reply []byte ) 
         println("read error: %v\n", err)
         return
     }
-    if string(reply) != string(rbuf[:n]) {
+    //reply := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(rep), rep)
+    if string(rep) != string(rbuf[78:n]) {
         println("unexpected reply")
-        println("    exp: ", string(reply))
-        println("    act: ", string(rbuf[:n]))
+        println("    exp: ", string(rep))
+        println("    act: ", string(rbuf[78:n]))
         return
     }
 
@@ -266,19 +215,14 @@ func test_generic(name string, tcpAddr *net.TCPAddr, req []byte, reply []byte ) 
 
 func main() {
 
-  flag.StringVar(&hostname,    "h", "localhost", "hostname")
-  flag.IntVar(&port,           "p", 8545,        "port")
-  flag.IntVar(&numConnections, "c", 16,          "Number of connections")
-  flag.IntVar(&limitSeconds,   "s", 2,           "Stop after n seconds")
-  flag.IntVar(&batch,          "b", 1,           "Batch n requests together")
-  flag.BoolVar(&html,          "html", false,    "Send an html request instead of jsonrpc")
-  flag.Parse()
-  
-  //var b [16]bytes.Buffer
-  //b[0].WriteString("foo")
-  //b[1].WriteString("bar")
-  //fmt.Println(b)
-
+    flag.StringVar(&hostname,    "h", "localhost", "hostname")
+    flag.IntVar(&port,           "p", 8545,        "port")
+    flag.IntVar(&numConnections, "c", 16,          "Number of connections")
+    flag.IntVar(&limitSeconds,   "s", 2,           "Stop after n seconds")
+    flag.IntVar(&batch,          "b", 1,           "Batch n requests together")
+    flag.BoolVar(&html,          "html", false,    "Send an html request instead of jsonrpc")
+    flag.Parse()
+    
     servAddr := fmt.Sprintf(`%s:%d`,hostname,port)
 	tcpAddr, err := net.ResolveTCPAddr("tcp", servAddr)
 	if err != nil {
@@ -287,7 +231,7 @@ func main() {
 	}
 
     //test_rpc(tcpAddr)
-    //test_html(tcpAddr)
+    //test_http(tcpAddr)
     //test_big(tcpAddr)
     //test_partial(tcpAddr)
 
@@ -306,24 +250,35 @@ func main() {
 
     req = fmt.Sprintf(`{"jsonrpc":"2.0","method":"set","params":{"key":"test","value":"val"},"id":0}`)
     rep = fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":"OK"}`)
-    test_generic("create_user", tcpAddr, []byte(req), []byte(rep) )
+    test_generic("set", tcpAddr, []byte(req), []byte(rep) )
     req = fmt.Sprintf(`{"jsonrpc":"2.0","method":"get","params":{"key":"test","value":"val"},"id":0}`)
     rep = fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"result":"val"}`)
-    test_generic("create_user", tcpAddr, []byte(req), []byte(rep) )
-
-    //load_buffer(batch)
+    test_generic("get", tcpAddr, []byte(req), []byte(rep) )
 
 
-	//start := time.Now()
-  //c := make(chan int)
-	////for i := 0; i < numConnections; i++ {
-      //go client( c, tcpAddr, i )
-	//}
+    print("  Test closing connections ... ")    
+    n := 1
+    for n < 2000 {
+        test_close(tcpAddr)
+        n += 1
+    }
+    println("successful")
 
-  // Wait for all connections to finish
-  //transmits := 0
-	//for i := 0; i < numConnections; i++ {
-      //transmits += <-c
-	//}
+    test_http(tcpAddr)
+
+    load_buffer()
+
+    print("  Test many connections ... ")    
+    num := 1024
+    c := make(chan int)
+    for i := 0; i < num; i++ {
+        go client( c, tcpAddr, i )
+    }
+
+    // Wait for all connections to finish
+    transmits := 0
+    for i := 0; i < num; i++ {
+        transmits += <-c
+    }
 
 }
