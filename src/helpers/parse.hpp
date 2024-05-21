@@ -67,6 +67,7 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
     if (!doc.is_object())
         return default_error_t{-32600, "The JSON sent is not a valid request object."};
 
+
     // We don't support JSON-RPC before version 2.0.
     sj::simdjson_result<sjd::element> version = doc["jsonrpc"];
     if (!version.is_string() || version.get_string().value_unsafe() != "2.0")
@@ -78,10 +79,12 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
     bool id_invalid = (id.is_double() && !id.is_int64() && !id.is_uint64()) || id.is_object() || id.is_array();
     if (id_invalid)
         return default_error_t{-32600, "The request must have integer or string id."};
+
     sj::simdjson_result<sjd::element> method = doc["method"];
     bool method_invalid = !method.is_string();
     if (method_invalid)
         return default_error_t{-32600, "The method must be a string."};
+
     sj::simdjson_result<sjd::element> params = doc["params"];
     bool params_present_and_invalid = !params.is_array() && !params.is_object() && params.error() == sj::SUCCESS;
     if (params_present_and_invalid)
@@ -117,6 +120,7 @@ struct parsed_request_t {
     std::string_view content_type{};
     std::string_view content_length{};
     std::string_view body{};
+    int json_length;
 };
 
 /**
@@ -166,8 +170,11 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
         if (pos == std::string_view::npos)
             return default_error_t{-32700, "Invalid JSON was received by the server."};
         req.body = body.substr(pos + 4);
-    } else
+        auto res = std::from_chars(req.content_length.begin(), req.content_length.end(), req.json_length);
+    } else {
+        req.json_length = body.size();
         req.body = body;
+    }
 
     return req;
 }

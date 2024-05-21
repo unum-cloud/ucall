@@ -736,7 +736,7 @@ void automata_t::parse_and_raise_request() noexcept {
 
     auto parsed_request = std::get<parsed_request_t>(parsed_request_or_error);
     scratch.is_http = request.size() != parsed_request.body.size();
-    scratch.dynamic_packet = parsed_request.body;
+    scratch.dynamic_packet = {parsed_request.body.data(), parsed_request.json_length};
     if (scratch.dynamic_packet.size() > ram_page_size_k) {
         sjd::parser parser;
         if (parser.allocate(scratch.dynamic_packet.size(), scratch.dynamic_packet.size() / 2) != sj::SUCCESS)
