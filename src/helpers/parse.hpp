@@ -67,7 +67,6 @@ inline std::variant<named_callback_t, default_error_t> find_callback(named_callb
     if (!doc.is_object())
         return default_error_t{-32600, "The JSON sent is not a valid request object."};
 
-
     // We don't support JSON-RPC before version 2.0.
     sj::simdjson_result<sjd::element> version = doc["jsonrpc"];
     if (!version.is_string() || version.get_string().value_unsafe() != "2.0")
