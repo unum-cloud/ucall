@@ -89,10 +89,12 @@ struct connection_t;
 struct engine_t;
 struct automata_t;
 
-static constexpr std::size_t uring_acpt_tag_k{0};
-static constexpr std::size_t uring_recv_tag_k{1};
-static constexpr std::size_t uring_send_tag_k{2};
-static constexpr std::size_t uring_stat_tag_k{3};
+enum class uring_op_tag_t : std::uintptr_t {
+    uring_acpt_tag_k = 0,
+    uring_recv_tag_k,
+    uring_send_tag_k,
+    uring_stat_tag_k, // Max 2 bits
+};
 
 enum class stage_t {
     waiting_to_accept_k = 0,
@@ -107,7 +109,7 @@ struct completed_event_t {
     connection_t* connection_ptr{};
     stage_t stage{};
     int result{};
-    uint64_t type{};
+    uring_op_tag_t type{};
 };
 
 class alignas(align_k) mutex_t {
@@ -256,7 +258,7 @@ struct automata_t {
     connection_t& connection;
     stage_t completed_stage{};
     int completed_result{};
-    uint64_t type{};
+    uring_op_tag_t type{};
 
     void operator()() noexcept;
     bool is_corrupted() const noexcept { return completed_result == -EPIPE || completed_result == -EBADF; }
@@ -765,7 +767,7 @@ template <std::size_t max_count_ak> std::size_t engine_t::pop_completed(complete
             continue;
 
         events[completed].connection_ptr = (connection_t*)(uring_cqe->user_data & ~0x3);
-        events[completed].type = uring_cqe->user_data & 0x3;
+        events[completed].type = static_cast<uring_op_tag_t>(uring_cqe->user_data & 0x3);
         events[completed].stage = events[completed].connection_ptr->stage;
         events[completed].result = uring_cqe->res;
         ++completed;
@@ -800,7 +802,8 @@ bool engine_t::consider_accepting_new_connection() noexcept {
     uring_sqe = io_uring_get_sqe(&uring);
     io_uring_prep_accept_direct(uring_sqe, socket, &connection.client_address, &connection.client_address_len, 0,
                                 IORING_FILE_INDEX_ALLOC);
-    io_uring_sqe_set_data(uring_sqe, (void*)(uring_acpt_tag_k | uint64_t(&connection)));
+    io_uring_sqe_set_data(uring_sqe, (void*)(static_cast<std::uintptr_t>(uring_op_tag_t::uring_acpt_tag_k) |
+                                             (std::uintptr_t)(&connection)));
 
     // Accepting new connections can be time-less.
     // io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
@@ -830,7 +833,8 @@ void engine_t::submit_stats_heartbeat() noexcept {
 
     uring_sqe = io_uring_get_sqe(&uring);
     io_uring_prep_timeout(uring_sqe, &connection.next_wakeup, 0, 0);
-    io_uring_sqe_set_data(uring_sqe, (void*)(uring_stat_tag_k | uint64_t(&connection)));
+    io_uring_sqe_set_data(uring_sqe, (void*)(static_cast<std::uintptr_t>(uring_op_tag_t::uring_stat_tag_k) |
+                                             (std::uintptr_t)(&connection)));
     uring_result = io_uring_submit(&uring);
     submission_mutex.unlock();
 }
@@ -902,7 +906,8 @@ void automata_t::send_next() noexcept {
         uring_sqe->flags |= IOSQE_FIXED_FILE;
         uring_sqe->buf_index = engine.connections.offset_of(connection) * 2u + 1u;
     }
-    io_uring_sqe_set_data(uring_sqe, (void*)(uring_send_tag_k | uint64_t(&connection)));
+    io_uring_sqe_set_data(uring_sqe, (void*)(static_cast<std::uintptr_t>(uring_op_tag_t::uring_send_tag_k) |
+                                             (std::uintptr_t)(&connection)));
     io_uring_sqe_set_flags(uring_sqe, 0);
     uring_result = io_uring_submit(&engine.uring);
     engine.submission_mutex.unlock();
@@ -928,7 +933,8 @@ void automata_t::receive_next() noexcept {
     uring_sqe = io_uring_get_sqe(&engine.uring);
     io_uring_prep_read_fixed(uring_sqe, int(connection.descriptor), (void*)pipes.next_input_address(),
                              pipes.next_input_length(), 0, engine.connections.offset_of(connection) * 2u);
-    io_uring_sqe_set_data(uring_sqe, (void*)(uring_recv_tag_k | uint64_t(&connection)));
+    io_uring_sqe_set_data(uring_sqe, (void*)(static_cast<std::uintptr_t>(uring_op_tag_t::uring_recv_tag_k) |
+                                             (std::uintptr_t)(&connection)));
     io_uring_sqe_set_flags(uring_sqe, IOSQE_IO_LINK);
 
     // More than other operations this depends on the information coming from the client.
@@ -953,7 +959,7 @@ void automata_t::operator()() noexcept {
     switch (connection.stage) {
 
     case stage_t::waiting_to_accept_k:
-        if (type != uring_acpt_tag_k) {
+        if (type != uring_op_tag_t::uring_acpt_tag_k) {
             return;
         }
 
@@ -973,7 +979,7 @@ void automata_t::operator()() noexcept {
 
     case stage_t::expecting_reception_k:
 
-        if (type != uring_recv_tag_k) {
+        if (type != uring_op_tag_t::uring_recv_tag_k) {
             return;
         }
         // From documentation:

@@ -119,7 +119,7 @@ struct parsed_request_t {
     std::string_view content_type{};
     std::string_view content_length{};
     std::string_view body{};
-    int json_length;
+    std::size_t json_length;
 };
 
 /**
@@ -170,6 +170,8 @@ inline std::variant<parsed_request_t, default_error_t> split_body_headers(std::s
             return default_error_t{-32700, "Invalid JSON was received by the server."};
         req.body = body.substr(pos + 4);
         auto res = std::from_chars(req.content_length.begin(), req.content_length.end(), req.json_length);
+        if (res.ec == std::errc::invalid_argument)
+            return default_error_t{-32700, "Invalid JSON was received by the server."};
     } else {
         req.json_length = body.size();
         req.body = body;
