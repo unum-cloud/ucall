@@ -135,7 +135,7 @@ This comes handy when you build real applications or want to deploy Multi-Modal 
 
 ```python
 from ucall.rich_posix import Server
-import ufrom
+import uform
 
 server = Server()
 model = uform.get_model('unum-cloud/uform-vl-multilingual')
