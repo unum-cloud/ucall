@@ -17,6 +17,30 @@ permissions:
 
 jobs:
 
+  versioning:
+    name: Update Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run TinySemVer
+        uses: ashvardanian/tinysemver@v2.0.7
+        with:
+          verbose: "true"
+          version-file: "VERSION"
+          update-version-in: |
+            CMakeLists.txt:VERSION (\d+\.\d+\.\d+)
+          update-major-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_MAJOR (\d+)
+          update-minor-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_MINOR (\d+)
+          update-patch-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_PATCH (\d+)
+          dry-run: "true"
+
   test_python:
     name: Test Python
     runs-on: ${{ matrix.os }}

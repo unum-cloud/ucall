@@ -18,17 +18,31 @@ permissions:
 jobs:
 
   versioning:
-    name: Semantic Release
+    name: Update Version
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-      with:
-        persist-credentials: false
-    - uses: actions/setup-node@v3
-      with:
-        node-version: 20
-    - run: npm install --save-dev @semantic-release/exec @semantic-release/git conventional-changelog-eslint semantic-release && npx semantic-release
-
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run TinySemVer
+        uses: ashvardanian/tinysemver@v2.0.7
+        with:
+          verbose: "true"
+          version-file: "VERSION"
+          update-version-in: |
+            CMakeLists.txt:VERSION (\d+\.\d+\.\d+)
+          update-major-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_MAJOR (\d+)
+          update-minor-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_MINOR (\d+)
+          update-patch-version-in: |
+            include/ucall/ucall.h:^#define UCALL_VERSION_PATCH (\d+)
+          dry-run: "false"
+          push: "true"
+          create-release: "true"
+          github-token: ${{ secrets.SEMANTIC_RELEASE_TOKEN }}
 
   build_wheels:
     name: Build Python ${{ matrix.python-version }} for ${{ matrix.os }}
