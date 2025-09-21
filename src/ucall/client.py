@@ -120,11 +120,12 @@ class Client:
     """JSON-RPC Client that uses classic sync Python `requests` to pass JSON calls over HTTP"""
 
     def __init__(
-        self, uri: str = "127.0.0.1", port: int = 8545, use_http: bool = True
+        self, uri: str = "127.0.0.1", port: int = 8545, use_http: bool = True, jsonencoder: type = json.JSONEncoder
     ) -> None:
         self.uri = uri
         self.port = port
         self.use_http = use_http
+        self.jsonencoder = jsonencoder
         self.sock = None
         self.http_template = f"POST / HTTP/1.1\r\nHost: {uri}:{port}\r\nUser-Agent: py-ucall\r\nAccept: */*\r\nConnection: keep-alive\r\nContent-Length: %i\r\nContent-Type: application/json\r\n\r\n"
 
@@ -169,7 +170,7 @@ class Client:
     def _send(self, json_data: dict):
         json_data["id"] = random.randint(1, 2**16)
         req_obj = Request(json_data)
-        request = json.dumps(req_obj.packed)
+        request = json.dumps(req_obj.packed, cls=self.jsonencoder)
         if self.use_http:
             request = self.http_template % (len(request)) + request
 
@@ -194,9 +195,10 @@ class ClientTLS(Client):
         ssl_context: ssl.SSLContext = None,
         allow_self_signed: bool = False,
         enable_session_resumption: bool = True,
+        jsonencoder: type = json.JSONEncoder,
     ) -> None:
 
-        super().__init__(uri, port, use_http=True)
+        super().__init__(uri, port, use_http=True, jsonencoder=jsonencoder)
 
         if ssl_context is None:
             ssl_context = ssl.create_default_context()
